@@ -1,0 +1,34 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Houdini
+*.hip.bak
+*.hipnc.bak
+backup/
+houdini_temp/
+
+# Blender
+*.blend1
+*.blend2
+
+# Unreal
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+*.VC.db
+*.sln
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Renders and caches
+*.bgeo
+*.bgeo.sc
+*.abc
+cache/
+renders/
