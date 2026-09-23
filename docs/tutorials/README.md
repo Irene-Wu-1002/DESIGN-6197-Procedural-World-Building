@@ -6,13 +6,15 @@ without re-deriving it.
 
 ## Contents
 
-*No tutorials written yet — the first will cover Houdini scattering fundamentals.*
+- [`react-setup.md`](react-setup.md) — installing React with Vite, written for someone new
+  to both React and the command line.
 
 ## What goes here
 
 - Houdini: SOP/VOP workflows, HDA authoring, procedural terrain and scattering
 - Unreal Engine: PCG graphs, landscape and material setup, Houdini Engine round-tripping
 - Blender: geometry nodes and asset prep
+- Web: React, three.js, and browser-based procedural experiments
 - Python and scripting utilities
 
 ## Format

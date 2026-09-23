@@ -1,0 +1,73 @@
+export const MAX_EARTH_LAYERS = 5
+
+export const EARTH_LAYER_PRESETS = [
+  {
+    id: 'terrain',
+    name: 'Terrain',
+    color: '#9a7650',
+    type: 'perlin',
+    scale: 0.009,
+    octaves: 5,
+    persistence: 0.52,
+    lacunarity: 2,
+    seed: 42,
+    weight: 1,
+    enabled: true,
+  },
+  {
+    id: 'sea',
+    name: 'Sea',
+    color: '#3f83b5',
+    type: 'cellular',
+    scale: 0.004,
+    octaves: 2,
+    persistence: 0.45,
+    lacunarity: 2,
+    seed: 213,
+    weight: 0.35,
+    enabled: true,
+  },
+  {
+    id: 'grass',
+    name: 'Grass',
+    color: '#73964a',
+    type: 'white',
+    scale: 0.02,
+    octaves: 1,
+    persistence: 0.5,
+    lacunarity: 2,
+    seed: 731,
+    weight: 0.08,
+    enabled: true,
+  },
+  {
+    id: 'rock',
+    name: 'Rock',
+    color: '#77736c',
+    type: 'cellular',
+    scale: 0.025,
+    octaves: 3,
+    persistence: 0.5,
+    lacunarity: 2.2,
+    seed: 1259,
+    weight: 0.18,
+    enabled: true,
+  },
+  {
+    id: 'snow',
+    name: 'Snow',
+    color: '#e7edf2',
+    type: 'perlin',
+    scale: 0.04,
+    octaves: 2,
+    persistence: 0.4,
+    lacunarity: 2,
+    seed: 2027,
+    weight: 0.12,
+    enabled: true,
+  },
+]
+
+export function createEarthLayer(preset) {
+  return { ...preset }
+}
