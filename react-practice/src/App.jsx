@@ -5,11 +5,11 @@ import Week2Scene from './components/Week2Scene'
 import Week3Scene from './components/Week3Scene'
 import './App.css'
 
-const WEEK_TITLES = {
-  1: 'Procedural World Building',
-  2: 'Infinite Noise Map',
-  3: 'Week 3 Workspace',
-}
+const WEEKS = [
+  { id: 1, title: 'Three.js exploring' },
+  { id: 2, title: 'Infinite Noise Map' },
+  { id: 3, title: 'Voxel Terrain' },
+]
 
 export default function App() {
   const [activeWeek, setActiveWeek] = useState(3)
@@ -18,7 +18,13 @@ export default function App() {
     rotationSpeed: 0.6,
     autoRotate: true,
     color: '#ff8a3d',
+    colorEnd: '#6ea8ff',
+    gradientDirection: 'vertical',
+    material: 'plastic',
+    shape: 'box',
   })
+
+  const active = WEEKS.find((week) => week.id === activeWeek) ?? WEEKS[0]
 
   return (
     <div className="app">
@@ -27,21 +33,22 @@ export default function App() {
       {activeWeek === 3 && <Week3Scene />}
 
       <header className="titlebar">
-        <h1>{WEEK_TITLES[activeWeek]}</h1>
+        <h1>{active.title}</h1>
         <p>yw2785 &middot; Cornell AAP</p>
       </header>
 
       <nav className="week-tabs" role="tablist" aria-label="Weekly work">
-        {[1, 2, 3].map((week) => (
+        {WEEKS.map((week) => (
           <button
-            key={week}
+            key={week.id}
             type="button"
             role="tab"
-            aria-selected={activeWeek === week}
-            className={activeWeek === week ? 'active' : ''}
-            onClick={() => setActiveWeek(week)}
+            aria-selected={activeWeek === week.id}
+            className={activeWeek === week.id ? 'active' : ''}
+            onClick={() => setActiveWeek(week.id)}
           >
-            Week {week}
+            <span className="week-tabs-label">Week {week.id}</span>
+            <span className="week-tabs-title">{week.title}</span>
           </button>
         ))}
       </nav>

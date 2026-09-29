@@ -1,10 +1,22 @@
-export const MAX_EARTH_LAYERS = 5
+export const MAX_EARTH_LAYERS = 2
+
+export const LAYER_MODES = [
+  { id: 'function', label: 'Functions' },
+  { id: 'simulation', label: 'Simulation' },
+]
+
+export const SIMULATION_SHADERS = [
+  { id: 'flood', label: 'Flood' },
+  { id: 'cloud', label: 'Cloud' },
+  { id: 'rain', label: 'Rain' },
+]
 
 export const EARTH_LAYER_PRESETS = [
   {
-    id: 'terrain',
-    name: 'Terrain',
-    color: '#9a7650',
+    id: 'land',
+    name: 'Land',
+    color: '#73964a',
+    mode: 'function',
     type: 'perlin',
     scale: 0.009,
     octaves: 5,
@@ -13,61 +25,39 @@ export const EARTH_LAYER_PRESETS = [
     seed: 42,
     weight: 1,
     enabled: true,
+    simulation: 'flood',
+    simulationStrength: 0.7,
   },
   {
     id: 'sea',
     name: 'Sea',
     color: '#3f83b5',
+    mode: 'function',
     type: 'cellular',
     scale: 0.004,
     octaves: 2,
     persistence: 0.45,
     lacunarity: 2,
     seed: 213,
-    weight: 0.35,
+    weight: 0.4,
     enabled: true,
-  },
-  {
-    id: 'grass',
-    name: 'Grass',
-    color: '#73964a',
-    type: 'white',
-    scale: 0.02,
-    octaves: 1,
-    persistence: 0.5,
-    lacunarity: 2,
-    seed: 731,
-    weight: 0.08,
-    enabled: true,
-  },
-  {
-    id: 'rock',
-    name: 'Rock',
-    color: '#77736c',
-    type: 'cellular',
-    scale: 0.025,
-    octaves: 3,
-    persistence: 0.5,
-    lacunarity: 2.2,
-    seed: 1259,
-    weight: 0.18,
-    enabled: true,
-  },
-  {
-    id: 'snow',
-    name: 'Snow',
-    color: '#e7edf2',
-    type: 'perlin',
-    scale: 0.04,
-    octaves: 2,
-    persistence: 0.4,
-    lacunarity: 2,
-    seed: 2027,
-    weight: 0.12,
-    enabled: true,
+    simulation: 'flood',
+    simulationStrength: 0.8,
   },
 ]
 
 export function createEarthLayer(preset) {
   return { ...preset }
+}
+
+export function getFunctionLayers(layers) {
+  return layers.filter(
+    (layer) => layer.enabled && layer.mode === 'function' && layer.weight > 0
+  )
+}
+
+export function getSimulationLayers(layers) {
+  return layers.filter(
+    (layer) => layer.enabled && layer.mode === 'simulation'
+  )
 }

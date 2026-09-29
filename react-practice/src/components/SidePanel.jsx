@@ -1,5 +1,33 @@
 import Slider from './Slider'
 
+const SHAPES = [
+  { id: 'box', label: 'Box' },
+  { id: 'sphere', label: 'Sphere' },
+  { id: 'cylinder', label: 'Cylinder' },
+  { id: 'cone', label: 'Cone' },
+  { id: 'torus', label: 'Torus' },
+  { id: 'octahedron', label: 'Octahedron' },
+  { id: 'dodecahedron', label: 'Dodecahedron' },
+  { id: 'torusKnot', label: 'Torus Knot' },
+]
+
+const GRADIENT_DIRECTIONS = [
+  { id: 'vertical', label: 'Vertical' },
+  { id: 'horizontal', label: 'Horizontal' },
+  { id: 'diagonal', label: 'Diagonal' },
+  { id: 'radial', label: 'Radial' },
+]
+
+const MATERIALS = [
+  { id: 'matte', label: 'Matte' },
+  { id: 'plastic', label: 'Plastic' },
+  { id: 'metal', label: 'Metal' },
+  { id: 'brushed', label: 'Brushed Metal' },
+  { id: 'chrome', label: 'Chrome' },
+  { id: 'rubber', label: 'Rubber' },
+  { id: 'ceramic', label: 'Ceramic' },
+]
+
 export default function SidePanel({ settings, onChange }) {
   const update = (key) => (value) => onChange({ ...settings, [key]: value })
 
@@ -7,8 +35,25 @@ export default function SidePanel({ settings, onChange }) {
     <aside className="panel">
       <div className="panel-title">
         <h2>Controls</h2>
-        <span className="panel-badge">Cube</span>
+        <span className="panel-badge">Object</span>
       </div>
+
+      <section className="panel-section">
+        <h3>Shape</h3>
+        <label className="control">
+          <span className="control-label">Geometry</span>
+          <select
+            value={settings.shape}
+            onChange={(event) => update('shape')(event.target.value)}
+          >
+            {SHAPES.map((shape) => (
+              <option key={shape.id} value={shape.id}>
+                {shape.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
 
       <section className="panel-section">
         <h3>Transform</h3>
@@ -40,20 +85,55 @@ export default function SidePanel({ settings, onChange }) {
 
       <section className="panel-section">
         <h3>Material</h3>
+        <label className="control">
+          <span className="control-label">Preset</span>
+          <select
+            value={settings.material}
+            onChange={(event) => update('material')(event.target.value)}
+          >
+            {MATERIALS.map((material) => (
+              <option key={material.id} value={material.id}>
+                {material.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="control control-inline">
-          <span className="control-label">Color</span>
+          <span className="control-label">Color A</span>
           <input
             type="color"
             value={settings.color}
             onChange={(event) => update('color')(event.target.value)}
           />
         </label>
+        <label className="control control-inline">
+          <span className="control-label">Color B</span>
+          <input
+            type="color"
+            value={settings.colorEnd}
+            onChange={(event) => update('colorEnd')(event.target.value)}
+          />
+        </label>
+        <label className="control">
+          <span className="control-label">Gradient</span>
+          <select
+            value={settings.gradientDirection}
+            onChange={(event) =>
+              update('gradientDirection')(event.target.value)
+            }
+          >
+            {GRADIENT_DIRECTIONS.map((direction) => (
+              <option key={direction.id} value={direction.id}>
+                {direction.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <p className="panel-hint">
-        Drag to orbit, scroll to zoom. Add a control by dropping another
-        <code>&lt;Slider /&gt;</code> into this panel and a matching key into the
-        settings object in <code>App.jsx</code>.
+        Pick a shape, material, and gradient. Color A blends into Color B across
+        the mesh.
       </p>
     </aside>
   )

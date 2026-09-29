@@ -126,18 +126,96 @@ export function getNoise(x, y, params) {
 
 /**
  * Blend any number of independently configured earth layers.
- * Each layer can be sampled separately with getNoise(), or combined here.
+ * Optional shaping remaps the result (or warps the sample domain first).
  */
-export function getBlendedNoise(x, y, layers) {
+export function getBlendedNoise(x, y, layers, shaping = null) {
+  let sampleX = x
+  let sampleY = y
+  const operation = shaping?.operation ?? 'none'
+  const strength = shaping?.strength ?? 1
+
+  // Domain warping / turbulence first displace the lookup coordinates.
+  if (operation === 'domainWarp' || operation === 'turbulence') {
+    const warpSource =
+      layers.find((layer) => layer.enabled && layer.weight > 0) ?? {
+        type: 'perlin',
+        scale: 0.02,
+        octaves: 3,
+        persistence: 0.5,
+        lacunarity: 2,
+        seed: 1,
+      }
+    const warpAmount = strength * (operation === 'turbulence' ? 55 : 90)
+    const dx = getNoise(x, y, { ...warpSource, seed: warpSource.seed + 101 })
+    const dy = getNoise(x + 17.3, y + 91.7, {
+      ...warpSource,
+      seed: warpSource.seed + 202,
+    })
+    sampleX = x + dx * warpAmount
+    sampleY = y + dy * warpAmount
+  }
+
   let value = 0
   let weightTotal = 0
 
   for (const layer of layers) {
     if (!layer.enabled || layer.weight <= 0) continue
-    value += getNoise(x, y, layer) * layer.weight
+    value += getNoise(sampleX, sampleY, layer) * layer.weight
     weightTotal += layer.weight
   }
 
   if (weightTotal === 0) return 0
-  return Math.max(-1, Math.min(1, value / weightTotal))
+  const blended = Math.max(-1, Math.min(1, value / weightTotal))
+
+  if (operation === 'none' || operation === 'domainWarp') return blended
+
+  // Turbulence is warped domain + billow-style absolute fold.
+  if (operation === 'turbulence') {
+    return applyShaping(blended, 'billow', strength)
+  }
+
+  return applyShaping(blended, operation, strength)
+}
+
+export const SHAPING_OPERATIONS = [
+  { id: 'none', label: 'None' },
+  { id: 'ridged', label: 'Ridged' },
+  { id: 'billow', label: 'Billow' },
+  { id: 'turbulence', label: 'Turbulence' },
+  { id: 'terrace', label: 'Terracing' },
+  { id: 'power', label: 'Power curve' },
+  { id: 'domainWarp', label: 'Domain warping' },
+]
+
+/**
+ * Remap a noise sample with a shaping operation.
+ * strength (0..1) controls blend amount or parameter magnitude.
+ */
+export function applyShaping(value, operation = 'none', strength = 1) {
+  const amount = Math.max(0, Math.min(1, strength))
+  const v = Math.max(-1, Math.min(1, value))
+
+  switch (operation) {
+    case 'billow':
+    case 'absolute': {
+      const billow = Math.abs(v) * 2 - 1
+      return lerp(v, billow, amount)
+    }
+    case 'ridged': {
+      const ridged = 1 - Math.abs(v) * 2
+      return lerp(v, ridged, amount)
+    }
+    case 'power': {
+      const exponent = 1 + amount * 3
+      return Math.sign(v) * Math.abs(v) ** exponent
+    }
+    case 'terrace': {
+      const steps = Math.max(2, Math.round(2 + amount * 12))
+      const normalized = (v + 1) * 0.5
+      const terraced = Math.round(normalized * steps) / steps
+      return terraced * 2 - 1
+    }
+    default:
+      return v
+  }
 }

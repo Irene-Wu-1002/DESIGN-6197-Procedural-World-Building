@@ -2,14 +2,15 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import {
+  applySimulationShaders,
   colorForElevation,
   createTerrainPalette,
   hexToRgb,
 } from '../utils/heightMaterial'
+import { getFunctionLayers, getSimulationLayers } from '../utils/earthLayers'
 import { getBlendedNoise } from '../utils/noise'
 
 const GRID_SIZE = 12
-const GRID_SEGMENTS = 96
 const HEIGHT_MULTIPLIER = 2.5
 const SAMPLE_SPAN = 512
 const SCROLL_SPEED = 90
@@ -26,10 +27,37 @@ function isTypingTarget(target) {
   )
 }
 
-function rebuildTerrain(geometry, layers, waterLevel, offset) {
+function createGridGeometry(segments) {
+  const geometry = new THREE.PlaneGeometry(
+    GRID_SIZE,
+    GRID_SIZE,
+    segments,
+    segments
+  )
+  geometry.rotateX(-Math.PI / 2)
+  geometry.setAttribute(
+    'color',
+    new THREE.BufferAttribute(
+      new Float32Array(geometry.attributes.position.count * 3),
+      3
+    )
+  )
+  return geometry
+}
+
+function rebuildTerrain(
+  geometry,
+  layers,
+  waterLevel,
+  offset,
+  shaping,
+  time = 0
+) {
   const positions = geometry.attributes.position
   const colors = geometry.attributes.color
   const palette = createTerrainPalette(layers)
+  const functionLayers = getFunctionLayers(layers)
+  const simulationLayers = getSimulationLayers(layers)
   const heights = new Float32Array(positions.count)
 
   for (let index = 0; index < positions.count; index += 1) {
@@ -37,8 +65,17 @@ function rebuildTerrain(geometry, layers, waterLevel, offset) {
       (positions.getX(index) / GRID_SIZE + 0.5) * SAMPLE_SPAN + offset.x
     const sampleY =
       (positions.getZ(index) / GRID_SIZE + 0.5) * SAMPLE_SPAN + offset.y
-    const noiseValue = getBlendedNoise(sampleX, sampleY, layers)
-    const hex = colorForElevation(noiseValue, palette, waterLevel)
+    const noiseValue = getBlendedNoise(
+      sampleX,
+      sampleY,
+      functionLayers,
+      shaping
+    )
+    const baseHex = colorForElevation(noiseValue, palette, waterLevel)
+    const hex = applySimulationShaders(baseHex, noiseValue, simulationLayers, {
+      waterLevel,
+      time,
+    })
     const rgb = hexToRgb(hex)
 
     heights[index] = noiseValue
@@ -57,14 +94,21 @@ export default function NoiseTerrain({
   layers,
   waterLevel = 0.35,
   mapOffset = { x: 0, y: 0 },
+  gridSegments = 64,
+  shaping = { operation: 'none', strength: 1 },
+  showWireframe = true,
+  simulationTime = 0,
   onMapOffsetChange,
 }) {
   const mountRef = useRef(null)
   const geometryRef = useRef(null)
-  const waterMeshRef = useRef(null)
+  const surfaceRef = useRef(null)
+  const wireframeRef = useRef(null)
   const heightCacheRef = useRef(null)
   const layersRef = useRef(layers)
   const waterLevelRef = useRef(waterLevel)
+  const shapingRef = useRef(shaping)
+  const simulationTimeRef = useRef(simulationTime)
   const offsetRef = useRef({ ...mapOffset })
   const keysRef = useRef({
     up: false,
@@ -83,10 +127,23 @@ export default function NoiseTerrain({
   }, [waterLevel])
 
   useEffect(() => {
+    shapingRef.current = shaping
+  }, [shaping])
+
+  useEffect(() => {
+    simulationTimeRef.current = simulationTime
+  }, [simulationTime])
+
+  useEffect(() => {
     onOffsetChangeRef.current = onMapOffsetChange
   }, [onMapOffsetChange])
 
-  // Keep external resets (e.g. Reset map) in sync when not actively scrolling.
+  useEffect(() => {
+    if (wireframeRef.current) {
+      wireframeRef.current.visible = showWireframe
+    }
+  }, [showWireframe])
+
   useEffect(() => {
     const keys = keysRef.current
     const moving = keys.up || keys.down || keys.left || keys.right
@@ -100,7 +157,9 @@ export default function NoiseTerrain({
       geometry,
       layersRef.current,
       waterLevelRef.current,
-      offsetRef.current
+      offsetRef.current,
+      shapingRef.current,
+      simulationTimeRef.current
     )
   }, [mapOffset])
 
@@ -129,20 +188,7 @@ export default function NoiseTerrain({
     controls.minDistance = 5
     controls.maxDistance = 30
 
-    const geometry = new THREE.PlaneGeometry(
-      GRID_SIZE,
-      GRID_SIZE,
-      GRID_SEGMENTS,
-      GRID_SEGMENTS
-    )
-    geometry.rotateX(-Math.PI / 2)
-    geometry.setAttribute(
-      'color',
-      new THREE.BufferAttribute(
-        new Float32Array(geometry.attributes.position.count * 3),
-        3
-      )
-    )
+    const geometry = createGridGeometry(gridSegments)
     geometryRef.current = geometry
 
     const surfaceMaterial = new THREE.MeshStandardMaterial({
@@ -153,6 +199,7 @@ export default function NoiseTerrain({
     })
     const surface = new THREE.Mesh(geometry, surfaceMaterial)
     scene.add(surface)
+    surfaceRef.current = surface
 
     const wireMaterial = new THREE.MeshBasicMaterial({
       color: '#101318',
@@ -162,22 +209,9 @@ export default function NoiseTerrain({
     })
     const wireframe = new THREE.Mesh(geometry, wireMaterial)
     wireframe.position.y = 0.006
+    wireframe.visible = true
     scene.add(wireframe)
-
-    const waterGeometry = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE)
-    waterGeometry.rotateX(-Math.PI / 2)
-    const waterMaterial = new THREE.MeshStandardMaterial({
-      color: '#3f83b5',
-      transparent: true,
-      opacity: 0.42,
-      roughness: 0.15,
-      metalness: 0.35,
-      side: THREE.DoubleSide,
-    })
-    const water = new THREE.Mesh(waterGeometry, waterMaterial)
-    water.position.y = 0
-    scene.add(water)
-    waterMeshRef.current = water
+    wireframeRef.current = wireframe
 
     scene.add(new THREE.HemisphereLight('#dce9ff', '#1b2028', 1.5))
     const keyLight = new THREE.DirectionalLight('#ffffff', 2.6)
@@ -188,11 +222,10 @@ export default function NoiseTerrain({
       geometry,
       layersRef.current,
       waterLevelRef.current,
-      offsetRef.current
+      offsetRef.current,
+      shapingRef.current,
+      simulationTimeRef.current
     )
-    water.position.y =
-      (waterLevelRef.current * 2 - 1) * HEIGHT_MULTIPLIER
-
     const setKey = (code, pressed) => {
       if (code === 'KeyW' || code === 'ArrowUp') keysRef.current.up = pressed
       if (code === 'KeyS' || code === 'ArrowDown') keysRef.current.down = pressed
@@ -205,9 +238,16 @@ export default function NoiseTerrain({
     const onKeyDown = (event) => {
       if (isTypingTarget(event.target)) return
       if (
-        ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(
-          event.code
-        )
+        [
+          'KeyW',
+          'KeyA',
+          'KeyS',
+          'KeyD',
+          'ArrowUp',
+          'ArrowDown',
+          'ArrowLeft',
+          'ArrowRight',
+        ].includes(event.code)
       ) {
         event.preventDefault()
         setKey(event.code, true)
@@ -249,7 +289,6 @@ export default function NoiseTerrain({
         if (keys.right) offsetRef.current.x += SCROLL_SPEED * delta
         dirty = true
       } else if (wasMoving) {
-        // Flush the final position once movement stops.
         reportOffset()
       }
       wasMoving = moving
@@ -259,7 +298,9 @@ export default function NoiseTerrain({
           geometryRef.current,
           layersRef.current,
           waterLevelRef.current,
-          offsetRef.current
+          offsetRef.current,
+          shapingRef.current,
+          simulationTimeRef.current
         )
         dirty = false
 
@@ -293,19 +334,43 @@ export default function NoiseTerrain({
       window.removeEventListener('blur', onBlur)
       controls.dispose()
       mount.removeChild(renderer.domElement)
-      geometry.dispose()
+      geometryRef.current?.dispose()
       surfaceMaterial.dispose()
       wireMaterial.dispose()
-      waterGeometry.dispose()
-      waterMaterial.dispose()
       renderer.dispose()
       geometryRef.current = null
-      waterMeshRef.current = null
+      surfaceRef.current = null
+      wireframeRef.current = null
       heightCacheRef.current = null
     }
+    // gridSegments is applied through a dedicated effect after mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Rebuild when layers change (keep current scroll position).
+  // Recreate the mesh when grid resolution changes.
+  useEffect(() => {
+    const surface = surfaceRef.current
+    const wireframe = wireframeRef.current
+    if (!surface || !wireframe) return
+
+    const previous = geometryRef.current
+    const geometry = createGridGeometry(gridSegments)
+    surface.geometry = geometry
+    wireframe.geometry = geometry
+    geometryRef.current = geometry
+    previous?.dispose()
+
+    heightCacheRef.current = rebuildTerrain(
+      geometry,
+      layersRef.current,
+      waterLevelRef.current,
+      offsetRef.current,
+      shapingRef.current,
+      simulationTimeRef.current
+    )
+  }, [gridSegments])
+
+  // Rebuild heights when layers, shaping, or simulation time change.
   useEffect(() => {
     const geometry = geometryRef.current
     if (!geometry) return
@@ -313,39 +378,18 @@ export default function NoiseTerrain({
       geometry,
       layers,
       waterLevelRef.current,
-      offsetRef.current
+      offsetRef.current,
+      shaping,
+      simulationTime
     )
-  }, [layers])
-
-  // Recolor + move water plane when flood level changes.
-  useEffect(() => {
-    const geometry = geometryRef.current
-    const heights = heightCacheRef.current
-    const water = waterMeshRef.current
-    if (!geometry || !heights) return
-
-    const colors = geometry.attributes.color
-    const palette = createTerrainPalette(layers)
-
-    for (let index = 0; index < heights.length; index += 1) {
-      const hex = colorForElevation(heights[index], palette, waterLevel)
-      const rgb = hexToRgb(hex)
-      colors.setXYZ(index, rgb.r, rgb.g, rgb.b)
-    }
-
-    colors.needsUpdate = true
-
-    if (water) {
-      water.position.y = (waterLevel * 2 - 1) * HEIGHT_MULTIPLIER
-    }
-  }, [layers, waterLevel])
+  }, [layers, shaping, simulationTime, waterLevel])
 
   return (
     <div
       className="terrain-scene"
       ref={mountRef}
       tabIndex={0}
-      aria-label="Infinite map. Use WASD or arrow keys to scroll."
+      aria-label="Infinite map. Use WASD or arrow keys to scroll. Press F to toggle wireframe."
     />
   )
 }
