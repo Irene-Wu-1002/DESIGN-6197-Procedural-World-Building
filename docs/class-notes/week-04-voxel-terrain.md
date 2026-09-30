@@ -571,6 +571,12 @@ Voxels and Marching Cubes both call `sampleDensity()`. As a result, changing a d
 
 Useful next steps would be true per-chunk dirty flags, camera-based streaming, frustum culling, seamless chunk-border meshing, worker-thread generation, and implementation of Surface Nets or Dual Contouring.
 
+## Why I Built This
+
+- **Height maps cannot make hollow trees.** Week 2's terrain stores one height per point, so it cannot represent caves, overhangs, or a hollow trunk. A 3D density field can, which the Giant Tree City needs for roots that arch, portals, and interiors.
+- **CSG is how the city is carved.** Adding and subtracting shapes in order is the same method the Project tab uses to blend roots and branches into the trunk and to cut the portals.
+- **Chunking and meshing make it scale.** Three 60–75 m trees are far larger than this planet. The chunking and Marching Cubes studied here became the Project tab's chunked mesher. Two of the next steps above were built there: seamless chunk borders and worker-thread generation. See [Project Progress 01](project-01-giant-trees.md).
+
 ## Key Takeaways
 
 - A density field separates the world definition from its visual representation.
