@@ -19,15 +19,20 @@ This repository is both a working prototype and a study notebook. It records the
 
 ## Current Prototype
 
-The web prototype currently contains three study areas:
+The web prototype contains weekly study areas plus a project tab:
 
 1. **Week 1 — Three.js exploration:** scene setup, geometry, lighting, materials, orbit controls, and a fading grid.
 2. **Week 2 — Infinite noise map:** deterministic noise, terrain layers, map controls, and height-based materials.
 3. **Week 3 / Class 04 — Voxel terrain:** 3D density fields, cubic voxels, sequential CSG, chunking, Marching Cubes, and performance comparisons.
+4. **Project — Giant Tree City:** three seeded giant trees from root to canopy, with portals cut through each trunk; chunked Marching Cubes generated in a Web Worker.
 
 ![Cubic voxel planet in the Week 3 prototype](docs/assets/screenshots/week-04-voxel-planet-cubic.png)
 
 Read the full study note: [`docs/class-notes/week-04-voxel-terrain.md`](docs/class-notes/week-04-voxel-terrain.md).
+
+![Three giant trees in the Project tab](docs/assets/screenshots/project-giant-trees.png)
+
+Project progress note: [`docs/class-notes/project-01-giant-trees.md`](docs/class-notes/project-01-giant-trees.md).
 
 ## Project Direction
 

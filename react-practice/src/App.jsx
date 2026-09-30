@@ -4,6 +4,7 @@ import Week1Scene from './components/Week1Scene'
 import Week2Scene from './components/Week2Scene'
 import Week3Scene from './components/Week3Scene'
 import Week4Scene from './components/Week4Scene'
+import ProjectScene from './components/ProjectScene'
 import './App.css'
 
 const WEEKS = [
@@ -11,6 +12,7 @@ const WEEKS = [
   { id: 2, title: 'Infinite Noise Map' },
   { id: 3, title: 'Voxel Terrain' },
   { id: 4, title: 'Shape exploring' },
+  { id: 'project', label: 'Project', title: 'Giant Tree City' },
 ]
 
 export default function App() {
@@ -34,6 +36,7 @@ export default function App() {
       {activeWeek === 2 && <Week2Scene />}
       {activeWeek === 3 && <Week3Scene />}
       {activeWeek === 4 && <Week4Scene />}
+      {activeWeek === 'project' && <ProjectScene />}
 
       <header className="titlebar">
         <h1>{active.title}</h1>
@@ -50,7 +53,7 @@ export default function App() {
             className={activeWeek === week.id ? 'active' : ''}
             onClick={() => setActiveWeek(week.id)}
           >
-            <span className="week-tabs-label">Week {week.id}</span>
+            <span className="week-tabs-label">{week.label ?? `Week ${week.id}`}</span>
             <span className="week-tabs-title">{week.title}</span>
           </button>
         ))}
