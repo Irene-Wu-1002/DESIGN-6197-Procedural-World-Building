@@ -4,6 +4,10 @@
 
 ## Concept
 
+![World concept slide: reference images of a city inside giant hollow trees and a forest village, with the concept, motivation, and planned techniques](../assets/screenshots/project-world-concept.png)
+
+*World concept slide. The two reference images are third-party mood-board images used for inspiration, not my own work.*
+
 A City Built Inside Giant Trees  
 Several impossibly large trees contain an entire world. Different parts of the trees become different urban layers: roots form underground cities, trunks contain dense industrial districts, branches support villages, and the canopy reaches into a completely different climate.
 
