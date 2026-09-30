@@ -1,16 +1,56 @@
-# React + Vite
+# Procedural World Building Web Prototype
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+[← Main study notebook](../README.md)
 
-Currently, two official plugins are available:
+An interactive React, Vite, and Three.js prototype for studying procedural world-building systems.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+![Cubic voxel planet](../docs/assets/screenshots/week-04-voxel-planet-cubic.png)
 
-## React Compiler
+## Prototype Areas
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Tab | Topics |
+| --- | --- |
+| Week 1 — Three.js Exploring | Scene setup, primitive geometry, lighting, materials, OrbitControls, fading grid |
+| Week 2 — Infinite Noise Map | Seeded noise, layered terrain, map controls, terrain materials |
+| Week 3 — Voxel Terrain | Density fields, cubic voxels, sequential CSG, chunking, Marching Cubes, optimization |
 
-## Expanding the ESLint configuration
+## Setup
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+Fill `.env.local` with the Firebase web-app configuration described in the [Firebase setup tutorial](../docs/tutorials/Firebase%20setup.md). The file is ignored by Git.
+
+## Available Commands
+
+```bash
+npm run dev      # start the local development server
+npm run lint     # check the JavaScript and JSX
+npm run build    # create a production build
+npm run preview  # preview the production build locally
+```
+
+## Source Structure
+
+```text
+src/
+├── components/       # Week scenes, controls, and previews
+├── lib/firebase.js   # Firebase and Firestore initialization only
+├── utils/            # Noise, density, terrain, and material utilities
+├── App.jsx           # Week-tab navigation
+├── App.css           # Application and control-panel layout
+└── main.jsx          # React entry point
+```
+
+## Firebase Boundary
+
+Firebase is connected, but Save World and Load World are not implemented yet. Future persistence will store only seeds, density parameters, ordered CSG operations, chunking settings, meshing settings, and optional experiment summaries. Generated voxel arrays and meshes must remain local.
+
+## Related Notes
+
+- [Class 04 voxel terrain study](../docs/class-notes/week-04-voxel-terrain.md)
+- [Project design](../docs/planning/project-design.md)
+- [Feature backlog](../docs/planning/backlog.md)

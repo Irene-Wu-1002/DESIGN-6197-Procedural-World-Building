@@ -1,5 +1,7 @@
 # Class 04: Voxel Terrain
 
+[← Class-notes index](README.md) · [← Main README](../../README.md)
+
 ## Class Objectives and Criteria
 
 The class asked us to:
@@ -16,6 +18,16 @@ The class asked us to:
 
 We created a dedicated **Week 3: Voxel Terrain** tab in the React and Three.js prototype. `Week3Scene.jsx` contains its own 3D scene, density-field generator, voxel renderer, CSG system, chunking system, Marching Cubes mesh generator, optimization experiments, and control panel.
 
+### Debugging the voxel proportions
+
+At first, increasing the horizontal resolution to `100 × 100` made each voxel narrow in X and Z while its Y scale stayed at one world unit. The sphere was therefore assembled from tall rectangular prisms instead of cubes.
+
+![Planet built from tall rectangular voxels before the Y-resolution fix](../assets/screenshots/week-04-voxel-planet-before-y-fix.png)
+
+The fix uses one shared voxel step for X, Y, and Z. The vertical sample count is derived from that step, and distant-resolution voxels are coarsened on all three axes. The resulting planet is assembled from cubic voxels.
+
+![Planet rebuilt from cubic voxels](../assets/screenshots/week-04-voxel-planet-cubic.png)
+
 The terrain begins as a scalar density field:
 
 - Positive density means **solid**.
@@ -23,10 +35,11 @@ The terrain begins as a scalar density field:
 - The voxel renderer places a cube wherever density is positive.
 - Marching Cubes samples the same field and extracts a smooth triangle surface at the selected isovalue.
 
-The prototype uses these fixed world dimensions:
+The prototype uses these world dimensions:
 
 - Horizontal world extent: `17 × 17` units.
-- Vertical samples: `13`, from `y = 0` through `y = 12`.
+- Vertical world extent: approximately `12` units, beginning at `y = 0`.
+- X, Y, and Z use the same voxel spacing; at horizontal resolution `100`, the field is approximately `100 × 70 × 100` samples.
 - OrbitControls allow the user to rotate, pan, and zoom around the terrain.
 
 The control panel is organized into five collapsible sections:
@@ -109,10 +122,10 @@ Uses a sine function through the vertical axis to generate repeated layers. 3D n
 
 **Voxel resolution**
 
-- Controls the number of horizontal samples.
-- Range: `10–24`, in steps of `2`.
+- Controls the number of horizontal samples and indirectly determines the vertical sample count.
+- Range: `10–100`, in steps of `2`.
 - Higher resolution creates smaller voxels and more detail while preserving the same physical world size.
-- Increasing it also increases voxel generation and rendering cost.
+- Increasing it also increases X, Y, and Z sampling, so generation and rendering cost rise quickly.
 
 **Show voxel grid**
 
@@ -551,10 +564,10 @@ Voxels and Marching Cubes both call `sampleDensity()`. As a result, changing a d
 - Distant LOD combines render instances but does not reduce density sampling.
 - Surface Nets and Dual Contouring are documented but not implemented.
 - CSG uses signed-density blending rather than exact boolean operations on polygon meshes.
-- Vertical resolution remains fixed at `13`.
+- High horizontal resolution now increases the vertical resolution too, which preserves cubic voxels but raises the total sample count.
 - Marching Cubes uses a separate cubic sample grid and can become expensive at high resolution.
 - The Marching Cubes polygon buffer is capped at `100,000` polygons.
-- The generated world and parameters are not yet saved between sessions.
+- Firebase is connected, but the generated world parameters are not yet saved between sessions.
 
 Useful next steps would be true per-chunk dirty flags, camera-based streaming, frustum culling, seamless chunk-border meshing, worker-thread generation, and implementation of Surface Nets or Dual Contouring.
 

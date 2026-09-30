@@ -1,5 +1,7 @@
 # Tutorials
 
+[← Documentation index](../README.md)
+
 Step-by-step guides I write while learning a tool or technique. Writing the process down
 is how I confirm I actually understand it, and it means I can rebuild a setup months later
 without re-deriving it.
@@ -8,6 +10,8 @@ without re-deriving it.
 
 - [`react-setup.md`](react-setup.md) — installing React with Vite, written for someone new
   to both React and the command line.
+- [`Firebase setup.md`](Firebase%20setup.md) — connecting the Vite prototype to Firebase
+  and Firestore without storing generated voxel data.
 
 ## What goes here
 

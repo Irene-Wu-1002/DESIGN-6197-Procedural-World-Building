@@ -1,13 +1,38 @@
-# Documentation
+# Documentation Index
 
-All written work for the course lives here, split into three folders.
+[← Main repository README](../README.md)
 
-- [`planning/`](planning/) — where work is decided: project plans, milestones, and the
-  [feature backlog](planning/backlog.md).
-- [`tutorials/`](tutorials/) — where technique is recorded: reproducible, step-by-step
-  guides written as I learn each tool.
-- [`analysis/`](analysis/) — where work is evaluated: breakdowns of existing procedural
-  systems and post-mortems on my own builds.
+The `docs/` folder is the study notebook for this course. It separates observations, plans, reproducible instructions, critical evaluation, and visual evidence while keeping them connected through indexes.
 
-Roughly, an idea starts in `planning/`, the technique needed to build it is written up in
-`tutorials/`, and the finished result is evaluated in `analysis/`.
+## Sections
+
+| Section | Contents |
+| --- | --- |
+| [`class-notes/`](class-notes/) | Weekly notes, assignment criteria, prototype explanations, and takeaways |
+| [`planning/`](planning/) | Project concept, milestones, technical plans, and prioritized backlog |
+| [`tutorials/`](tutorials/) | Step-by-step guides that can reproduce a setup or technique |
+| [`analysis/`](analysis/) | Case studies, comparisons, measured results, and post-mortems |
+| [`assets/`](assets/) | Screenshots and other visual evidence used by the documentation |
+
+## Documentation Workflow
+
+```text
+class observation
+      ↓
+planning decision
+      ↓
+reproducible tutorial
+      ↓
+prototype implementation
+      ↓
+analysis and next steps
+```
+
+An idea may start in the [weekly notes](class-notes/weekly-notes.md), become a scoped item in the [feature backlog](planning/backlog.md), generate a tutorial while it is being learned, and end with a documented evaluation.
+
+## Current Highlights
+
+- [Voxel terrain study and criteria evaluation](class-notes/week-04-voxel-terrain.md)
+- [Giant-tree world concept](planning/project-design.md)
+- [React setup tutorial](tutorials/react-setup.md)
+- [Firebase connection tutorial](tutorials/Firebase%20setup.md)

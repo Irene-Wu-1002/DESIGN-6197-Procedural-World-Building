@@ -1,9 +1,12 @@
 # Planning
 
+[← Documentation index](../README.md)
+
 Project direction, scope, and scheduling.
 
 ## Contents
 
+- [`project-design.md`](project-design.md) — core world concept, motivation, and candidate procedural techniques.
 - [`backlog.md`](backlog.md) — running list of features I want to implement, ordered by
   priority.
 

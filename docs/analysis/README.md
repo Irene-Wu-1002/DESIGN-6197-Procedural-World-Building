@@ -1,5 +1,7 @@
 # Analysis
 
+[← Documentation index](../README.md)
+
 Critical writing about procedural systems — both other people's and my own.
 
 ## Contents

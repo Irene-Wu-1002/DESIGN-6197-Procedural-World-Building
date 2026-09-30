@@ -1,3 +1,7 @@
+# Project Design — A City Built Inside Giant Trees
+
+[← Planning index](README.md) · [← Main README](../../README.md)
+
 ## Concept
 
 A City Built Inside Giant Trees  
@@ -16,4 +20,3 @@ I wanted to build a world that feels both natural and architectural. A giant tre
 - Meshing: convert voxel structures into smoother 3D surfaces.
 - Different resolutions: use larger voxels for the overall tree structure and finer detail for villages or interiors.
 - Shaders / atmosphere: create fog, rain, light, moisture, and different climates at different heights.
-
