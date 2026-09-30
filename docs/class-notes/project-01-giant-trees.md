@@ -6,7 +6,7 @@
 
 First playable milestone for the semester project, **A City Built Inside Giant Trees**:
 
-- Generate a world with **three giant trees**.
+- Generate a world with **three giant trees**. *(Update: the user can now choose 1–8; see [Tree count](#tree-count).)*
 - Each tree must be complete **from root to top**: roots, trunk, branches, canopy.
 - Leave **several holes inside each tree** as the first habitable spaces.
 
@@ -16,11 +16,29 @@ The result lives in the **Project** tab of the web prototype (`ProjectScene.jsx`
 
 ## How the World Is Built
 
-The pipeline reuses the Week 3 voxel ideas (density field, CSG, chunking, Marching Cubes) and scales them up from one small planet to three 60–75 m trees.
+The pipeline reuses the Week 3 voxel ideas (density field, CSG, chunking, Marching Cubes) and scales them up from one small planet to a forest of 60–75 m trees.
 
 ### 1. Tree blueprint (seeded)
 
-`createWorldBlueprint()` in [`utils/giantTrees.js`](../../react-practice/src/utils/giantTrees.js) turns the parameters and one **world seed** into a list of signed-distance primitives per tree. Each tree gets its own seed, so the three trees differ but the same seed always rebuilds the same world.
+`createWorldBlueprint()` in [`utils/giantTrees.js`](../../react-practice/src/utils/giantTrees.js) turns the parameters and one **world seed** into a list of signed-distance primitives per tree. Each tree gets its own seed, so the trees differ but the same seed always rebuilds the same world.
+
+#### Tree count
+
+The **Trees** slider (World section) sets how many trees grow, from 1 to 8 (default 3).
+
+| Trees | Layout |
+| --- | --- |
+| 1 | One tree in the centre |
+| 2–5 | A ring. It widens as trees are added so neighbouring trunks keep the same gap (about 1.07 × tree height) as the original three-tree layout |
+| 6–8 | A centre tree inside a ring of the others, so the group reads as a forest instead of a hollow circle |
+
+- **Same default world.** With 3 trees, every seed produces exactly the same world as before the slider existed.
+- **No crowding.** Random wobble in each tree's angle shrinks on bigger rings. Across 20 seeds, the closest two trunks are always at least about 51 m apart, whatever the count.
+- **The view follows the forest.** When the count changes, the camera moves in or out to frame all the trees. The shadow area and fog distance scale with the forest too. A new seed or other slider never moves the camera.
+
+![Eight giant trees: a ring with a centre tree](../assets/screenshots/project-giant-trees-8.png)
+
+*Eight trees, captured while the canopies were still streaming in from the bottom up.*
 
 | Layer    | Primitive                                   | Procedural choices                                                                                 |
 | -------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -75,6 +93,18 @@ Checked with a script over 30 seeds and the slider extremes: every trunk cross-s
 | Low | 1.6 m | 0.95 M | 37 k | ~0.35 s |
 | Medium | 1.1 m | 2.35 M | 80 k | ~0.7 s |
 | High | 0.8 m | 4.98 M | 151 k | ~1.3 s |
+
+That table is for the default 3 trees. Cost grows roughly in proportion to the tree count:
+
+| Trees | Resolution | Density samples | Triangles | Generation time |
+| --- | --- | --- | --- | --- |
+| 1 | Medium | 0.91 M | 22 k | ~0.23 s |
+| 5 | Medium | 3.75 M | 133 k | ~1.1 s |
+| 8 | Low | 2.26 M | 97 k | ~0.9 s |
+| 8 | Medium | 5.91 M | 210 k | ~1.8 s |
+| 8 | High | 12.27 M | 399 k | ~3.3 s |
+
+For big forests on slower laptops, Low resolution keeps generation under a second.
 
 Roughly half of the sampled chunks contain no surface, because they are either empty air or buried inside wood. Surface-aware chunk activation is a good next optimization.
 
