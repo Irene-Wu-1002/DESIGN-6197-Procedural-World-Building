@@ -14,6 +14,152 @@
   display: block;
 }
 
+.shape-canvas-workspace {
+  position: absolute;
+  inset: 0;
+}
+
+.shape-canvas-workspace canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.week4-shader-panel {
+  gap: 18px;
+}
+
+.shader-study-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.shader-study-kicker {
+  color: var(--accent);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.shader-study-summary strong {
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.shader-study-summary p,
+.shader-study-why p,
+.shader-control-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.shader-study-meta {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.shader-study-meta div {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 8px;
+}
+
+.shader-study-meta dt {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.shader-study-meta dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.shader-study-controls {
+  gap: 16px;
+}
+
+.shader-toggle,
+.shader-color-control {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.shader-toggle input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+
+.shader-color-control input[type='color'] {
+  width: 46px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: #181c23;
+  cursor: pointer;
+}
+
+.height-gradient-zones {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  height: 9px;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+}
+
+.height-gradient-zones span:nth-child(1) {
+  background: #1f1209;
+}
+
+.height-gradient-zones span:nth-child(2) {
+  background: #334d1f;
+}
+
+.height-gradient-zones span:nth-child(3) {
+  background: #b35c24;
+}
+
+.height-gradient-zones span:nth-child(4) {
+  background: #4d853b;
+}
+
+.height-gradient-zones span:nth-child(5) {
+  background: #abd6d1;
+}
+
+.slope-gradient-zones {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  height: 9px;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+}
+
+.slope-gradient-zones span:nth-child(1) {
+  background: #386d2e;
+}
+
+.slope-gradient-zones span:nth-child(2) {
+  background: #704522;
+}
+
+.slope-gradient-zones span:nth-child(3) {
+  background: #646968;
+}
+
 .titlebar {
   position: absolute;
   top: 0;
@@ -49,6 +195,8 @@
   background: var(--panel-bg);
   backdrop-filter: blur(14px);
   transform: translateX(-50%);
+  max-width: calc(100vw - 40px);
+  overflow-x: auto;
 }
 
 .week-tabs button {

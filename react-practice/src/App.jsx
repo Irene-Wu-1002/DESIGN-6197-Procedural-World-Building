@@ -3,12 +3,14 @@ import SidePanel from './components/SidePanel'
 import Week1Scene from './components/Week1Scene'
 import Week2Scene from './components/Week2Scene'
 import Week3Scene from './components/Week3Scene'
+import Week4Scene from './components/Week4Scene'
 import './App.css'
 
 const WEEKS = [
   { id: 1, title: 'Three.js exploring' },
   { id: 2, title: 'Infinite Noise Map' },
   { id: 3, title: 'Voxel Terrain' },
+  { id: 4, title: 'Shape exploring' },
 ]
 
 export default function App() {
@@ -31,6 +33,7 @@ export default function App() {
       {activeWeek === 1 && <Week1Scene settings={settings} />}
       {activeWeek === 2 && <Week2Scene />}
       {activeWeek === 3 && <Week3Scene />}
+      {activeWeek === 4 && <Week4Scene />}
 
       <header className="titlebar">
         <h1>{active.title}</h1>
