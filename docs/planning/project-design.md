@@ -46,6 +46,9 @@ The **Project** tab in the web prototype is the first working version of this co
 | **Meshing** | Marching Cubes turns the density field into a smooth triangle surface. Round portals need this; blocky voxels would lose their shape. |
 | **Chunking + multi-resolution** | The world is split into 16³-cell chunks. Chunks no shape can reach are skipped, and each chunk evaluates only nearby shapes. Low / Medium / High presets change the cell size (1.6 / 1.1 / 0.8 m). |
 | **Shaders & fog** | Vertex colours separate damp roots, bark, moss, leaves, and warm heartwood inside the holes. A height-fog shader patch makes the ground misty and the canopy clear, so each layer reads as its own climate. |
+| **Weather** | Sunny / Cloudy / Rain presets and a time-of-day sun. A shader sky dome, drifting cloud puffs, and 40,000 GPU raindrops. Rain wets the bark, and the cloud base drops so the treetops reach into the clouds while the roots sit in mist. See [Weather](../class-notes/project-01-giant-trees.md#weather). |
+
+![Rain over the giant trees](../assets/screenshots/project-weather-rain.png)
 
 ### System structure
 
@@ -68,6 +71,12 @@ giantTreeWorker.js  (Web Worker, off the main thread)
   │  streams finished chunks back in batches
   ▼
 ProjectScene.jsx  → one mesh per chunk, shadows, height fog, growth clip
+
+Every frame, in the render loop (no regeneration):
+  weatherState.js  target weather → eased live weather → sun, sky, fog, wetness
+  sky.js           sky dome + sun glow
+  clouds.js        drifting, depth-sorted cloud puffs
+  rain.js          GPU-animated raindrops around the camera
 ```
 
 - **UI layer:** `ProjectScene.jsx` owns the scene, camera, lights, ground, fog, and control panel. Changing a shape parameter restarts the worker; view settings such as colouring, fog, wireframe, chunk bounds, and growth update instantly without regenerating.

@@ -41,6 +41,18 @@
   transition: width 120ms linear;
 }
 
+.weather-presets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.weather-presets .weather-active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 @media (max-width: 900px) {
   .project-progress {
     transform: translateX(-50%);

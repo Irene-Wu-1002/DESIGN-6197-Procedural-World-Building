@@ -9,6 +9,20 @@ import {
   RESOLUTION_PRESETS,
   createDefaultTreeParams,
 } from '../utils/giantTrees'
+import { createClouds } from '../weather/clouds'
+import { createRain, MAX_DROPS } from '../weather/rain'
+import { createSky } from '../weather/sky'
+import {
+  CYCLE_ORDER,
+  CYCLE_SECONDS,
+  WEATHER_PRESETS,
+  computeAtmosphere,
+  createAtmosphere,
+  createLiveWeather,
+  createWeatherSettings,
+  pickPreset,
+  stepLiveWeather,
+} from '../weather/weatherState'
 import './ProjectScene.css'
 
 // Semester project progress: 1–8 giant trees, roots to canopy, with round
@@ -49,6 +63,11 @@ function frameWorld(api, trees, moveCamera) {
   shadowCamera.far = Math.hypot(...SUN_POSITION) + half + 60
   shadowCamera.updateProjectionMatrix()
 
+  // Clouds cover a field wider than the forest; rain falls from the cloud base.
+  const tallest = Math.max(...trees.map((tree) => tree.height))
+  api.weather.clouds.setLayout(Math.max(300, reach * 2.6), tallest)
+  api.weather.rain.setLayout(tallest)
+
   if (moveCamera) {
     const direction = api.camera.position.clone().sub(api.controls.target).normalize()
     api.camera.position.copy(api.controls.target).addScaledVector(direction, distance)
@@ -67,6 +86,7 @@ function createViewSettings() {
 
 // Adds low-lying mist to a standard material: fog is thick near the ground
 // and thins with height, so each tree layer reads as a different climate.
+// Rain wetness also darkens the surface and makes it glossier.
 function applyHeightFog(material, uniforms) {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms)
@@ -82,7 +102,16 @@ function applyHeightFog(material, uniforms) {
         `#include <common>
 varying vec3 vFogWorldPosition;
 uniform float uHeightFogDensity;
-uniform float uHeightFogFalloff;`
+uniform float uHeightFogFalloff;
+uniform float uWetness;`
+      )
+      .replace(
+        '#include <color_fragment>',
+        '#include <color_fragment>\ndiffuseColor.rgb *= 1.0 - 0.32 * uWetness;'
+      )
+      .replace(
+        '#include <roughnessmap_fragment>',
+        '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.32, uWetness);'
       )
       .replace(
         '#include <fog_fragment>',
@@ -127,9 +156,14 @@ export default function ProjectScene() {
   const workerRef = useRef(null)
   const viewRef = useRef(createViewSettings())
   const growRef = useRef({ value: 1, animationStart: null })
+  // Target weather from the panel; the render loop eases toward it.
+  const weatherRef = useRef(createWeatherSettings())
+  // Auto-cycle clock; index -1 means "apply the first preset next frame".
+  const cycleRef = useRef({ elapsed: 0, index: -1 })
 
   const [params, setParams] = useState(createDefaultTreeParams)
   const [view, setView] = useState(createViewSettings)
+  const [weather, setWeather] = useState(createWeatherSettings)
   const [growth, setGrowth] = useState(1)
   const [regenerateVersion, setRegenerateVersion] = useState(0)
   const [progress, setProgress] = useState({ completed: 0, total: 0, running: false })
@@ -169,7 +203,8 @@ export default function ProjectScene() {
     controls.maxDistance = 520
     controls.maxPolarAngle = Math.PI * 0.495
 
-    scene.add(new THREE.HemisphereLight('#e4f0ff', '#3b3322', 1.6))
+    const skyLight = new THREE.HemisphereLight('#e4f0ff', '#3b3322', 1.6)
+    scene.add(skyLight)
     const sunlight = new THREE.DirectionalLight('#fff1d6', 3)
     sunlight.position.set(...SUN_POSITION)
     sunlight.castShadow = true
@@ -187,7 +222,16 @@ export default function ProjectScene() {
     const fogUniforms = {
       uHeightFogDensity: { value: 0.55 },
       uHeightFogFalloff: { value: 16 },
+      uWetness: { value: 0 },
     }
+
+    const sky = createSky()
+    const clouds = createClouds()
+    const rain = createRain()
+    scene.add(sky.object, clouds.object, rain.object)
+    const liveWeather = createLiveWeather(weatherRef.current)
+    const atmosphere = createAtmosphere()
+    const cycle = cycleRef.current
 
     const growthPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1000)
     const treeMaterial = new THREE.MeshStandardMaterial({
@@ -222,6 +266,7 @@ export default function ProjectScene() {
       camera,
       controls,
       sunlight,
+      weather: { sky, clouds, rain },
       fogNear: FOG_NEAR,
       fogFar: FOG_FAR,
       framedTreeCount: createDefaultTreeParams().treeCount,
@@ -234,8 +279,50 @@ export default function ProjectScene() {
       topY: 90,
     }
 
+    const applyWeather = (dt) => {
+      const target = weatherRef.current
+      if (target.autoCycle) {
+        cycle.elapsed += dt
+        const index = Math.floor(cycle.elapsed / CYCLE_SECONDS) % CYCLE_ORDER.length
+        if (index !== cycle.index) {
+          cycle.index = index
+          const preset = CYCLE_ORDER[index]
+          Object.assign(target, { preset, ...pickPreset(preset) })
+          setWeather({ ...target })
+        }
+      }
+
+      stepLiveWeather(liveWeather, target, dt)
+      computeAtmosphere(liveWeather, atmosphere)
+
+      sunlight.position.copy(atmosphere.sunPosition)
+      sunlight.color.copy(atmosphere.sunColor)
+      sunlight.intensity = atmosphere.sunIntensity
+      skyLight.color.copy(atmosphere.hemiSky)
+      skyLight.groundColor.copy(atmosphere.hemiGround)
+      skyLight.intensity = atmosphere.hemiIntensity
+
+      scene.background.copy(atmosphere.fogColor)
+      scene.fog.color.copy(atmosphere.fogColor)
+      const view = viewRef.current
+      const api = sceneApiRef.current
+      scene.fog.near = view.heightFog ? api.fogNear * atmosphere.fogScale : 5000
+      scene.fog.far = view.heightFog ? api.fogFar * atmosphere.fogScale : 6000
+      fogUniforms.uHeightFogDensity.value = view.heightFog
+        ? Math.min(1, view.fogDensity + atmosphere.heightFogBoost)
+        : 0
+      fogUniforms.uWetness.value = atmosphere.wetness
+
+      sky.update(atmosphere, camera)
+      clouds.update(liveWeather, atmosphere, camera, dt)
+      rain.update(liveWeather, atmosphere, camera, dt)
+    }
+
     let frameId
+    let lastTime = null
     const animate = (time) => {
+      const dt = lastTime === null ? 0 : Math.min((time - lastTime) / 1000, 0.1)
+      lastTime = time
       const grow = growRef.current
       if (grow.animationStart !== null) {
         if (grow.animationStart === undefined) grow.animationStart = time
@@ -249,6 +336,8 @@ export default function ProjectScene() {
         grow.value >= 1 ? 1000 : GROUND_CLIP + grow.value * (api.topY - GROUND_CLIP)
 
       controls.update()
+      camera.updateMatrixWorld()
+      applyWeather(dt)
       renderer.render(scene, camera)
       frameId = requestAnimationFrame(animate)
     }
@@ -275,6 +364,9 @@ export default function ProjectScene() {
         box.geometry.dispose()
       })
       chunkMeshesRef.current = []
+      sky.dispose()
+      clouds.dispose()
+      rain.dispose()
       ground.geometry.dispose()
       groundMaterial.dispose()
       treeMaterial.dispose()
@@ -323,10 +415,6 @@ export default function ProjectScene() {
           const countChanged = message.trees.length !== api.framedTreeCount
           frameWorld(api, message.trees, countChanged)
           api.framedTreeCount = message.trees.length
-          if (viewRef.current.heightFog) {
-            api.scene.fog.near = api.fogNear
-            api.scene.fog.far = api.fogFar
-          }
           return
         }
 
@@ -385,9 +473,7 @@ export default function ProjectScene() {
     const api = sceneApiRef.current
     if (!api) return
 
-    api.fogUniforms.uHeightFogDensity.value = view.heightFog ? view.fogDensity : 0
-    api.scene.fog.near = view.heightFog ? api.fogNear : 5000
-    api.scene.fog.far = view.heightFog ? api.fogFar : 6000
+    // Fog distance and density are applied every frame with the weather.
     api.treeMaterial.wireframe = view.wireframe
     api.boundsGroup.visible = view.showChunks
 
@@ -416,12 +502,35 @@ export default function ProjectScene() {
     growRef.current.animationStart = undefined
   }
 
+  // The render loop reads weatherRef every frame; state mirrors it for the UI.
+  const updateWeather = (changes) => {
+    const next = { ...weatherRef.current, ...changes }
+    weatherRef.current = next
+    setWeather(next)
+  }
+  const choosePreset = (name) =>
+    updateWeather({ preset: name, ...pickPreset(name), autoCycle: false })
+  // Editing cover, rain, or wind by hand leaves the presets ("Custom").
+  const setWeatherAmount = (key, value) =>
+    updateWeather({ [key]: value, preset: 'custom', autoCycle: false })
+  const setAutoCycle = (enabled) => {
+    cycleRef.current.elapsed = 0
+    cycleRef.current.index = -1
+    updateWeather({ autoCycle: enabled })
+  }
+
   const randomizeSeed = () => setParam('seed', Math.floor(Math.random() * 10000))
   const resetAll = () => {
     setParams(createDefaultTreeParams())
     setView(createViewSettings())
+    updateWeather(createWeatherSettings())
     setGrowthManually(1)
   }
+
+  const clockTime = (() => {
+    const minutes = Math.round((6 + weather.timeOfDay * 12) * 60)
+    return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+  })()
 
   const progressPercent = progress.total
     ? Math.round((progress.completed / progress.total) * 100)
@@ -520,6 +629,94 @@ export default function ProjectScene() {
           </div>
         </details>
 
+        <details className="control-section" open>
+          <summary>Weather</summary>
+          <div className="control-section-body">
+            <div className="weather-presets" role="group" aria-label="Weather preset">
+              {Object.entries(WEATHER_PRESETS).map(([name, preset]) => (
+                <button
+                  key={name}
+                  type="button"
+                  className={`layer-add ${weather.preset === name ? 'weather-active' : ''}`}
+                  aria-pressed={weather.preset === name}
+                  onClick={() => choosePreset(name)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <label className="control control-inline">
+              <span
+                className="control-label"
+                title={`Loops ${CYCLE_ORDER.map((name) => WEATHER_PRESETS[name].label).join(' → ')}, ${CYCLE_SECONDS} s each`}
+              >
+                Auto cycle
+              </span>
+              <input
+                type="checkbox"
+                checked={weather.autoCycle}
+                onChange={(event) => setAutoCycle(event.target.checked)}
+              />
+            </label>
+            <PanelSlider
+              label="Time of day"
+              tooltip="Moves the sun from sunrise (06:00) through noon to sunset (18:00)"
+              value={weather.timeOfDay}
+              min={0.03}
+              max={0.97}
+              step={0.01}
+              displayValue={clockTime}
+              onChange={(value) => updateWeather({ timeOfDay: value })}
+            />
+            <PanelSlider
+              label="Cloud cover"
+              tooltip="How much of the sky is cloud; heavier cover lowers the cloud base and dims the sun"
+              value={weather.cloudCover}
+              min={0}
+              max={1}
+              step={0.01}
+              displayValue={`${Math.round(weather.cloudCover * 100)}%`}
+              onChange={(value) => setWeatherAmount('cloudCover', value)}
+            />
+            <PanelSlider
+              label="Rain"
+              tooltip="How many raindrops fall; rain also wets the bark and thickens the mist"
+              value={weather.rain}
+              min={0}
+              max={1}
+              step={0.01}
+              displayValue={`${Math.round(weather.rain * 100)}%`}
+              onChange={(value) => setWeatherAmount('rain', value)}
+            />
+            <PanelSlider
+              label="Wind"
+              tooltip="Drifts the clouds and slants the rain"
+              value={weather.wind}
+              min={0}
+              max={1}
+              step={0.01}
+              displayValue={`${Math.round(weather.wind * 100)}%`}
+              onChange={(value) => setWeatherAmount('wind', value)}
+            />
+            <PanelSlider
+              label="Wind direction"
+              value={weather.windDirection}
+              min={0}
+              max={359}
+              step={1}
+              displayValue={`${weather.windDirection}°`}
+              onChange={(value) => updateWeather({ windDirection: value })}
+            />
+            <p className="section-note">
+              {weather.preset === 'custom' ? 'Custom weather' : `${WEATHER_PRESETS[weather.preset].label}`}
+              {' · '}
+              {Math.round(MAX_DROPS * weather.rain).toLocaleString()} raindrops.
+              Weather only changes light and atmosphere, so the trees are
+              never regenerated.
+            </p>
+          </div>
+        </details>
+
         <details className="control-section">
           <summary>Tree Structure</summary>
           <div className="control-section-body">
@@ -609,7 +806,7 @@ export default function ProjectScene() {
           </div>
         </details>
 
-        <details className="control-section" open>
+        <details className="control-section">
           <summary>Holes</summary>
           <div className="control-section-body">
             <PanelSlider
