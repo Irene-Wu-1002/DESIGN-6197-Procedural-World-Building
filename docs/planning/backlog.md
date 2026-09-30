@@ -78,6 +78,7 @@ Built in the **Project** tab of `react-practice/`. See
 [Project Progress 01](../class-notes/project-01-giant-trees.md).
 
 - [x] **Three seeded giant trees** — roots, trunk, branches, and canopy from one density field.
+- [x] **User-chosen tree count** — 1–8 trees; the layout, camera, shadows, and fog adapt.
 - [x] **Portals and hollow core** — round tunnels subtracted from each trunk.
 - [x] **Chunked Marching Cubes in a Web Worker** — seamless chunks, streamed root to top.
 - [x] **Layer colouring and height fog** — roots / trunk / branches / canopy read as separate zones.

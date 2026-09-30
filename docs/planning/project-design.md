@@ -30,7 +30,7 @@ I wanted to build a world that feels both natural and architectural. A giant tre
 
 ## Project Progress Tab — Giant Tree World
 
-The **Project** tab in the web prototype is the first working version of this concept: three giant trees, each complete from root to canopy, with holes carved into every trunk. Full write-up, screenshots, and measurements: [Project Progress 01](../class-notes/project-01-giant-trees.md).
+The **Project** tab in the web prototype is the first working version of this concept: a forest of 1–8 giant trees (the user chooses; default 3), each complete from root to canopy, with holes carved into every trunk. Full write-up, screenshots, and measurements: [Project Progress 01](../class-notes/project-01-giant-trees.md).
 
 ![Three giant trees in the Project tab](../assets/screenshots/project-giant-trees.png)
 
@@ -40,7 +40,7 @@ The **Project** tab in the web prototype is the first working version of this co
 | --- | --- |
 | **Signed distance fields (voxel density)** | Each tree is a set of simple shapes (tapered tubes and squashed spheres). The density at any point is the negative distance to the tree surface: positive means wood, negative means air. |
 | **Procedural generation** | Roots arch out and dive into the ground. The trunk leans and wobbles. Branches curl upward, each with one fork. Foliage pads cluster at branch tips and the crown. |
-| **Seed + deterministic generation** | One world seed gives each tree its own seed, so the three trees differ, but the same seed always rebuilds the same world. |
+| **Seed + deterministic generation** | One world seed gives each tree its own seed, so the trees differ, but the same seed always rebuilds the same world. The **Trees** slider sets how many grow: one stands in the centre, two to five form a ring that widens to keep a constant gap, and six or more add a centre tree inside the ring. |
 | **CSG** | Segments of one root or branch join with a hard minimum. Separate roots and branches are **smooth-unioned** into the trunk, which creates the flared buttresses. **Portals** (round tunnels) and an optional **hollow core** are subtracted last. |
 | **Noise** | 3D value noise adds vertical bark ridges and broad lumps (outward only, so walls never thin). Stronger fBm makes the canopy pads look leafy. |
 | **Meshing** | Marching Cubes turns the density field into a smooth triangle surface. Round portals need this; blocky voxels would lose their shape. |
@@ -55,7 +55,7 @@ ProjectScene.jsx  (React UI + Three.js scene)
   ▼
 giantTreeWorker.js  (Web Worker, off the main thread)
   │
-  ├─ giantTrees.js  createWorldBlueprint()  → 3 trees as primitive lists
+  ├─ giantTrees.js  createWorldBlueprint()  → 1–8 trees as primitive lists
   │                 planChunks()            → chunks near a tree, bottom to top
   │                 sampleRegionDensity()   → density = SDF + CSG + noise
   │                 colorChunkVertices()    → natural + city-layer colours

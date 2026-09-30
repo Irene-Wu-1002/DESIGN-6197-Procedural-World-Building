@@ -5,17 +5,55 @@ import {
   CHUNK_CELLS,
   GROUND_CLIP,
   LAYER_COLORS,
+  MAX_TREES,
   RESOLUTION_PRESETS,
   createDefaultTreeParams,
 } from '../utils/giantTrees'
 import './ProjectScene.css'
 
-// Semester project progress: three giant trees, roots to canopy, with round
+// Semester project progress: 1–8 giant trees, roots to canopy, with round
 // portals cut through each trunk. Geometry comes from a signed density field
 // meshed per chunk with Marching Cubes in a Web Worker (see giantTrees.js).
 
 const FOG_COLOR = '#a7b9ad'
 const GROW_DURATION_MS = 5000
+const CAMERA_START = [150, 42, 132]
+const CAMERA_TARGET = [0, 34, 0]
+const DEFAULT_VIEW_DISTANCE = Math.hypot(
+  CAMERA_START[0] - CAMERA_TARGET[0],
+  CAMERA_START[1] - CAMERA_TARGET[1],
+  CAMERA_START[2] - CAMERA_TARGET[2]
+)
+const MIN_VIEW_DISTANCE = 140
+const FOG_NEAR = 180
+const FOG_FAR = 620
+const SUN_POSITION = [110, 170, 70]
+
+// Fit fog, the shadow area, and (optionally) the camera to the forest, so
+// one tree or eight both fill the view and stay inside the shadow map.
+function frameWorld(api, trees, moveCamera) {
+  const reach = Math.max(
+    ...trees.map((tree) => Math.hypot(tree.base[0], tree.base[2]) + tree.height * 0.45)
+  )
+  const distance = Math.max(MIN_VIEW_DISTANCE, reach * 2.9)
+  const scale = distance / DEFAULT_VIEW_DISTANCE
+  api.fogNear = FOG_NEAR * scale
+  api.fogFar = FOG_FAR * scale
+
+  const half = Math.max(130, reach + 25)
+  const shadowCamera = api.sunlight.shadow.camera
+  shadowCamera.left = -half
+  shadowCamera.right = half
+  shadowCamera.top = half
+  shadowCamera.bottom = -half
+  shadowCamera.far = Math.hypot(...SUN_POSITION) + half + 60
+  shadowCamera.updateProjectionMatrix()
+
+  if (moveCamera) {
+    const direction = api.camera.position.clone().sub(api.controls.target).normalize()
+    api.camera.position.copy(api.controls.target).addScaledVector(direction, distance)
+  }
+}
 
 function createViewSettings() {
   return {
@@ -105,7 +143,7 @@ export default function ProjectScene() {
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(FOG_COLOR)
-    scene.fog = new THREE.Fog(FOG_COLOR, 180, 620)
+    scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR)
 
     const camera = new THREE.PerspectiveCamera(
       45,
@@ -113,7 +151,7 @@ export default function ProjectScene() {
       0.5,
       2000
     )
-    camera.position.set(150, 42, 132)
+    camera.position.set(...CAMERA_START)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -126,14 +164,14 @@ export default function ProjectScene() {
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
     controls.dampingFactor = 0.08
-    controls.target.set(0, 34, 0)
+    controls.target.set(...CAMERA_TARGET)
     controls.minDistance = 12
     controls.maxDistance = 520
     controls.maxPolarAngle = Math.PI * 0.495
 
     scene.add(new THREE.HemisphereLight('#e4f0ff', '#3b3322', 1.6))
     const sunlight = new THREE.DirectionalLight('#fff1d6', 3)
-    sunlight.position.set(110, 170, 70)
+    sunlight.position.set(...SUN_POSITION)
     sunlight.castShadow = true
     sunlight.shadow.mapSize.set(2048, 2048)
     sunlight.shadow.camera.left = -130
@@ -181,6 +219,12 @@ export default function ProjectScene() {
 
     sceneApiRef.current = {
       scene,
+      camera,
+      controls,
+      sunlight,
+      fogNear: FOG_NEAR,
+      fogFar: FOG_FAR,
+      framedTreeCount: createDefaultTreeParams().treeCount,
       treeMaterial,
       boundsMaterial,
       chunkGroup,
@@ -274,6 +318,15 @@ export default function ProjectScene() {
           setTreeInfo(message.trees)
           const tallest = Math.max(...message.trees.map((tree) => tree.height))
           api.topY = tallest * 1.25
+          // Re-aim the camera only when the number of trees changes, so a new
+          // seed or slider tweak never yanks the view the user chose.
+          const countChanged = message.trees.length !== api.framedTreeCount
+          frameWorld(api, message.trees, countChanged)
+          api.framedTreeCount = message.trees.length
+          if (viewRef.current.heightFog) {
+            api.scene.fog.near = api.fogNear
+            api.scene.fog.far = api.fogFar
+          }
           return
         }
 
@@ -333,8 +386,8 @@ export default function ProjectScene() {
     if (!api) return
 
     api.fogUniforms.uHeightFogDensity.value = view.heightFog ? view.fogDensity : 0
-    api.scene.fog.near = view.heightFog ? 180 : 5000
-    api.scene.fog.far = view.heightFog ? 620 : 6000
+    api.scene.fog.near = view.heightFog ? api.fogNear : 5000
+    api.scene.fog.far = view.heightFog ? api.fogFar : 6000
     api.treeMaterial.wireframe = view.wireframe
     api.boundsGroup.visible = view.showChunks
 
@@ -422,6 +475,15 @@ export default function ProjectScene() {
         <details className="control-section" open>
           <summary>World</summary>
           <div className="control-section-body">
+            <PanelSlider
+              label="Trees"
+              tooltip="How many giant trees grow. Six or more add a centre tree inside the ring."
+              value={params.treeCount}
+              min={1}
+              max={MAX_TREES}
+              step={1}
+              onChange={(value) => setParam('treeCount', value)}
+            />
             <PanelSlider
               label="Seed"
               tooltip="One seed rebuilds the exact same three trees"

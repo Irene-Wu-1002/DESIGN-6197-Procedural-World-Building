@@ -28,6 +28,7 @@ export const RESOLUTION_PRESETS = {
 }
 
 export const CHUNK_CELLS = 16
+export const MAX_TREES = 8
 export const GROUND_CLIP = -3
 
 // Hollow-core radius as a fraction of the trunk radius. The remaining wall
@@ -39,6 +40,7 @@ const BARK_LUMPS = 1.2
 export function createDefaultTreeParams() {
   return {
     seed: 2026,
+    treeCount: 3,
     treeHeight: 64,
     trunkRadius: 6,
     rootCount: 7,
@@ -334,21 +336,43 @@ function createTree(index, base, params, worldSeed) {
   }
 }
 
+/**
+ * Where the trees stand. One tree sits in the centre; two to five stand in a
+ * ring; six or more add a centre tree inside the ring so the group reads as
+ * a forest rather than a hollow circle. The ring widens with the count so
+ * neighbouring trunks keep the same gap as the original three-tree layout.
+ */
+function treeBases(params, random) {
+  const count = Math.max(1, Math.min(MAX_TREES, Math.round(params.treeCount)))
+  const startAngle = random() * Math.PI * 2
+  if (count === 1) return [[0, 0, 0]]
+
+  const neighbourGap = params.treeHeight * 1.07 * params.spacing
+  const hasCentreTree = count >= 6
+  const ringCount = hasCentreTree ? count - 1 : count
+  let ringRadius = Math.max(
+    params.treeHeight * 0.62 * params.spacing,
+    neighbourGap / (2 * Math.sin(Math.PI / ringCount))
+  )
+  if (hasCentreTree) ringRadius = Math.max(ringRadius, neighbourGap)
+
+  // Angular jitter shrinks on crowded rings so neighbours cannot drift together.
+  const angleJitter = 0.25 * Math.min(1, 3 / ringCount)
+  const bases = []
+  for (let t = 0; t < ringCount; t += 1) {
+    const angle = startAngle + (t / ringCount) * Math.PI * 2 + (random() * 2 - 1) * angleJitter
+    const distance = ringRadius * (0.85 + random() * 0.3)
+    bases.push([Math.cos(angle) * distance, 0, Math.sin(angle) * distance])
+  }
+  if (hasCentreTree) bases.push([0, 0, 0])
+  return bases
+}
+
 export function createWorldBlueprint(params) {
   const random = createRandom(params.seed * 2654435761)
-  const ringRadius = params.treeHeight * 0.62 * params.spacing
-  const trees = []
-  const treeCount = 3
-  const startAngle = random() * Math.PI * 2
-
-  for (let t = 0; t < treeCount; t += 1) {
-    const angle = startAngle + (t / treeCount) * Math.PI * 2 + (random() * 2 - 1) * 0.25
-    const distance = ringRadius * (0.85 + random() * 0.3)
-    trees.push(
-      createTree(t, [Math.cos(angle) * distance, 0, Math.sin(angle) * distance], params, params.seed)
-    )
-  }
-
+  const trees = treeBases(params, random).map((base, index) =>
+    createTree(index, base, params, params.seed)
+  )
   return { trees, params }
 }
 
