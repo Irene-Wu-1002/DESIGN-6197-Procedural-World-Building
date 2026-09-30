@@ -28,7 +28,7 @@ The web prototype contains weekly study areas plus a project tab:
 
 ![Cubic voxel planet in the Week 3 prototype](docs/assets/screenshots/week-04-voxel-planet-cubic.png)
 
-Read the full study note: [`docs/class-notes/week-04-voxel-terrain.md`](docs/class-notes/week-04-voxel-terrain.md).
+Read the full study note: [`docs/class-notes/week-04-voxel-terrain.md`](week-3-voxel-terrain.md).
 
 ![Three giant trees in the Project tab](docs/assets/screenshots/project-giant-trees.png)
 

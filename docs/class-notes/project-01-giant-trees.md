@@ -22,13 +22,13 @@ The pipeline reuses the Week 3 voxel ideas (density field, CSG, chunking, Marchi
 
 `createWorldBlueprint()` in [`utils/giantTrees.js`](../../react-practice/src/utils/giantTrees.js) turns the parameters and one **world seed** into a list of signed-distance primitives per tree. Each tree gets its own seed, so the three trees differ but the same seed always rebuilds the same world.
 
-| Layer | Primitive | Procedural choices |
-| --- | --- | --- |
-| Roots | Tapered tubes along a Bézier curve | Evenly spaced around the trunk with jitter; they arch above the ground, then dive below it |
-| Trunk | Tapered tube through 8 wandering points | Random lean and sine wobble; wide base, narrower crown |
-| Branches | Tapered tubes that curl upward | Golden-angle azimuths so they never stack; each has one fork |
-| Canopy | Squashed spheres (foliage pads) | Clusters at every branch and fork tip, plus a crown |
-| Holes | Horizontal round tunnels plus a hollow core | Spread from the root gate to about 60% of the height, stepped around the trunk by the golden angle |
+| Layer    | Primitive                                   | Procedural choices                                                                                 |
+| -------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Roots    | Tapered tubes along a Bézier curve          | Evenly spaced around the trunk with jitter; they arch above the ground, then dive below it         |
+| Trunk    | Tapered tube through 8 wandering points     | Random lean and sine wobble; wide base, narrower crown                                             |
+| Branches | Tapered tubes that curl upward              | Golden-angle azimuths so they never stack; each has one fork                                       |
+| Canopy   | Squashed spheres (foliage pads)             | Clusters at every branch and fork tip, plus a crown                                                |
+| Holes    | Horizontal round tunnels plus a hollow core | Spread from the root gate to about 60% of the height, stepped around the trunk by the golden angle |
 
 ### 2. Density and CSG
 

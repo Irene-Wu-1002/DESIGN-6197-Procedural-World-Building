@@ -56,4 +56,4 @@ The giant-tree direction was selected and developed in the [project design](../p
 
 - Reorganize the repository documentation.
 - Create a clear concept presentation.
-- Continue the voxel terrain study documented in [Class 04: Voxel Terrain](week-04-voxel-terrain.md).
+- Continue the voxel terrain study documented in [Class 04: Voxel Terrain](week-3-voxel-terrain.md).

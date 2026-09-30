@@ -11,7 +11,7 @@ This section records what was assigned, what I explored, how the prototype chang
 | [Weekly notes](weekly-notes.md) | — | Chronological class observations and decisions |
 | [Week 1: Three.js Exploring](week-1-threejs-exploring.md) | Week 1 | Scene, camera, lights, material presets, and gradients; what every control means |
 | [Week 2: Infinite Noise Map](week-2-infinite-noise-map.md) | Week 2 | Noise types, octaves, seeds, layer blending, shaping, and height colours |
-| [Class 04: Voxel Terrain](week-04-voxel-terrain.md) | Week 3 | Density fields, cubic voxels, CSG, chunking, meshing, optimization, and criteria evaluation |
+| [Class 04: Voxel Terrain](week-3-voxel-terrain.md) | Week 3 | Density fields, cubic voxels, CSG, chunking, meshing, optimization, and criteria evaluation |
 | [Week 4: Shape Exploring — Shader Studies](week-4-shape-exploring.md) | Week 4 | Height, slope, biome, displacement, fresnel, fog, and noise shaders |
 | [Project Progress 01: Giant Tree World](project-01-giant-trees.md) | Project | Three seeded giant trees, roots to canopy, with portals; SDF + CSG, chunked Marching Cubes in a Web Worker |
 

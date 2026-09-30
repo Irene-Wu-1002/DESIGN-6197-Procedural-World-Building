@@ -1,4 +1,4 @@
-# Class 04: Voxel Terrain
+# Class 03: Voxel Terrain
 
 [← Class-notes index](README.md) · [← Main README](../../README.md)
 
