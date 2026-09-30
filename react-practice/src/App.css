@@ -276,7 +276,7 @@ input[type='checkbox'] {
 
 .voxel-workspace .scene {
   position: absolute;
-  inset: 0;
+  inset: 0 344px 0 0;
 }
 
 .voxel-panel {
@@ -353,6 +353,313 @@ input[type='checkbox'] {
   text-align: center;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.basic-voxel-panel {
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.basic-voxel-panel .panel-title {
+  padding-bottom: 2px;
+}
+
+.panel-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.panel-actions .layer-add {
+  min-width: 0;
+  padding: 6px 4px;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.control-section {
+  border: 1px solid var(--panel-border);
+  border-radius: 9px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.control-section summary {
+  padding: 11px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  background: #151a21;
+}
+
+.control-section summary::marker {
+  color: var(--accent);
+}
+
+.control-section[open] summary {
+  border-bottom: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.control-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.basic-voxel-panel .control-section[open] .control-section-body {
+  max-height: 240px;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.28) rgba(255, 255, 255, 0.03);
+}
+
+.basic-voxel-panel .control-section-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.basic-voxel-panel .control-section-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.basic-voxel-panel .control-section-body::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.section-note {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.control-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 11px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.control-subsection-title {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.section-note code {
+  color: var(--text);
+}
+
+.performance-stats span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.performance-stats b {
+  color: var(--text);
+}
+
+.chunk-stats {
+  padding: 8px 9px;
+  border: 1px solid rgba(255, 154, 87, 0.24);
+  border-radius: 7px;
+  background: rgba(255, 154, 87, 0.06);
+}
+
+.optimization-comparison {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px;
+  border: 1px solid rgba(100, 181, 246, 0.25);
+  border-radius: 7px;
+  background: rgba(100, 181, 246, 0.06);
+}
+
+.optimization-comparison div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.optimization-comparison span {
+  color: var(--muted);
+}
+
+.optimization-comparison b {
+  color: var(--text);
+  text-align: right;
+}
+
+.mesh-stats {
+  gap: 5px;
+  padding: 8px 9px;
+  border: 1px solid rgba(143, 207, 114, 0.25);
+  border-radius: 7px;
+  background: rgba(143, 207, 114, 0.06);
+}
+
+.meshing-comparison {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.meshing-comparison-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text);
+}
+
+.meshing-comparison-title span {
+  font-size: 9px;
+  color: var(--accent);
+}
+
+.meshing-comparison dl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.meshing-comparison dl div {
+  display: grid;
+  grid-template-columns: 1fr 1.25fr;
+  gap: 8px;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.meshing-comparison dt {
+  color: var(--muted);
+}
+
+.meshing-comparison dd {
+  margin: 0;
+  color: var(--text);
+}
+
+.meshing-comparison p {
+  margin: 0;
+  font-size: 9px;
+  line-height: 1.4;
+  color: #e8b07d;
+}
+
+.csg-order-note {
+  padding: 8px 9px;
+  border-left: 2px solid var(--accent);
+  background: rgba(255, 138, 61, 0.06);
+}
+
+.csg-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.csg-toolbar .seed-button {
+  padding-inline: 8px;
+}
+
+.csg-clear-button {
+  border-color: rgba(233, 152, 152, 0.38);
+  color: #e99898;
+  background: rgba(233, 152, 152, 0.08);
+}
+
+.csg-clear-button:hover:not(:disabled) {
+  background: rgba(233, 152, 152, 0.14);
+}
+
+.csg-clear-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.csg-operation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.csg-operation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.csg-operation-card.is-disabled {
+  opacity: 0.58;
+}
+
+.csg-operation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.csg-operation-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.csg-operation-actions button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 5px;
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.csg-operation-actions button:hover:not(:disabled) {
+  border-color: rgba(255, 138, 61, 0.5);
+  color: var(--accent);
+}
+
+.csg-operation-actions button:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+}
+
+.csg-operation-actions button.remove {
+  color: #e99898;
 }
 
 .generation-picker,
@@ -754,5 +1061,17 @@ input[type='checkbox'] {
     left: 20px;
     width: auto;
     max-height: 38%;
+  }
+
+  .voxel-workspace .scene {
+    inset: 0;
+  }
+
+  .basic-voxel-panel {
+    overflow-y: auto;
+  }
+
+  .basic-voxel-panel .control-section[open] .control-section-body {
+    max-height: 200px;
   }
 }

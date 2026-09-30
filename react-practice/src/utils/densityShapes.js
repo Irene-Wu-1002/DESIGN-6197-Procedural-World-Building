@@ -8,6 +8,12 @@ import { getNoise } from './noise'
 
 export const DENSITY_SHAPES = [
   { id: 'terrain', label: 'Noise Terrain' },
+  { id: 'fbm3d', label: '3D fBm' },
+  { id: 'ridged', label: 'Ridged' },
+  { id: 'terraced', label: 'Terraced' },
+  { id: 'floatingIslands', label: 'Floating Islands' },
+  { id: 'planet', label: 'Planet' },
+  { id: 'strata', label: 'Strata' },
   { id: 'sphere', label: 'Sphere' },
   { id: 'box', label: 'Box' },
   { id: 'cylinder', label: 'Cylinder' },
@@ -58,6 +64,82 @@ export function densityGyroid(x, y, z, scale = 4.2) {
   )
 }
 
+function sampleNoise3D(x, y, z, params, seedOffset = 0) {
+  const { noiseScale, noiseType, octaves, seed } = params
+  const coordinatesScale = 40
+  const noiseParams = {
+    type: noiseType,
+    scale: noiseScale,
+    octaves,
+    persistence: 0.5,
+    lacunarity: 2,
+  }
+  const xy = getNoise(x * coordinatesScale, y * coordinatesScale, {
+    ...noiseParams,
+    seed: seed + seedOffset,
+  })
+  const yz = getNoise(y * coordinatesScale, z * coordinatesScale, {
+    ...noiseParams,
+    seed: seed + seedOffset + 101,
+  })
+  const zx = getNoise(z * coordinatesScale, x * coordinatesScale, {
+    ...noiseParams,
+    seed: seed + seedOffset + 211,
+  })
+  return (xy + yz + zx) / 3
+}
+
+function densityBoundary(x, y, z, radius = 0.92) {
+  return radius - Math.hypot(x, y, z)
+}
+
+export function densityFbm3D(x, y, z, params) {
+  const noise = sampleNoise3D(x, y, z, params)
+  return Math.min(noise * 0.8 + 0.08, densityBoundary(x, y, z, 1.05))
+}
+
+export function densityRidged(x, y, z, params) {
+  const noise = sampleNoise3D(x, y, z, params)
+  const ridges = 0.58 - Math.abs(noise)
+  return Math.min(ridges, densityBoundary(x, y, z, 1.02))
+}
+
+export function densityTerraced(x, y, z, params) {
+  const noise = sampleNoise3D(x, y, z, params)
+  const steps = 7
+  const normalized = (noise + 1) * 0.5
+  const terraced = Math.floor(normalized * steps) / steps
+  const steppedDensity = terraced * 2 - 0.82
+  return Math.min(steppedDensity, densityBoundary(x, y, z, 1.02))
+}
+
+export function densityFloatingIslands(x, y, z, params) {
+  const noise = sampleNoise3D(x, y, z, params)
+  const detail = sampleNoise3D(x * 1.8, y * 1.8, z * 1.8, params, 503)
+  const horizontalDistance = Math.hypot(x, z)
+  const topSurface = 0.28 + noise * 0.28
+  const bottomSurface =
+    -0.48 + horizontalDistance * 0.55 - detail * 0.09
+  const radialEdge = 0.78 - horizontalDistance + noise * 0.1
+
+  return Math.min(topSurface - y, y - bottomSurface, radialEdge)
+}
+
+export function densityPlanet(x, y, z, params) {
+  const noise = sampleNoise3D(x, y, z, params)
+  const detail = sampleNoise3D(x * 2, y * 2, z * 2, params, 307)
+  const radius = 0.68 + noise * 0.13 + detail * 0.04
+  return radius - Math.hypot(x, y, z)
+}
+
+export function densityStrata(x, y, z, params) {
+  const noise = sampleNoise3D(x, y, z, params)
+  const shell = densityBoundary(x, y, z, 0.82)
+  const layers = Math.sin((y + noise * 0.12) * Math.PI * 11)
+  const layerDensity = layers * 0.11 + 0.015
+  return Math.min(shell, layerDensity)
+}
+
 /**
  * Evaluate a density shape at a voxel, optionally warped by noise.
  */
@@ -99,6 +181,18 @@ export function sampleDensity(shape, x, y, z, params) {
   }
 
   switch (shape) {
+    case 'fbm3d':
+      return densityFbm3D(px, py, pz, params)
+    case 'ridged':
+      return densityRidged(px, py, pz, params)
+    case 'terraced':
+      return densityTerraced(px, py, pz, params)
+    case 'floatingIslands':
+      return densityFloatingIslands(px, py, pz, params)
+    case 'planet':
+      return densityPlanet(px, py, pz, params)
+    case 'strata':
+      return densityStrata(px, py, pz, params)
     case 'sphere':
       return densitySphere(px, py, pz)
     case 'box':
