@@ -4,7 +4,6 @@ Coursework repository for **Procedural World Building** at Cornell AAP, Fall 202
 
 This repository is both a working prototype and a study notebook. It records the questions, design decisions, implementation experiments, tutorials, and evaluations that lead toward a procedural world built inside giant trees.
 
-![Assignment 1 repository-documentation brief](docs/assets/screenshots/assignment-01-repository-documentation.png)
 
 ## Table of Contents
 
