@@ -59,6 +59,6 @@ Week 4 compares Default, Height Gradient, Slope, Height + Slope Biome, Vertex Di
 
 ## Related Notes
 
-- [Class 04 voxel terrain study](week-3-voxel-terrain.md)
+- [Class 04 voxel terrain study](../docs/class-notes/week-3-voxel-terrain.md)
 - [Project design](../docs/planning/project-design.md)
 - [Feature backlog](../docs/planning/backlog.md)
