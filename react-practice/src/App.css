@@ -364,6 +364,55 @@ input[type='checkbox'] {
   padding-bottom: 2px;
 }
 
+.world-storage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.world-storage input[type='text'] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  font: inherit;
+  color: var(--text);
+  background: #181c23;
+}
+
+.world-storage input[type='text']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.world-storage-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.world-storage-actions .layer-add {
+  padding: 7px 6px;
+}
+
+.world-storage-status {
+  margin: 0;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.world-storage-status.success {
+  color: #8fcf72;
+}
+
+.world-storage-status.error {
+  color: #e99898;
+}
+
 .panel-actions {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

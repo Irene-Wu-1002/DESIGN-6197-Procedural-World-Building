@@ -47,7 +47,9 @@ src/
 
 ## Firebase Boundary
 
-Firebase is connected, but Save World and Load World are not implemented yet. Future persistence will store only seeds, density parameters, ordered CSG operations, chunking settings, meshing settings, and optional experiment summaries. Generated voxel arrays and meshes must remain local.
+The Week 3 panel includes a first **Save World** / **Load Latest** integration. Firestore stores the world name, seed, density and noise parameters, voxel resolution, ordered CSG operations, chunking settings, meshing settings, and timestamps. Loading applies those parameters to the existing controls so the world regenerates locally.
+
+Generated voxel arrays and mesh geometry are never uploaded. Firestore rules must permit the `worlds` collection before the controls can access the live database.
 
 ## Related Notes
 

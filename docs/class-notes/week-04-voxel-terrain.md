@@ -567,7 +567,7 @@ Voxels and Marching Cubes both call `sampleDensity()`. As a result, changing a d
 - High horizontal resolution now increases the vertical resolution too, which preserves cubic voxels but raises the total sample count.
 - Marching Cubes uses a separate cubic sample grid and can become expensive at high resolution.
 - The Marching Cubes polygon buffer is capped at `100,000` polygons.
-- Firebase is connected, but the generated world parameters are not yet saved between sessions.
+- The first Firebase integration can save and load parameter-only world configurations, but authentication and a saved-world browser still need to be added.
 
 Useful next steps would be true per-chunk dirty flags, camera-based streaming, frustum culling, seamless chunk-border meshing, worker-thread generation, and implementation of Surface Nets or Dual Contouring.
 

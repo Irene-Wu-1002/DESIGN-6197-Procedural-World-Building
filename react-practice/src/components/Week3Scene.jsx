@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { MarchingCubes } from 'three/addons/objects/MarchingCubes.js'
+import {
+  listWorldConfigurations,
+  loadWorldConfiguration,
+  saveWorldConfiguration,
+} from '../services/worldStorage'
 import { getNoise } from '../utils/noise'
 
 const MAX_HEIGHT = 13
@@ -595,6 +600,39 @@ export default function Week3Scene() {
     reusedDensity: false,
   })
   const [regenerationVersion, setRegenerationVersion] = useState(0)
+  const [worldName, setWorldName] = useState('Untitled World')
+  const [savedWorldId, setSavedWorldId] = useState(null)
+  const [savedWorlds, setSavedWorlds] = useState([])
+  const [selectedWorldId, setSelectedWorldId] = useState('')
+  const [worldStorageState, setWorldStorageState] = useState({
+    busy: false,
+    message: '',
+    type: 'idle',
+  })
+
+  useEffect(() => {
+    let isCurrent = true
+
+    listWorldConfigurations()
+      .then((worlds) => {
+        if (!isCurrent) return
+        setSavedWorlds(worlds)
+        setSelectedWorldId(worlds[0]?.id ?? '')
+      })
+      .catch((error) => {
+        console.error('Unable to list saved worlds:', error)
+        if (!isCurrent) return
+        setWorldStorageState({
+          busy: false,
+          message: 'Could not retrieve saved worlds.',
+          type: 'error',
+        })
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [])
 
   useEffect(() => {
     const mount = mountRef.current
@@ -1049,6 +1087,133 @@ export default function Week3Scene() {
     setRegenerationVersion((version) => version + 1)
   }
 
+  const saveWorld = async () => {
+    setWorldStorageState({ busy: true, message: 'Saving…', type: 'idle' })
+    try {
+      const worldId = await saveWorldConfiguration({
+        worldId: savedWorldId,
+        name: worldName,
+        params,
+      })
+      setSavedWorldId(worldId)
+      setSelectedWorldId(worldId)
+      const worlds = await listWorldConfigurations()
+      setSavedWorlds(worlds)
+      setWorldStorageState({
+        busy: false,
+        message: 'World saved.',
+        type: 'success',
+      })
+    } catch (error) {
+      console.error('Unable to save world:', error)
+      setWorldStorageState({
+        busy: false,
+        message: 'Save failed. Check Firestore access.',
+        type: 'error',
+      })
+    }
+  }
+
+  const loadWorld = async () => {
+    if (!selectedWorldId) {
+      setWorldStorageState({
+        busy: false,
+        message: 'Choose a saved world first.',
+        type: 'idle',
+      })
+      return
+    }
+
+    setWorldStorageState({ busy: true, message: 'Loading…', type: 'idle' })
+    try {
+      const world = await loadWorldConfiguration(selectedWorldId)
+      if (!world) {
+        const worlds = await listWorldConfigurations()
+        setSavedWorlds(worlds)
+        setSelectedWorldId(worlds[0]?.id ?? '')
+        setWorldStorageState({
+          busy: false,
+          message: 'That saved world no longer exists.',
+          type: 'error',
+        })
+        return
+      }
+
+      const noise = world.noise ?? {}
+      const density = world.densityParameters ?? {}
+      const chunking = world.chunking ?? {}
+      const meshing = world.meshing ?? {}
+      const orderedCsgOperations = Array.isArray(world.csgOperations)
+        ? [...world.csgOperations]
+            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+            .map((operation, index) => {
+              const loadedOperation = { ...operation }
+              delete loadedOperation.order
+              return createCsgOperation(`csg-${index + 1}`, loadedOperation)
+            })
+        : []
+
+      nextCsgIdRef.current = orderedCsgOperations.length + 1
+      densityCacheRef.current = { key: null, voxels: [] }
+      setParams((current) => ({
+        ...current,
+        seed: world.seed ?? current.seed,
+        densityShape: world.densityShape ?? current.densityShape,
+        resolution: world.voxelResolution ?? current.resolution,
+        resolutionPreset: 'custom',
+        useNoise: noise.enabled ?? current.useNoise,
+        noiseScale: noise.scale ?? current.noiseScale,
+        noiseAmplitude: noise.amplitude ?? current.noiseAmplitude,
+        octaves: noise.octaves ?? current.octaves,
+        persistence: noise.persistence ?? current.persistence,
+        lacunarity: noise.lacunarity ?? current.lacunarity,
+        terrainHeight: density.terrainHeight ?? current.terrainHeight,
+        groundLevel: density.groundLevel ?? current.groundLevel,
+        terraceHeight: density.terraceHeight ?? current.terraceHeight,
+        verticalFalloff: density.verticalFalloff ?? current.verticalFalloff,
+        islandHeightBand: density.islandHeightBand ?? current.islandHeightBand,
+        planetRadius: density.planetRadius ?? current.planetRadius,
+        strataFrequency: density.strataFrequency ?? current.strataFrequency,
+        strataDistortion: density.strataDistortion ?? current.strataDistortion,
+        chunkSize: world.chunkSize ?? current.chunkSize,
+        chunkingEnabled: chunking.enabled ?? current.chunkingEnabled,
+        activeChunkRadius:
+          chunking.activeChunkRadius ?? current.activeChunkRadius,
+        skipEmptyChunks: chunking.skipEmptyChunks ?? current.skipEmptyChunks,
+        distanceChunkActivation:
+          chunking.distanceChunkActivation ?? current.distanceChunkActivation,
+        reduceDistantResolution:
+          chunking.reduceDistantResolution ?? current.reduceDistantResolution,
+        meshMethod: world.meshingMethod ?? current.meshMethod,
+        meshingEnabled: meshing.enabled ?? current.meshingEnabled,
+        meshIsovalue: meshing.isovalue ?? current.meshIsovalue,
+        meshGridResolution:
+          meshing.gridResolution ?? current.meshGridResolution,
+        meshSmoothShading:
+          meshing.smoothShading ?? current.meshSmoothShading,
+        meshWireframe: meshing.wireframe ?? current.meshWireframe,
+        meshDisplayMode: meshing.displayMode ?? current.meshDisplayMode,
+        csgEnabled: world.csgEnabled ?? current.csgEnabled,
+        csgOperations: orderedCsgOperations,
+      }))
+      setWorldName(world.name ?? 'Untitled World')
+      setSavedWorldId(world.id)
+      setRegenerationVersion((version) => version + 1)
+      setWorldStorageState({
+        busy: false,
+        message: `Loaded “${world.name ?? 'Untitled World'}”.`,
+        type: 'success',
+      })
+    } catch (error) {
+      console.error('Unable to load world:', error)
+      setWorldStorageState({
+        busy: false,
+        message: 'Load failed. Check Firestore access.',
+        type: 'error',
+      })
+    }
+  }
+
   const isHeightField =
     params.densityShape === 'ground' || params.densityShape === 'terraced'
   const usesNoise = params.densityShape !== 'ground' || params.useNoise
@@ -1093,6 +1258,61 @@ export default function Week3Scene() {
       <aside className="noise-panel voxel-panel basic-voxel-panel">
         <div className="panel-title">
           <h2>Voxel Controls</h2>
+        </div>
+        <div className="world-storage">
+          <label className="control">
+            <span className="control-label">Saved worlds</span>
+            <select
+              value={selectedWorldId}
+              disabled={worldStorageState.busy || savedWorlds.length === 0}
+              onChange={(event) => setSelectedWorldId(event.target.value)}
+            >
+              {savedWorlds.length === 0 ? (
+                <option value="">No saved worlds yet</option>
+              ) : (
+                savedWorlds.map((world) => (
+                  <option key={world.id} value={world.id}>
+                    {world.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+          <label className="control">
+            <span className="control-label">World name</span>
+            <input
+              type="text"
+              value={worldName}
+              maxLength={80}
+              onChange={(event) => setWorldName(event.target.value)}
+            />
+          </label>
+          <div className="world-storage-actions">
+            <button
+              type="button"
+              className="layer-add"
+              disabled={worldStorageState.busy}
+              onClick={saveWorld}
+            >
+              Save World
+            </button>
+            <button
+              type="button"
+              className="layer-add"
+              disabled={worldStorageState.busy || !selectedWorldId}
+              onClick={loadWorld}
+            >
+              Load Selected
+            </button>
+          </div>
+          {worldStorageState.message && (
+            <p
+              className={`world-storage-status ${worldStorageState.type}`}
+              role="status"
+            >
+              {worldStorageState.message}
+            </p>
+          )}
         </div>
         <div className="panel-actions">
           <button
