@@ -83,6 +83,7 @@ Built in the **Project** tab of `react-practice/`. See
 - [x] **Chunked Marching Cubes in a Web Worker** — seamless chunks, streamed root to top.
 - [x] **Layer colouring and height fog** — roots / trunk / branches / canopy read as separate zones.
 - [ ] **Platforms and bridges in the portals** — first city geometry inside the trees.
+- [x] **Weather** — sun and time of day, clouds, and rain, with smooth transitions and wet surfaces.
 - [ ] **Lights on heartwood walls** — show that the interiors are inhabited.
 - [ ] **Save/load tree worlds** — extend the Firebase service beyond the Week 3 schema.
 

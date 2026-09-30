@@ -75,6 +75,54 @@ The world is split into 16³-cell chunks (`planChunks`):
 
 ![City-layer colouring with the growth clip at 45%](../assets/screenshots/project-giant-trees-layers.png)
 
+## Weather
+
+The **Weather** section of the panel adds sun, clouds, and rain. Weather only changes light and atmosphere, never geometry, so it never regenerates the trees.
+
+| Sunny | Cloudy |
+| --- | --- |
+| ![Sunny: blue sky, scattered clouds, crisp shadows](../assets/screenshots/project-weather-sunny.png) | ![Cloudy: grey sky, soft light, weak shadows](../assets/screenshots/project-weather-cloudy.png) |
+| **Rain** | **Sunset (Sunny, 17:10)** |
+| ![Rain: overcast, wet dark bark, mist, treetops touching the cloud base](../assets/screenshots/project-weather-rain.png) | ![Sunset: warm horizon, low golden light, long shadows](../assets/screenshots/project-weather-sunset.png) |
+
+### Why weather matters for the concept
+
+The concept says the canopy is "a completely different climate." Weather makes that visible:
+
+- The cloud base drops as cover grows, so in rain the **treetops reach into the clouds** while the roots stay in mist.
+- Rain darkens and wets the bark, and fog gathers at ground level: the **root city is damp and misty, the canopy is up in the weather**.
+
+### Parameters
+
+| Control | Range (default) | Meaning |
+| --- | --- | --- |
+| **Sunny / Cloudy / Rain** | presets (Sunny) | Set cloud cover, rain, and wind together. Changes blend smoothly over about 3 s. |
+| **Auto cycle** | on / off (off) | Loops Sunny → Cloudy → Rain → Cloudy, 9 s each. Useful for a live demo. |
+| **Time of day** | 06:00–18:00 (10:12) | Moves the sun from sunrise in the east, through noon, to sunset in the west. Low sun turns the light and horizon warm orange and makes long shadows. |
+| **Cloud cover** | 0–100% (Sunny 18%, Cloudy 72%, Rain 100%) | How many cloud clusters appear. Heavier cover dims and greys the sun, softens shadows, and lowers the cloud base. |
+| **Rain** | 0–100% (Rain 85%) | How many of the 40,000 raindrops fall. Rain also wets the bark and ground (darker, glossier) and thickens the mist. |
+| **Wind** | 0–100% (Sunny 25%, Cloudy 45%, Rain 60%) | Speed at which clouds drift and how much the rain slants. |
+| **Wind direction** | 0–359° (35°) | Which way the clouds drift and the rain leans. |
+
+Editing Cloud cover, Rain, or Wind by hand switches the preset to "Custom" and stops Auto cycle.
+
+### How it works
+
+| Part | Technique |
+| --- | --- |
+| **Blending** | The panel sets a *target* weather; every frame the live weather eases toward it (exponential smoothing). Surfaces get wet in about 2.5 s but dry over about 9 s. |
+| **Sun** | The existing shadow-casting sun moves along an arc set by time of day. Its colour shifts from white to orange near the horizon, and cloud cover and rain dim it. |
+| **Sky** | A large inside-out sphere that follows the camera, shaded from horizon to zenith, with a sun disc and glow that fade behind clouds. The fog uses the horizon colour, so the ground melts into the sky. |
+| **Clouds** | 56 clusters of 7 soft puffs each (392 camera-facing cards drawn in one call). Each puff's edge comes from noise in a shader. Cover fades clusters in by a random threshold, wind drifts them (wrapping at the field edge with a fade), and they are sorted back to front every frame so transparency layers correctly. |
+| **Rain** | 40,000 streaks animated entirely in a vertex shader: each drop falls, drifts with the wind, and wraps inside a box that follows the camera, fading with distance. JavaScript only updates a few uniforms per frame. |
+| **Wet surfaces** | The same shader patch that adds height fog also darkens the colour and lowers roughness by a wetness value, so bark and ground look wet. |
+
+Code: [`weather/weatherState.js`](../../react-practice/src/weather/weatherState.js) (presets, blending, sun and sky colours), [`weather/sky.js`](../../react-practice/src/weather/sky.js), [`weather/clouds.js`](../../react-practice/src/weather/clouds.js), [`weather/rain.js`](../../react-practice/src/weather/rain.js).
+
+### Tuning notes
+
+The first rain looked too heavy: the cloud base dropped so low that whole canopies disappeared, and the fog washed out the middle tree. The cloud base now stops just above the tallest crowns (1.12 × tree height at full cover), and rain pulls the fog in less. The treetops touch the clouds but the trees keep their shape.
+
 ## Bugs Found and Fixed
 
 | Problem | Cause | Fix |
@@ -115,3 +163,4 @@ Roughly half of the sampled chunks contain no surface, because they are either e
 - Different interiors per layer: underground root halls, industrial trunk shafts, branch villages.
 - Firebase save/load for tree worlds (the current storage service is specific to Week 3).
 - Terrain and rivers around the roots, instead of a flat ground plane.
+- Weather extras: lightning and thunderstorms, rain blocked by the canopy (dry under the trees), puddles and splashes.

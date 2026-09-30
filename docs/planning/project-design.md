@@ -46,6 +46,9 @@ The **Project** tab in the web prototype is the first working version of this co
 | **Meshing** | Marching Cubes turns the density field into a smooth triangle surface. Round portals need this; blocky voxels would lose their shape. |
 | **Chunking + multi-resolution** | The world is split into 16³-cell chunks. Chunks no shape can reach are skipped, and each chunk evaluates only nearby shapes. Low / Medium / High presets change the cell size (1.6 / 1.1 / 0.8 m). |
 | **Shaders & fog** | Vertex colours separate damp roots, bark, moss, leaves, and warm heartwood inside the holes. A height-fog shader patch makes the ground misty and the canopy clear, so each layer reads as its own climate. |
+| **Weather** | Sunny / Cloudy / Rain presets and a time-of-day sun. A shader sky dome, drifting cloud puffs, and 40,000 GPU raindrops. Rain wets the bark, and the cloud base drops so the treetops reach into the clouds while the roots sit in mist. See [Weather](../class-notes/project-01-giant-trees.md#weather). |
+
+![Rain over the giant trees](../assets/screenshots/project-weather-rain.png)
 
 ### System structure
 
@@ -68,11 +71,47 @@ giantTreeWorker.js  (Web Worker, off the main thread)
   │  streams finished chunks back in batches
   ▼
 ProjectScene.jsx  → one mesh per chunk, shadows, height fog, growth clip
+
+Every frame, in the render loop (no regeneration):
+  weatherState.js  target weather → eased live weather → sun, sky, fog, wetness
+  sky.js           sky dome + sun glow
+  clouds.js        drifting, depth-sorted cloud puffs
+  rain.js          GPU-animated raindrops around the camera
 ```
 
 - **UI layer:** `ProjectScene.jsx` owns the scene, camera, lights, ground, fog, and control panel. Changing a shape parameter restarts the worker; view settings such as colouring, fog, wireframe, chunk bounds, and growth update instantly without regenerating.
 - **Generation layer:** the worker builds the blueprint, plans the chunks, and meshes them one by one. Chunks come back bottom to top, so the trees visibly grow from the roots while generating.
 - **Geometry layer:** `giantTrees.js` holds all tree rules and the density function. `chunkMesher.js` is a general-purpose Marching Cubes mesher. It samples one extra ring of points around each chunk, so neighbouring chunks meet without cracks.
+- **Weather layer:** the `weather/` modules run inside the render loop and only change light and atmosphere, so changing the weather never regenerates the trees.
+
+### Weather techniques
+
+| Sunny, 10:12 | Sunset, 17:10 |
+| --- | --- |
+| ![Sunny weather over the giant trees](../assets/screenshots/project-weather-sunny.png) | ![Sunset light on the giant trees](../assets/screenshots/project-weather-sunset.png) |
+
+Six techniques make up the weather: one blending system that drives everything, then one technique each for the sun, sky, clouds, rain, and wet surfaces.
+
+| # | Part | Technique | What it does |
+| --- | --- | --- | --- |
+| 1 | **Blending** (`weatherState.js`) | **Target → live weather with exponential smoothing**: `live += (target − live) × (1 − e^(−dt / time))` | The panel sets a target; every frame the live weather moves toward it, so Sunny → Rain fades over about 3 s. Wetness has its own speeds: wet in about 2.5 s, dry over about 9 s. |
+| 2 | **Sun** | **Time of day → sun angles** (sine-curve elevation up to 64° plus a compass direction) | The shadow-casting sun rises in the east, peaks at noon, and sets in the west. Its colour moves from white to orange near the horizon. Clouds and rain dim it while a hemisphere sky light brightens, giving soft shadows on grey days. |
+| 3 | **Sky** (`sky.js`) | **Sky dome with a custom fragment shader** | An inside-out sphere that follows the camera. Each pixel is coloured by viewing height (horizon → zenith), plus a sun disc and glow that fade behind clouds. The fog uses the horizon colour, so the ground melts into the sky. |
+| 4 | **Clouds** (`clouds.js`) | **Instanced billboards, noise edges, threshold fading, depth sorting** | 56 clusters × 7 puffs (392) drawn in one GPU call. A vertex shader turns each puff to face the camera. 2D noise makes fluffy edges, lit on top and shaded below. Each cluster fades in once cloud cover passes its random threshold. Puffs drift and wrap with the wind and are sorted back to front each frame. |
+| 5 | **Rain** (`rain.js`) | **GPU particle system** | 40,000 streaks. Each drop gets a random start once; the vertex shader moves it (`start + velocity × time`) and wraps it with `mod()` inside a box that follows the camera. JavaScript only updates a few uniforms per frame. Wind slants the streaks and drops fade with distance. |
+| 6 | **Wet surfaces** | **Shader injection into the standard material** | The same patch that adds height fog uses a `uWetness` value to darken colour and lower roughness, so bark and ground look wet. Rain also pulls the fog in and thickens the ground mist. |
+
+**How it serves the concept.** The cloud base lowers as cover grows (from 1.4 to 1.12 × tree height), so in rain the treetops reach into the clouds while the roots sit in damp mist. Each layer of the tree visibly has its own climate.
+
+**How it builds on earlier weeks.**
+
+- **Noise** (Week 2) shapes the cloud edges.
+- **Shaders and fog** (Week 4) power the sky, rain, and wetness.
+- **Seeds** fix the cloud layout.
+
+**One-sentence version:** *The weather is one eased set of parameters that drives a moving sun, a shader sky dome, instanced noise-textured cloud billboards, and 40,000 GPU-animated raindrops. Rain also wets the bark and lowers the cloud base, so each layer of the tree has its own climate.*
+
+Full parameter reference and screenshots: [Weather](../class-notes/project-01-giant-trees.md#weather).
 
 ### How the tab maps to the urban layers
 
