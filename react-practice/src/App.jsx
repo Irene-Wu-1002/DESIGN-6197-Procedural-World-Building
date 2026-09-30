@@ -11,7 +11,7 @@ const WEEKS = [
   { id: 1, title: 'Three.js exploring' },
   { id: 2, title: 'Infinite Noise Map' },
   { id: 3, title: 'Voxel Terrain' },
-  { id: 4, title: 'Shape exploring' },
+  { id: 4, title: 'Shader exploring' },
   { id: 'project', label: 'Project', title: 'Giant Tree City' },
 ]
 
