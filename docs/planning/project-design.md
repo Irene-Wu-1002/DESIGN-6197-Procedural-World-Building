@@ -4,9 +4,12 @@
 
 ## Concept
 
-![World concept slide: reference images of a city inside giant hollow trees and a forest village, with the concept, motivation, and planned techniques](../assets/screenshots/project-world-concept.png)
+| City inside the trunk | Village among the roots |
+| --- | --- |
+| <img src="../assets/screenshots/ideas-concept-in-hole.png" alt="A city seen through huge round openings in a giant hollow trunk, with floating green platforms" width="380"> | <img src="../assets/screenshots/ideas-concept-in-roots.png" alt="Glass-dome buildings, paths, and a stream winding between giant tree trunks" width="380"> |
+| Round portals open the trunk to the sky; platforms and parks hang inside the hollow — the model for the **trunk / industrial district** and the portals in the Project tab. | Domed homes, footpaths, and a river at the base of the trees — the mood for the **root-level underground city** and the ground layer. |
 
-*World concept slide. The two reference images are third-party mood-board images used for inspiration, not my own work.*
+*Concept reference images from a mood board (third-party artwork, not my own), used for inspiration.*
 
 A City Built Inside Giant Trees  
 Several impossibly large trees contain an entire world. Different parts of the trees become different urban layers: roots form underground cities, trunks contain dense industrial districts, branches support villages, and the canopy reaches into a completely different climate.
