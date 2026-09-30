@@ -10,6 +10,7 @@ This section records what was assigned, what I explored, how the prototype chang
 | --- | --- |
 | [Weekly notes](weekly-notes.md) | Chronological class observations and decisions |
 | [Class 04: Voxel Terrain](week-04-voxel-terrain.md) | Density fields, cubic voxels, CSG, chunking, meshing, optimization, and criteria evaluation |
+| [Project Progress 01: Giant Tree World](project-01-giant-trees.md) | Three seeded giant trees, roots to canopy, with portals; SDF + CSG, chunked Marching Cubes in a Web Worker |
 
 ## Note Structure
 

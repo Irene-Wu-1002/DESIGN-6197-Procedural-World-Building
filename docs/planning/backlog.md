@@ -72,9 +72,22 @@ Only if time allows.
 
 ---
 
+## Web Prototype Track — Giant Tree City
+
+Built in the **Project** tab of `react-practice/`. See
+[Project Progress 01](../class-notes/project-01-giant-trees.md).
+
+- [x] **Three seeded giant trees** — roots, trunk, branches, and canopy from one density field.
+- [x] **Portals and hollow core** — round tunnels subtracted from each trunk.
+- [x] **Chunked Marching Cubes in a Web Worker** — seamless chunks, streamed root to top.
+- [x] **Layer colouring and height fog** — roots / trunk / branches / canopy read as separate zones.
+- [ ] **Platforms and bridges in the portals** — first city geometry inside the trees.
+- [ ] **Lights on heartwood walls** — show that the interiors are inhabited.
+- [ ] **Save/load tree worlds** — extend the Firebase service beyond the Week 3 schema.
+
 ## Completed
 
-*Nothing yet.*
+- Three giant trees with portals (web prototype) — 2026-09-30.
 
 ## Notes
 

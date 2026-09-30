@@ -1,0 +1,48 @@
+/* Project tab: reuses the Week 3 panel styles, plus a generation progress bar. */
+
+.project-intro {
+  margin: 0;
+}
+
+.project-legend {
+  grid-template-columns: 1fr;
+}
+
+.project-progress {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 220px;
+  padding: 10px 14px;
+  transform: translateX(calc(-50% - 172px));
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--panel-bg);
+  backdrop-filter: blur(14px);
+}
+
+.project-progress-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.project-progress-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+@media (max-width: 900px) {
+  .project-progress {
+    transform: translateX(-50%);
+  }
+}
