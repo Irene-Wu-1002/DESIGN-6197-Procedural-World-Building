@@ -149,7 +149,7 @@ function createGround() {
   return geometry
 }
 
-export default function ProjectScene() {
+export default function ProjectScene({ tag }) {
   const mountRef = useRef(null)
   const sceneApiRef = useRef(null)
   const chunkMeshesRef = useRef([])
@@ -558,6 +558,7 @@ export default function ProjectScene() {
       <aside className="noise-panel voxel-panel basic-voxel-panel">
         <div className="panel-title">
           <h2>Giant Tree City</h2>
+          {tag && <span className="archive-tag">{tag}</span>}
         </div>
         <p className="section-note project-intro">
           Semester project progress: a vertical city grown inside colossal

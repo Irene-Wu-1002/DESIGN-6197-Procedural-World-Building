@@ -12,7 +12,12 @@ const WEEKS = [
   { id: 2, title: 'Infinite Noise Map' },
   { id: 3, title: 'Voxel Terrain' },
   { id: 4, title: 'Shader exploring' },
-  { id: 'project', label: 'Project', title: 'Giant Tree City' },
+  {
+    id: 'archive',
+    label: 'Archive',
+    title: 'Giant Tree City',
+    tag: 'First Exploration',
+  },
 ]
 
 export default function App() {
@@ -36,10 +41,11 @@ export default function App() {
       {activeWeek === 2 && <Week2Scene />}
       {activeWeek === 3 && <Week3Scene />}
       {activeWeek === 4 && <Week4Scene />}
-      {activeWeek === 'project' && <ProjectScene />}
+      {activeWeek === 'archive' && <ProjectScene tag={active.tag} />}
 
       <header className="titlebar">
         <h1>{active.title}</h1>
+        {active.tag && <span className="archive-tag">{active.tag}</span>}
         <p>yw2785 &middot; Cornell AAP</p>
       </header>
 
