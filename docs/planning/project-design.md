@@ -26,10 +26,16 @@ The second goal comes from Jakob von Uexküll's idea of the **umwelt**: every an
 
 A VR installation in Grizedale Forest that shows the same woodland through the senses of a mosquito, a dragonfly, a frog, and an owl. Each animal gets its own visual language. The mosquito senses carbon dioxide as swirling particle clouds, the dragonfly sees sharper detail and more colours, the frog's prey appears as coloured trails, and the owl has sharp distant vision but a blurry edge. The forest was captured with LiDAR, drones, CT scans, and photogrammetry and rendered in real time.
 
+| <img src="../assets/screenshots/ideas-fallen-logs-point-cloud.png" alt="Fallen logs above a forest floor drawn as a dense orange point cloud" width="260"> | <img src="../assets/screenshots/ideas-roots-branches-point-cloud.png" alt="A tangle of roots and branches as a pale point cloud, with a blurred ground in front" width="260"> | <img src="../assets/screenshots/ideas-forest-dots.png" alt="A misty forest painted with large coloured dots, green near the ground and grey in the trees" width="260"> |
+| --- | --- | --- |
+| **Fallen logs:** the ground cover as one warm field of points; logs read as huge bridges. | **Roots and branches:** a tangle of thin lines; the near ground is soft and out of focus. | **Forest as dots:** size and colour of each dot carry the image, not the outline. |
+
 **What I take from it:**
 - One world, several **perception modes**. Changing the senses changes the visuals, not the geometry.
 - Invisible things (CO₂, smell, motion) can be **made visible** as particles and trails.
 - A sense can be shown by what it **hides** (the owl's blurred edge) as much as by what it shows.
+- **Points instead of surfaces:** drawing the world as coloured points or dots is a cheap, strong look for a non-human sense. It is an option for the ant-vision mode, and it suits instancing.
+- **Fallen branches and logs as giant bridges** across the ground, and a blurred foreground that makes the scale read as small (the macro depth-of-field look).
 
 ### Marshmallow Laser Feast — *Poetics of Soil: Fly Agaric I* (2025)
 
@@ -37,9 +43,15 @@ A VR installation in Grizedale Forest that shows the same woodland through the s
 
 A multichannel video installation at Somerset House (part of *Soil: The World at Our Feet*). It centres on the fly agaric mushroom and the fungal networks in the soil, and visualises the "hidden rhythms" of soil as pulsing, living systems, with spatial sound and the voice of mycologist Merlin Sheldrake.
 
+| <img src="../assets/screenshots/ideas-fly-agaric-mycelium.png" alt="A fly agaric with a red, white-spotted cap standing in leaf litter, with glowing mycelium threads in the soil below" width="400"> | <img src="../assets/screenshots/ideas-roots-underground.png" alt="An old tree whose roots and fungal threads spread through the soil, with blue spores drifting in the dark" width="400"> |
+| --- | --- |
+| **Fly agaric and mycelium:** the mushroom above, leaf litter at its foot, glowing threads below. The surface and the underground in one cut. | **Roots underground:** fine threads spreading from the base through the soil, and blue spores drifting in the air. |
+
 **What I take from it:**
 - The **fly agaric** as the landmark of the world: instantly readable, with a strong red-and-white silhouette.
 - The ground as something **alive**: a pulsing mycelium network underneath the surface.
+- The **cutaway** view: the ground line splits the image into the world above and the network below, which is the model for the Underground mode.
+- The **mood**: dark surroundings, a few lit subjects, and fine bright threads and spores. The cap is the only strong red in the image, which makes it the landmark.
 - Soil life drawn at a scale where it becomes **monumental**.
 
 ## Why this direction
