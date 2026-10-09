@@ -13,9 +13,8 @@ This section records what was assigned, what I explored, how the prototype chang
 | [Week 2: Infinite Noise Map](week-2-infinite-noise-map.md) | Week 2 | Noise types, octaves, seeds, layer blending, shaping, and height colours |
 | [Class 04: Voxel Terrain](week-3-voxel-terrain.md) | Week 3 | Density fields, cubic voxels, CSG, chunking, meshing, optimization, and criteria evaluation |
 | [Week 4: Shape Exploring — Shader Studies](week-4-shape-exploring.md) | Week 4 | Height, slope, biome, displacement, fresnel, fog, and noise shaders |
-| [Project Progress 01: Giant Tree World](project-01-giant-trees.md) | Project | 1–8 seeded giant trees, roots to canopy, with portals; SDF + CSG, chunked Marching Cubes in a Web Worker |
 
-Each weekly note explains **what I built**, **what the parameters mean**, and **why I built it** for the giant-tree project.
+Each weekly note explains **what I built**, **what the parameters mean**, and **why I built it** for the ant micro-world project.
 
 ## Note Structure
 

@@ -55,7 +55,7 @@ Generated voxel arrays and mesh geometry are never uploaded. Firestore rules mus
 
 ## Assignment 2 — Shader Studies
 
-Week 4 compares Default, Height Gradient, Slope, Height + Slope Biome, Vertex Displacement, Fresnel Glow, Distance Fog, and Procedural Noise. Each mode exposes only its relevant controls and explains its inputs, shader stage, visual result, and use in the giant-tree city. Shader programs and preview buffers are created once and reused when modes change.
+Week 4 compares Default, Height Gradient, Slope, Height + Slope Biome, Vertex Displacement, Fresnel Glow, Distance Fog, and Procedural Noise. Each mode exposes only its relevant controls and explains its inputs, shader stage, visual result, and use in the ant micro world. Shader programs and preview buffers are created once and reused when modes change.
 
 ## Related Notes
 

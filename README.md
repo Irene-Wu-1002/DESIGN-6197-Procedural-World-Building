@@ -2,7 +2,7 @@
 
 Coursework repository for **Procedural World Building** at Cornell AAP, Fall 2026.
 
-This repository is both a working prototype and a study notebook. It records the questions, design decisions, implementation experiments, tutorials, and evaluations that lead toward a procedural world built inside giant trees.
+This repository is both a working prototype and a study notebook. It records the questions, design decisions, implementation experiments, tutorials, and evaluations that lead toward a procedural micro world seen through an ant's eyes.
 
 
 ## Table of Contents
@@ -18,25 +18,20 @@ This repository is both a working prototype and a study notebook. It records the
 
 ## Current Prototype
 
-The web prototype, **Procedural World Building**, has two sections. **Exploration** holds the weekly studies; **Project** holds Concept, Map, and Archive:
+The web prototype, **Procedural World Building**, has two sections. **Exploration** holds the weekly studies; **Project** holds Concept and Map:
 
 1. **Week 1 — Three.js exploration:** scene setup, geometry, lighting, materials, orbit controls, and a fading grid.
 2. **Week 2 — Infinite noise map:** deterministic noise, terrain layers, map controls, and height-based materials.
 3. **Week 3 / Class 04 — Voxel terrain:** 3D density fields, cubic voxels, sequential CSG, chunking, Marching Cubes, and performance comparisons.
 4. **Week 5 — Distributions:** four seeded ways to scatter trees across a field: uniform random, jittered grid, Poisson disk, and noise-clustered placement.
-5. **Project › Archive — Giant Tree City (First Exploration):** 1–8 seeded giant trees (default 3) from root to canopy, with portals cut through each trunk; chunked Marching Cubes generated in a Web Worker.
 
 ![Cubic voxel planet in the Week 3 prototype](docs/assets/screenshots/week-04-voxel-planet-cubic.png)
 
 Read the full study note: [`docs/class-notes/week-3-voxel-terrain.md`](docs/class-notes/week-3-voxel-terrain.md).
 
-![Three giant trees in the Archive tab](docs/assets/screenshots/project-giant-trees.png)
-
-Project progress note: [`docs/class-notes/project-01-giant-trees.md`](docs/class-notes/project-01-giant-trees.md).
-
 ## Project Direction
 
-The current world concept is **A City Built Inside Giant Trees**. Roots become underground cities, trunks contain industrial districts, branches support villages, and the canopy creates a different climate zone.
+The current world concept is **Umwelt: A Micro World Through an Ant's Eyes**: one square metre of forest floor seen from an ant's height, built mainly as a height field, with perception modes for the ant's vision, smell trails, and the fungal network underground.
 
 - [Project design](docs/planning/project-design.md)
 - [Feature backlog](docs/planning/backlog.md)

@@ -28,7 +28,7 @@ The ground and the streaming system. Everything else is placed on top of it.
 - [ ] **Seamless tile edges** — neighbouring tiles sample the same world points at their
   edges, and normals come from `height()`, not `computeVertexNormals()`.
 - [ ] **Build queue / Web Worker** — new tiles are built 1–2 per frame or in a worker (as
-  in `giantTreeWorker.js`), so walking never drops frames.
+  in the Week 3 voxel study), so walking never drops frames.
 - [ ] **Height and moisture colouring** — dry sand on ridges and dark damp soil in hollows,
   from the data maps.
 - [ ] **Human camera with W A S D** — orbit view of the patch that moves the streaming
@@ -106,10 +106,8 @@ Only if time allows.
 - [ ] **Translucent leaves and moss** — fake subsurface scattering when the sun is behind
   them.
 - [ ] **Dew drops** — refractive spheres showing a tiny upside-down image of the world.
-- [ ] **Dust and spores** — GPU particles drifting in light shafts, reusing the archived
-  rain system.
-- [ ] **Weather carry-over** — sun, clouds, and rain from the archived project, rescaled
-  to ant size (a raindrop as a falling boulder).
+- [ ] **Dust and spores** — GPU particles drifting in light shafts.
+- [ ] **Weather** — sun, clouds, and rain at ant size (a raindrop as a falling boulder).
 - [ ] **Local erosion** — thermal or hydraulic erosion per tile with a margin, or faked
   with noise, without breaking determinism.
 - [ ] **Local SDF patches** — small voxel/SDF pieces (Weeks 3–4) only where overhangs are
@@ -121,24 +119,6 @@ Only if time allows.
   then document what each optimisation bought.
 
 ---
-
-## Archived Track — Giant Tree City
-
-The first direction, now in **Project › Archive** (*First Exploration*). See
-[Project Progress 01](../class-notes/project-01-giant-trees.md). No further work planned.
-
-- [x] **Three seeded giant trees** — roots, trunk, branches, and canopy from one density field.
-- [x] **User-chosen tree count** — 1–8 trees; the layout, camera, shadows, and fog adapt.
-- [x] **Portals and hollow core** — round tunnels subtracted from each trunk.
-- [x] **Chunked Marching Cubes in a Web Worker** — seamless chunks, streamed root to top.
-- [x] **Layer colouring and height fog** — roots / trunk / branches / canopy read as separate zones.
-- [x] **Weather** — sun and time of day, clouds, and rain, with smooth transitions and wet surfaces.
-- Dropped: platforms and bridges in the portals, lights on heartwood walls, save/load tree worlds.
-
-## Completed
-
-- Three giant trees with portals (web prototype) — 2026-09-30.
-- Giant Tree City moved to Project › Archive — 2026-10-07.
 
 ## Notes
 

@@ -8,14 +8,14 @@ export const SHADER_STUDIES = Object.freeze([
     inputs: 'None',
     modifies: 'None',
     why:
-      'It reads no shader data and adds no effect. This gives the other studies a neutral comparison point before they are applied to the giant-tree world.',
+      'It reads no shader data and adds no effect. This gives the other studies a neutral comparison point before they are applied to the project terrain.',
     implemented: true,
   },
   {
     id: 'height-gradient',
     label: 'Height Gradient',
     description:
-      'Colors the tree city from roots to canopy using interpolated world-space height.',
+      'Colors the terrain from low ground to high peaks using interpolated world-space height.',
     inputs: 'World position Y',
     modifies: 'Pixels',
     why:
@@ -52,7 +52,7 @@ export const SHADER_STUDIES = Object.freeze([
     inputs: 'World position and time',
     modifies: 'Vertices',
     why:
-      'It reads vertex height and time, then gently moves upper vertices. The roots remain stable while the canopy breathes, helping the giant tree feel alive.',
+      'It reads vertex height and time, then gently moves upper vertices. The low ground remains stable while the peaks breathe, helping the surface feel alive.',
     implemented: true,
   },
   {

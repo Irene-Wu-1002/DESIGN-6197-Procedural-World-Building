@@ -8,7 +8,7 @@ Prototype tab: **Week 4 — Shape exploring** · Code: [`Week4Scene.jsx`](../../
 
 ## What I Built
 
-A set of **shader studies**: small GPU programs that decide the colour of each pixel, or the position of each vertex, on a preview of the giant-tree world. Pick a **Shader strategy** from the menu; the panel then explains what the shader reads, what it changes, and why it is useful, and shows that shader's controls.
+A set of **shader studies**: small GPU programs that decide the colour of each pixel, or the position of each vertex, on a round preview surface. Pick a **Shader strategy** from the menu; the panel then explains what the shader reads, what it changes, and why it is useful, and shows that shader's controls.
 
 The studies are written directly in **WebGL and GLSL** instead of using three.js materials. Each one is a vertex shader plus a fragment shader drawn onto a full-screen preview (or, for vertex displacement, onto a grid mesh). Working at this lower level shows exactly what runs on the GPU.
 
@@ -109,10 +109,10 @@ Adds organic colour variation without any image textures.
 - **Separate the layers without changing geometry.** The concept needs roots, trunk, branches, and canopy to read as different places. Shaders can do that with colour, light, and fog alone.
 - **Understand what each effect reads.** Studying one effect at a time (height, slope, camera distance, time) makes it clear which data each effect needs from the world.
 - **Test the atmosphere.** Fog, glow, and swaying canopy test the "different climate at different heights" part of the concept before the world is built.
-- **Direct path to the project.** The Project tab already uses these ideas: colour changes from roots to canopy (height gradient), moss on upward-facing surfaces (slope), and height fog that is thick at the ground and clear at the canopy (distance fog plus height).
+- **Direct path to the project.** The ant world reuses these ideas: height and moisture colouring for dry ridges and damp hollows, slope to keep moss off steep faces, and distance fog to hide the edge of the streamed world.
 
 ## Limitations and Next Steps
 
-- The studies run on a round stand-in preview surface, not on the real tree mesh.
+- The studies run on a round stand-in preview surface, not on the real terrain.
 - Each study runs alone; they are not yet combined into one material.
-- Next: port the biome, fresnel, and canopy-sway shaders into the Project tab's tree material, where only height fog and vertex colours are used so far.
+- Next: port the height, slope, and fog shaders into the ant world's height-field terrain material.

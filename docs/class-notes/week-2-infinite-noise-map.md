@@ -105,12 +105,12 @@ Default layers:
 ## Why I Built This
 
 - **Noise is the base of procedural worlds.** Almost every natural shape in the later tabs, including hills, bark, and foliage, starts from noise and octaves.
-- **Seeds make the world reproducible.** The Project tab uses the same idea: one seed rebuilds the same three trees.
+- **Seeds make the world reproducible.** The ant world uses the same idea: one seed rebuilds the same ground every time you walk back to it.
 - **Layers are how a world is built up.** Blending separate Land and Sea layers shows how land layers and features are added one at a time, which was a presentation requirement.
-- **Colour by height** is the first version of layer colouring. The Giant Tree City colours roots, trunk, branches, and canopy by height in the same way.
+- **Colour by height** is the first version of layer colouring. The ant world colours dry ridges and damp hollows from height and moisture in the same way.
 
 ## Limitations and Next Steps
 
-- A height map stores one height per (x, y), so it cannot make caves, overhangs, or hollow trunks. That limitation is why Week 3 moves to **3D density fields (voxels)**.
+- A height map stores one height per (x, y), so it cannot make caves, overhangs, or tunnels. That limitation is why Week 3 moves to **3D density fields (voxels)**.
 - At most two layers can be blended.
 - The simulations are colour overlays only; the water does not change the terrain shape.

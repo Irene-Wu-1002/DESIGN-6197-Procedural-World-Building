@@ -573,9 +573,9 @@ Useful next steps would be true per-chunk dirty flags, camera-based streaming, f
 
 ## Why I Built This
 
-- **Height maps cannot make hollow trees.** Week 2's terrain stores one height per point, so it cannot represent caves, overhangs, or a hollow trunk. A 3D density field can, which the Giant Tree City needs for roots that arch, portals, and interiors.
-- **CSG is how the city is carved.** Adding and subtracting shapes in order is the same method the Project tab uses to blend roots and branches into the trunk and to cut the portals.
-- **Chunking and meshing make it scale.** Three 60–75 m trees are far larger than this planet. The chunking and Marching Cubes studied here became the Project tab's chunked mesher. Two of the next steps above were built there: seamless chunk borders and worker-thread generation. See [Project Progress 01](project-01-giant-trees.md).
+- **Height maps cannot make caves.** Week 2's terrain stores one height per point, so it cannot represent caves, overhangs, or tunnels. A 3D density field can.
+- **Voxels cost grows with volume.** That cost is why the ant world uses a height field for the ground and keeps voxel/SDF patches only for small local features.
+- **Chunking makes it scale.** The same idea, splitting the world into chunks and building them on demand, becomes the tile streaming of the endless ant world.
 
 ## Key Takeaways
 

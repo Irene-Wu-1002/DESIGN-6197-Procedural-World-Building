@@ -33,6 +33,6 @@ An idea may start in the [weekly notes](class-notes/weekly-notes.md), become a s
 ## Current Highlights
 
 - [Voxel terrain study and criteria evaluation](class-notes/week-3-voxel-terrain.md)
-- [Giant-tree world concept](planning/project-design.md)
+- [Ant micro-world concept](planning/project-design.md)
 - [React setup tutorial](tutorials/react-setup.md)
 - [Firebase connection tutorial](tutorials/Firebase%20setup.md)

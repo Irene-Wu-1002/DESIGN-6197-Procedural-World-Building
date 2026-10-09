@@ -7,7 +7,6 @@ import Week3Scene from './components/Week3Scene'
 import Week4Scene from './components/Week4Scene'
 import Week5Scene from './components/Week5Scene'
 import ProjectPlaceholder from './components/ProjectPlaceholder'
-import ProjectScene from './components/ProjectScene'
 import './App.css'
 
 const SECTIONS = [
@@ -28,7 +27,6 @@ const SECTIONS = [
     tabs: [
       { id: 'concept', label: 'Project', title: 'Concept' },
       { id: 'map', label: 'Project', title: 'Map' },
-      { id: 'archive', label: 'Project', title: 'Archive' },
     ],
   },
 ]
@@ -128,7 +126,6 @@ export default function App() {
             description="The world map for the project will live here."
           />
         )}
-        {activeTab === 'archive' && <ProjectScene tag="First Exploration" />}
 
         {activeTab === 1 && (
           <SidePanel settings={settings} onChange={setSettings} />

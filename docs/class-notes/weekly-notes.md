@@ -42,15 +42,11 @@ Create documentation for the day's exploration and treat the repository as a stu
 
 ### World concepts considered
 
-**A City Built Inside Giant Trees**
-
-Several impossibly large trees contain an entire world. Roots form underground cities, trunks contain industrial districts, branches hold villages, and the canopy reaches a different climate.
-
 **The World That Changes With Emotion**
 
 The landscape responds to emotional state: calm creates smooth grasslands, fear creates sharp mountains and fog, happiness creates colorful vegetation, and conflict fractures the terrain.
 
-The giant-tree direction was selected and developed in the [project design](../planning/project-design.md).
+The project direction is developed in the [project design](../planning/project-design.md).
 
 ### Decisions and next actions
 
