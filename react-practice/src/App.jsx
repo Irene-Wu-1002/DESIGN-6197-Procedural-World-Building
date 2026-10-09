@@ -1,27 +1,49 @@
 import { useState } from 'react'
+import AccountMenu from './components/AccountMenu'
 import SidePanel from './components/SidePanel'
 import Week1Scene from './components/Week1Scene'
 import Week2Scene from './components/Week2Scene'
 import Week3Scene from './components/Week3Scene'
 import Week4Scene from './components/Week4Scene'
+import Week5Scene from './components/Week5Scene'
+import ProjectPlaceholder from './components/ProjectPlaceholder'
 import ProjectScene from './components/ProjectScene'
 import './App.css'
 
-const WEEKS = [
-  { id: 1, title: 'Three.js exploring' },
-  { id: 2, title: 'Infinite Noise Map' },
-  { id: 3, title: 'Voxel Terrain' },
-  { id: 4, title: 'Shader exploring' },
+const SECTIONS = [
   {
-    id: 'archive',
-    label: 'Archive',
-    title: 'Giant Tree City',
-    tag: 'First Exploration',
+    id: 'exploration',
+    title: 'Exploration',
+    tabs: [
+      { id: 1, label: 'Week 1', title: 'Three.js exploring' },
+      { id: 2, label: 'Week 2', title: 'Infinite Noise Map' },
+      { id: 3, label: 'Week 3', title: 'Voxel Terrain' },
+      { id: 4, label: 'Week 4', title: 'Shader exploring' },
+      { id: 5, label: 'Week 5', title: 'Distributions' },
+    ],
+  },
+  {
+    id: 'project',
+    title: 'Project',
+    tabs: [
+      { id: 'concept', label: 'Project', title: 'Concept' },
+      { id: 'map', label: 'Project', title: 'Map' },
+      { id: 'archive', label: 'Project', title: 'Archive' },
+    ],
   },
 ]
 
+const ALL_TABS = SECTIONS.flatMap((section) =>
+  section.tabs.map((tab) => ({ ...tab, section: section.id }))
+)
+
 export default function App() {
-  const [activeWeek, setActiveWeek] = useState(3)
+  const [activeTab, setActiveTab] = useState(3)
+  // Last sub tab opened in each main tab, so switching back returns to it.
+  const [lastTabBySection, setLastTabBySection] = useState({
+    exploration: 3,
+    project: 'concept',
+  })
   const [settings, setSettings] = useState({
     size: 1,
     rotationSpeed: 0.6,
@@ -33,41 +55,85 @@ export default function App() {
     shape: 'box',
   })
 
-  const active = WEEKS.find((week) => week.id === activeWeek) ?? WEEKS[0]
+  const active = ALL_TABS.find((tab) => tab.id === activeTab) ?? ALL_TABS[0]
+  const activeSection =
+    SECTIONS.find((section) => section.id === active.section) ?? SECTIONS[0]
+
+  const openTab = (tabId, sectionId) => {
+    setActiveTab(tabId)
+    setLastTabBySection((current) => ({ ...current, [sectionId]: tabId }))
+  }
 
   return (
     <div className="app">
-      {activeWeek === 1 && <Week1Scene settings={settings} />}
-      {activeWeek === 2 && <Week2Scene />}
-      {activeWeek === 3 && <Week3Scene />}
-      {activeWeek === 4 && <Week4Scene />}
-      {activeWeek === 'archive' && <ProjectScene tag={active.tag} />}
+      <header className="site-header">
+        <div className="site-bar">
+          <span className="site-title">Procedural World Building</span>
 
-      <header className="titlebar">
-        <h1>{active.title}</h1>
-        {active.tag && <span className="archive-tag">{active.tag}</span>}
-        <p>yw2785 &middot; Cornell AAP</p>
+          <nav className="main-tabs" role="tablist" aria-label="Sections">
+            {SECTIONS.map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                role="tab"
+                aria-selected={activeSection.id === section.id}
+                className={activeSection.id === section.id ? 'active' : ''}
+                onClick={() =>
+                  openTab(lastTabBySection[section.id], section.id)
+                }
+              >
+                {section.title}
+              </button>
+            ))}
+          </nav>
+
+          <div className="site-meta">
+            <span className="site-author">yw2785 &middot; Cornell AAP</span>
+            <AccountMenu />
+          </div>
+        </div>
+
+        <nav className="sub-tabs" role="tablist" aria-label={activeSection.title}>
+          {activeSection.tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              className={activeTab === tab.id ? 'active' : ''}
+              onClick={() => openTab(tab.id, activeSection.id)}
+            >
+              <span className="sub-tabs-label">{tab.label}</span>
+              <span className="sub-tabs-title">{tab.title}</span>
+            </button>
+          ))}
+        </nav>
       </header>
 
-      <nav className="week-tabs" role="tablist" aria-label="Weekly work">
-        {WEEKS.map((week) => (
-          <button
-            key={week.id}
-            type="button"
-            role="tab"
-            aria-selected={activeWeek === week.id}
-            className={activeWeek === week.id ? 'active' : ''}
-            onClick={() => setActiveWeek(week.id)}
-          >
-            <span className="week-tabs-label">{week.label ?? `Week ${week.id}`}</span>
-            <span className="week-tabs-title">{week.title}</span>
-          </button>
-        ))}
-      </nav>
+      <div className="stage">
+        {activeTab === 1 && <Week1Scene settings={settings} />}
+        {activeTab === 2 && <Week2Scene />}
+        {activeTab === 3 && <Week3Scene />}
+        {activeTab === 4 && <Week4Scene />}
+        {activeTab === 5 && <Week5Scene />}
+        {activeTab === 'concept' && (
+          <ProjectPlaceholder
+            title="Concept"
+            description="The project concept, references, and design goals will live here."
+          />
+        )}
+        {activeTab === 'map' && (
+          <ProjectPlaceholder
+            title="Map"
+            description="The world map for the project will live here."
+          />
+        )}
+        {activeTab === 'archive' && <ProjectScene tag="First Exploration" />}
 
-      {activeWeek === 1 && (
-        <SidePanel settings={settings} onChange={setSettings} />
-      )}
+        {activeTab === 1 && (
+          <SidePanel settings={settings} onChange={setSettings} />
+        )}
+      </div>
     </div>
   )
 }

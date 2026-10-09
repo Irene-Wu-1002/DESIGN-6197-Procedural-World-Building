@@ -1,0 +1,174 @@
+/* Account button (in the site header) and the sign-in dialog. */
+
+.account {
+  display: flex;
+}
+
+.account-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 280px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.account-open {
+  padding: 8px 14px;
+  font-weight: 500;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+
+.account-open:hover {
+  border-color: var(--accent);
+}
+
+.account-open:focus-visible,
+.account-chip .layer-add:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.account-email {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-chip .layer-add {
+  flex-shrink: 0;
+}
+
+.account-dialog {
+  width: min(360px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  color: var(--text);
+  background: #161a20;
+}
+
+.account-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.account-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+}
+
+.account-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.account-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.account-close {
+  padding: 0 6px;
+  border: 0;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.account-close:hover {
+  color: var(--text-strong);
+}
+
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.account-field input {
+  padding: 9px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.account-field input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.account-field small {
+  font-size: 11px;
+}
+
+.account-message {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.account-error {
+  color: #ff7b72;
+}
+
+.account-submit {
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.account-submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.account-submit:focus-visible,
+.account-links button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.account-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-links button {
+  padding: 0;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.account-links button:hover {
+  color: var(--accent);
+}
