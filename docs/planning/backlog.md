@@ -1,99 +1,150 @@
 # Feature Backlog
 
-Features I would like to implement over the semester, grouped by priority. Checkboxes are
-updated as work is completed. Items move up or down as I learn what is actually feasible.
+Features for **Umwelt: A Micro World Through an Ant's Eyes**, grouped by priority. The
+design, scale table, and techniques are in [`project-design.md`](project-design.md).
+Checkboxes are updated as work is completed. Items move up or down as I learn what is
+actually feasible.
 
 **Status key:** `[ ]` not started · `[~]` in progress · `[x]` done
 
 ---
 
-## P0 — Foundations
+## P0 — Endless Height Field
 
-The core terrain and scattering pipeline. Everything else depends on these.
+The ground and the streaming system. Everything else is placed on top of it.
+*(Milestone 1 · Map tab, first version)*
 
-- [ ] **Heightfield terrain generator** — Houdini heightfield network driven by layered
-  noise, exposed as an HDA with controls for scale, octaves, and erosion strength.
-- [ ] **Hydraulic erosion pass** — realistic water-carved valleys and sediment deposition,
-  with masks output for downstream scattering.
-- [ ] **Slope and altitude masks** — reusable mask generation so material and scatter
-  layers respond automatically to terrain shape.
-- [ ] **Point scattering system** — density-driven scatter with masks, jitter, and
-  per-instance random scale/rotation.
-- [ ] **Houdini to Unreal export pipeline** — reliable round-trip of terrain and point
-  data, documented as a tutorial so it is repeatable.
+- [ ] **World height function** — `height(x, z, seed)` in real metres, built from
+  `utils/noise.js`: fBm at about 30 cm, 3 cm, and 2 mm wavelengths, plus domain warping.
+  The same position and seed always give the same height.
+- [ ] **Position-based stamps** — pebble domes, dents, and the ant-hill mound with an
+  entrance crater at the origin. Stamps are decided by hashing world cells, never kept in
+  a global list, so any tile can be built on its own.
+- [ ] **Data maps** — slope, curvature, and moisture computed from `height()` with finite
+  differences, so they match across tile edges.
+- [ ] **Tile streaming** — 20 cm × 20 cm tiles stored in a `Map` by `"i,j"`. A ring of
+  about 5 tiles stays loaded around the viewer; tiles that leave the ring are disposed or
+  pooled. Walking away and coming back shows the same ground.
+- [ ] **Seamless tile edges** — neighbouring tiles sample the same world points at their
+  edges, and normals come from `height()`, not `computeVertexNormals()`.
+- [ ] **Build queue / Web Worker** — new tiles are built 1–2 per frame or in a worker (as
+  in `giantTreeWorker.js`), so walking never drops frames.
+- [ ] **Height and moisture colouring** — dry sand on ridges and dark damp soil in hollows,
+  from the data maps.
+- [ ] **Human camera with W A S D** — orbit view of the patch that moves the streaming
+  centre.
+- [ ] **Hide the edge of the world** — fog or depth of field fades out the loaded ring.
 
-## P1 — World Systems
+## P1 — Ground Cover and Landmark
 
-Systems that turn terrain into a believable place.
+The objects that make the ground read as a forest floor at ant scale.
+*(Milestones 2–3)*
 
-- [ ] **Procedural river networks** — flow paths that follow terrain gradient, carve banks,
-  and remain continuous downhill.
-- [ ] **Biome distribution** — temperature/moisture map driving which vegetation and
-  material sets appear where, with blended transitions instead of hard edges.
-- [ ] **Road and path generation** — least-cost pathfinding across the heightfield that
-  avoids steep slopes and flattens terrain along its route.
-- [ ] **Modular rock and cliff library** — a small set of procedurally generated meshes
-  with LODs, varied enough to avoid visible repetition.
-- [ ] **Procedural vegetation** — at least one tree species built parametrically, with
-  variation driven by a seed parameter.
+- [ ] **Per-tile scattering** — each tile gets `tileSeed = hash(i, j, worldSeed)` and
+  runs the Week 5 `distributePoints`, offset into world space.
+- [ ] **Seamless scattering across tile borders** — switch pebbles to a jittered
+  one-candidate-per-cell scheme (or accept only points whose cell is inside the tile) so
+  Poisson spacing holds across edges.
+- [ ] **Placement filters** — no moss on steep slopes, more mushrooms where it is wet,
+  driven by the data maps.
+- [ ] **Surface alignment** — every object samples the height under it and tilts to the
+  surface normal.
+- [ ] **Instanced ground cover** — pebbles and sand stones (Poisson), moss and grass
+  (noise clustered), fallen leaves and twigs (random + rotation), with per-instance size,
+  rotation, and colour from the seed. Instances are removed together with their tile.
+- [ ] **Procedural fly agaric** — lathe stem and cap from profile curves, noise-bent stem
+  and uneven cap edge, radial gills.
+- [ ] **Spot shader** — raised white Voronoi spots on the red cap.
+- [ ] **Growth stages** — button → open cap → flat and old, chosen by seed.
+- [ ] **Region-based mushroom placement** — mushrooms are decided on a coarser grid (about
+  1 m regions) so a mushroom is never cut off at a tile edge; a large fly agaric always
+  stands next to the starting ant hill.
 
-## P2 — Structures and Detail
+## P2 — Ant Camera and Perception Modes
 
-- [ ] **Building generator** — parametric structures from a footprint, with floors, roofs,
-  and openings driven by attributes.
-- [ ] **Settlement layout** — placing buildings along generated roads with sensible
-  spacing, orientation, and terrain conforming.
-- [ ] **Wall and fence system** — geometry that follows a curve and adapts to terrain
-  height without floating or clipping.
-- [ ] **Debris and clutter scatter** — small-scale detail pass that reads existing masks
-  to make spaces feel inhabited.
+Seeing the same world through the ant's senses. *(Milestones 4–5)*
 
-## P3 — Look Development and Presentation
+- [ ] **Ant camera** — wide, low camera about 2 mm above the surface that walks on the
+  height field with W A S D, plus a run key for exploring.
+- [ ] **Depth precision at 2 mm** — `logarithmicDepthBuffer` (or a scaled unit) so near
+  and far geometry don't z-fight.
+- [ ] **Floating origin** — keep the camera near (0, 0, 0) and shift the world, so
+  positions don't jitter after a long walk.
+- [ ] **LOD rings** — dense tiles near the camera and coarse ones farther out, with skirts
+  to hide cracks between resolutions. Fine 2 mm grain as a normal map.
+- [ ] **Macro depth of field** — tiny focus distance so the world reads as microscopic.
+- [ ] **Mode switcher** — Human / Ant vision / Smell / Underground. Switching changes only
+  cameras and shaders, never the geometry.
+- [ ] **Ant-vision post-process** — hexagonal compound-eye cells, lower sharpness, and a
+  colour shift toward UV / blue-green.
+- [ ] **Smell mode** — pheromone trails as glowing ribbons that fade over time while the
+  rest of the world dims.
 
-- [ ] **Layered landscape material** — auto-blending by slope and height, with distance
-  tiling breakup.
-- [ ] **Time-of-day and weather setup** — lighting presets that let the same world be
-  presented under different conditions.
-- [ ] **Cinematic camera flythrough** — a rendered sequence of the final world for the
-  end-of-semester submission.
+## P3 — Underground and Ant Agents
 
-## P4 — Stretch Goals
+The hidden second world and the living paths across the surface. *(Milestones 6–7)*
+
+- [ ] **Mycelium network** — space colonisation per region, rooted at that region's
+  mushrooms, with fixed links to neighbouring regions so the network continues
+  endlessly.
+- [ ] **Pulse shader** — light waves running along each strand (*Poetics of Soil*).
+- [ ] **Underground cutaway** — the surface becomes translucent or is cut away to reveal
+  the network.
+- [ ] **Ant tunnels** — tube meshes along tunnel paths below the ant hill (the height
+  field cannot make caves).
+- [ ] **Ant agents** — ants walk the height field and prefer gentle slopes.
+- [ ] **Pheromone grid** — trails that fade over time, stored in a sparse map per tile
+  because they are not seed-based and can't be regenerated.
+- [ ] **Vector field** — slope and pheromone strength combined into a direction field the
+  ants follow, so paths form on their own.
+- [ ] **Ride an ant** — the ant camera follows one agent along its path.
+
+## P4 — Look Development and Stretch Goals
 
 Only if time allows.
 
-- [ ] **Wave function collapse experiment** — tile-based layout generation as an
-  alternative to noise-driven placement.
-- [ ] **Custom Python tooling** — batch export and asset-naming utilities to reduce manual
-  steps in the pipeline.
-- [ ] **Runtime PCG in Unreal** — generating content at play time rather than baking it,
-  to compare cost and control against the offline approach.
-- [ ] **Performance profiling pass** — measure draw calls and frame time, then document
-  what optimization actually bought.
+- [ ] **Translucent leaves and moss** — fake subsurface scattering when the sun is behind
+  them.
+- [ ] **Dew drops** — refractive spheres showing a tiny upside-down image of the world.
+- [ ] **Dust and spores** — GPU particles drifting in light shafts, reusing the archived
+  rain system.
+- [ ] **Weather carry-over** — sun, clouds, and rain from the archived project, rescaled
+  to ant size (a raindrop as a falling boulder).
+- [ ] **Local erosion** — thermal or hydraulic erosion per tile with a margin, or faked
+  with noise, without breaking determinism.
+- [ ] **Local SDF patches** — small voxel/SDF pieces (Weeks 3–4) only where overhangs are
+  really needed.
+- [ ] **Sound** — soil and forest-floor sounds, as in both references.
+- [ ] **Concept tab content** — concept, references, and the scale table with images.
+- [ ] **Save/load worlds** — store seed and parameters with the Firebase service.
+- [ ] **Performance profiling pass** — measure tiles loaded, draw calls, and frame time,
+  then document what each optimisation bought.
 
 ---
 
-## Web Prototype Track — Giant Tree City
+## Archived Track — Giant Tree City
 
-Built in the **Project** tab of `react-practice/`. See
-[Project Progress 01](../class-notes/project-01-giant-trees.md).
+The first direction, now in **Project › Archive** (*First Exploration*). See
+[Project Progress 01](../class-notes/project-01-giant-trees.md). No further work planned.
 
 - [x] **Three seeded giant trees** — roots, trunk, branches, and canopy from one density field.
 - [x] **User-chosen tree count** — 1–8 trees; the layout, camera, shadows, and fog adapt.
 - [x] **Portals and hollow core** — round tunnels subtracted from each trunk.
 - [x] **Chunked Marching Cubes in a Web Worker** — seamless chunks, streamed root to top.
 - [x] **Layer colouring and height fog** — roots / trunk / branches / canopy read as separate zones.
-- [ ] **Platforms and bridges in the portals** — first city geometry inside the trees.
 - [x] **Weather** — sun and time of day, clouds, and rain, with smooth transitions and wet surfaces.
-- [ ] **Lights on heartwood walls** — show that the interiors are inhabited.
-- [ ] **Save/load tree worlds** — extend the Firebase service beyond the Week 3 schema.
+- Dropped: platforms and bridges in the portals, lights on heartwood walls, save/load tree worlds.
 
 ## Completed
 
 - Three giant trees with portals (web prototype) — 2026-09-30.
+- Giant Tree City moved to Project › Archive — 2026-10-07.
 
 ## Notes
 
-- P0 items should be finished before mid-semester; the later tiers assume that pipeline
-  works end to end.
+- P0 should be working end to end before ground cover starts: every later item assumes
+  `height()` and tile streaming.
+- The determinism rule applies everywhere: anything generated must come from world
+  position plus seed. Only pheromones are stored state.
 - Each completed feature should produce a tutorial in [`../tutorials/`](../tutorials/) so
   the technique is recorded, not just the result.
