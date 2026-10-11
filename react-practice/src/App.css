@@ -631,6 +631,37 @@ input[type='checkbox'] {
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* Week 5 scatter layers: name · count · on/off in the header. */
+.scatter-layer {
+  flex-shrink: 0;
+}
+
+.scatter-layer summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scatter-layer-name {
+  flex: 1;
+}
+
+.scatter-layer-count {
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.scatter-layer summary input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+
+/* The whole panel scrolls, so layer bodies don't need their own scrollbar. */
+.basic-voxel-panel .control-section.scatter-layer[open] .control-section-body {
+  max-height: none;
+  overflow: visible;
+}
+
 .world-storage {
   display: flex;
   flex-direction: column;

@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import ScatterLayerPanel from './ScatterLayerPanel'
 import Slider from './Slider'
-import { getNoise } from '../utils/noise'
 import {
-  SCATTER_ASSETS,
-  createTerrainSampler,
-  scatterAssets,
+  DEFAULT_LAYER_RULES,
+  SCATTER_LAYERS,
+  passesRules,
+  scatterLayers,
 } from '../utils/scatter'
 import {
   createInstancedAssetParts,
   createWindmillGeometry,
 } from '../utils/scatterAssets'
+import { createTerrainFields } from '../utils/terrainFields'
 
 const TERRAIN_SIZE = 40
 const SEGMENTS = 200
@@ -20,6 +22,9 @@ const BLADE_SPEED = 1.2
 
 const GRASS = new THREE.Color('#5f8a3a')
 const ROCK = new THREE.Color('#85837c')
+const ALLOWED_TINT = new THREE.Color('#f08a3c')
+const BLOCKED_DIM = 0.45
+const ALLOWED_MIX = 0.55
 
 const DEFAULT_TERRAIN = {
   seed: 5,
@@ -29,23 +34,15 @@ const DEFAULT_TERRAIN = {
   persistence: 0.5,
   lacunarity: 2,
   rockSlope: 30,
+  waterLevel: 20,
+  showWater: true,
 }
 
-// amount: windmills = count, everything else = density in %.
 const DEFAULT_SCATTER = {
   seed: 7,
-  clumping: 4,
-  assets: {
-    pine: { on: true, amount: 60 },
-    round: { on: true, amount: 50 },
-    bush: { on: true, amount: 50 },
-    rock: { on: true, amount: 40 },
-    windmill: { on: true, amount: 3 },
-  },
+  preview: false,
+  rules: DEFAULT_LAYER_RULES,
 }
-
-// Panel order (placement order lives in SCATTER_ASSETS).
-const PANEL_ASSETS = ['pine', 'round', 'bush', 'rock', 'windmill']
 
 function noiseParams(terrain) {
   return {
@@ -63,38 +60,56 @@ export default function Week5Scene() {
   const geometryRef = useRef(null)
   const assetMeshesRef = useRef(null)
   const windmillsRef = useRef(null)
+  const waterRef = useRef(null)
   const [terrain, setTerrain] = useState(DEFAULT_TERRAIN)
   const [scatter, setScatter] = useState(DEFAULT_SCATTER)
   const [panelTab, setPanelTab] = useState('terrain')
+  const [openLayer, setOpenLayer] = useState('pine')
 
   const setTerrainParam = (key, value) =>
     setTerrain((current) => ({ ...current, [key]: value }))
   const setScatterParam = (key, value) =>
     setScatter((current) => ({ ...current, [key]: value }))
-  const setAsset = (id, key, value) =>
+  const setLayerRule = (id, key, value) =>
     setScatter((current) => ({
       ...current,
-      assets: {
-        ...current.assets,
-        [id]: { ...current.assets[id], [key]: value },
+      rules: {
+        ...current.rules,
+        [id]: { ...current.rules[id], [key]: value },
       },
     }))
+  const resetLayer = (id) =>
+    setScatter((current) => ({
+      ...current,
+      rules: { ...current.rules, [id]: DEFAULT_LAYER_RULES[id] },
+    }))
 
-  const placements = useMemo(() => {
-    const sampleTerrain = createTerrainSampler({
-      size: TERRAIN_SIZE,
-      height: terrain.height,
-      noise: noiseParams(terrain),
-    })
-    return scatterAssets({
-      size: TERRAIN_SIZE,
-      sampleTerrain,
-      rockSlope: terrain.rockSlope,
-      seed: scatter.seed,
-      clumping: scatter.clumping,
-      settings: scatter.assets,
-    })
-  }, [terrain, scatter])
+  // Terrain maps (height, slope, cliff and water distance) shared by the
+  // mesh, the scatter rules, and the rule preview.
+  const fields = useMemo(
+    () =>
+      createTerrainFields({
+        size: TERRAIN_SIZE,
+        segments: SEGMENTS,
+        height: terrain.height,
+        noise: noiseParams(terrain),
+        rockSlope: terrain.rockSlope,
+        waterLevel: terrain.waterLevel,
+        showWater: terrain.showWater,
+      }),
+    [terrain]
+  )
+
+  const placements = useMemo(
+    () => scatterLayers({ fields, seed: scatter.seed, rules: scatter.rules }),
+    [fields, scatter.seed, scatter.rules]
+  )
+
+  // The open layer's rules are tinted on the ground while preview is on.
+  const previewRules =
+    panelTab === 'scatter' && scatter.preview && openLayer
+      ? scatter.rules[openLayer]
+      : null
 
   // Scene setup: camera, lights, shadows, terrain mesh, and asset meshes.
   useEffect(() => {
@@ -150,11 +165,26 @@ export default function Week5Scene() {
     terrainMesh.receiveShadow = true
     scene.add(terrainMesh)
 
+    // Flat, slightly see-through water plane; its height follows waterLevel.
+    const waterGeometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE)
+    waterGeometry.rotateX(-Math.PI / 2)
+    const waterMaterial = new THREE.MeshStandardMaterial({
+      color: '#3b7fb3',
+      roughness: 0.15,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.72,
+    })
+    const water = new THREE.Mesh(waterGeometry, waterMaterial)
+    water.receiveShadow = true
+    scene.add(water)
+    waterRef.current = water
+
     // One InstancedMesh per asset part; instance colours carry the tint.
     const parts = createInstancedAssetParts()
     const assetMaterials = []
     const assetMeshes = {}
-    SCATTER_ASSETS.filter((asset) => parts[asset.id]).forEach((asset) => {
+    SCATTER_LAYERS.filter((asset) => parts[asset.id]).forEach((asset) => {
       assetMeshes[asset.id] = parts[asset.id].map((part) => {
         const partMaterial = new THREE.MeshStandardMaterial({
           color: '#ffffff',
@@ -243,22 +273,29 @@ export default function Week5Scene() {
       geometryRef.current = null
       assetMeshesRef.current = null
       windmillsRef.current = null
+      waterGeometry.dispose()
+      waterMaterial.dispose()
+      waterRef.current = null
     }
   }, [])
 
-  // Height from layered Perlin noise; color from slope (flat = grass, steep = rock).
+  // Heights from the terrain maps; color from slope (flat = grass, steep = rock).
+  // With the rule preview on, allowed ground is tinted and blocked ground dimmed.
   useEffect(() => {
     const geometry = geometryRef.current
-    if (!geometry) return
+    const water = waterRef.current
+    if (!geometry || !water) return
 
     const positions = geometry.attributes.position
     const colors = geometry.attributes.color
-    const noise = noiseParams(terrain)
+    const half = TERRAIN_SIZE / 2
+    const gridIndex = new Int32Array(positions.count)
 
     for (let index = 0; index < positions.count; index += 1) {
-      const x = positions.getX(index)
-      const z = positions.getZ(index)
-      positions.setY(index, getNoise(x, z, noise) * terrain.height)
+      const column = Math.round((positions.getX(index) + half) / fields.step)
+      const row = Math.round((positions.getZ(index) + half) / fields.step)
+      gridIndex[index] = row * fields.points + column
+      positions.setY(index, fields.heights[gridIndex[index]])
     }
     positions.needsUpdate = true
     geometry.computeVertexNormals()
@@ -275,11 +312,22 @@ export default function Week5Scene() {
         terrain.rockSlope + BLEND_DEGREES
       )
       color.lerpColors(GRASS, ROCK, rockAmount)
+      if (previewRules) {
+        const sample = fields.sampleAt(gridIndex[index])
+        if (passesRules(previewRules, sample, fields)) {
+          color.lerp(ALLOWED_TINT, ALLOWED_MIX)
+        } else {
+          color.multiplyScalar(BLOCKED_DIM)
+        }
+      }
       colors.setXYZ(index, color.r, color.g, color.b)
     }
     colors.needsUpdate = true
     geometry.computeBoundingSphere()
-  }, [terrain])
+
+    water.visible = fields.hasWater
+    if (fields.hasWater) water.position.y = fields.waterY
+  }, [fields, terrain.rockSlope, previewRules])
 
   // Write the scatter result into the instanced meshes and windmill groups.
   useEffect(() => {
@@ -332,10 +380,9 @@ export default function Week5Scene() {
     })
   }, [placements])
 
-  const assetById = Object.fromEntries(SCATTER_ASSETS.map((asset) => [asset.id, asset]))
-  const placedSummary = PANEL_ASSETS.map(
-    (id) => `${placements[id].length} ${assetById[id].label.toLowerCase()}`
-  ).join(' · ')
+  const counts = Object.fromEntries(
+    Object.entries(placements).map(([id, items]) => [id, items.length])
+  )
 
   return (
     <div className="voxel-workspace">
@@ -456,12 +503,33 @@ export default function Week5Scene() {
               format={(value) => `${value}°`}
               onChange={(value) => setTerrainParam('rockSlope', value)}
             />
+            <label className="control control-inline shader-toggle">
+              <span>Show water</span>
+              <input
+                type="checkbox"
+                checked={terrain.showWater}
+                onChange={(event) => setTerrainParam('showWater', event.target.checked)}
+              />
+            </label>
+            {terrain.showWater && (
+              <Slider
+                label="Water level"
+                value={terrain.waterLevel}
+                min={0}
+                max={60}
+                step={1}
+                format={(value) => `${value}%`}
+                onChange={(value) => setTerrainParam('waterLevel', value)}
+              />
+            )}
           </>
         ) : (
           <>
             <p className="section-note">
-              Trees and bushes grow in groves on grass, rocks sit on steep
-              slopes, and windmills take flat hilltops. Nothing overlaps.
+              Each layer follows its own protocol: surface, slope, height,
+              distance from cliffs and water. Layers are placed in order
+              windmills → rocks → pines → round trees → bushes, and never
+              overlap.
             </p>
             <Slider
               label="Scatter seed"
@@ -472,46 +540,31 @@ export default function Week5Scene() {
               format={(value) => value}
               onChange={(value) => setScatterParam('seed', value)}
             />
-            <Slider
-              label="Forest clumping"
-              value={scatter.clumping}
-              min={1}
-              max={10}
-              step={0.5}
-              format={(value) => value.toFixed(1)}
-              onChange={(value) => setScatterParam('clumping', value)}
+            <label className="control control-inline shader-toggle">
+              <span>Preview rules of open layer</span>
+              <input
+                type="checkbox"
+                checked={scatter.preview}
+                onChange={(event) => setScatterParam('preview', event.target.checked)}
+              />
+            </label>
+            {scatter.preview && (
+              <p className="section-note">
+                Orange ground is allowed for the open layer; dark ground is
+                blocked by its rules.
+              </p>
+            )}
+            <ScatterLayerPanel
+              rules={scatter.rules}
+              counts={counts}
+              openLayer={openLayer}
+              onOpenLayer={setOpenLayer}
+              onRuleChange={setLayerRule}
+              onResetLayer={resetLayer}
+              hasWater={fields.hasWater}
             />
-            {PANEL_ASSETS.map((id) => {
-              const setting = scatter.assets[id]
-              const isCount = id === 'windmill'
-              return (
-                <div key={id} className="control">
-                  <label className="control control-inline shader-toggle">
-                    <span>{assetById[id].label}</span>
-                    <input
-                      type="checkbox"
-                      checked={setting.on}
-                      onChange={(event) => setAsset(id, 'on', event.target.checked)}
-                    />
-                  </label>
-                  {setting.on && (
-                    <Slider
-                      label={isCount ? 'Count' : 'Density'}
-                      value={setting.amount}
-                      min={0}
-                      max={isCount ? assetById[id].maxCount : 100}
-                      step={1}
-                      format={(value) => (isCount ? value : `${value}%`)}
-                      onChange={(value) => setAsset(id, 'amount', value)}
-                    />
-                  )}
-                </div>
-              )
-            })}
           </>
         )}
-
-        <p className="section-note">Placed: {placedSummary}.</p>
       </aside>
     </div>
   )
