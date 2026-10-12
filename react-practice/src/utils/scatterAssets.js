@@ -8,6 +8,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
  * InstancedMesh, so a whole forest costs one draw call per part.
  *   color:      base colour of the part
  *   shadeRange: how much lighter/darker each instance can be (0 = none)
+ *   role:       trunk | foliage | stone – decides which terrain responses
+ *               apply (foliage: leaf colour and canopy width; stone: wetness
+ *               and moss; trunk: only the light/dark jitter)
  */
 
 // Primitives disagree on indexing (cones are indexed, polyhedra are not).
@@ -80,15 +83,15 @@ export function createInstancedAssetParts() {
 
   return {
     pine: [
-      { geometry: at(new THREE.CylinderGeometry(0.08, 0.12, 0.6, 6), 0, 0.3, 0), color: '#5b4128', shadeRange: 0.1 },
-      { geometry: pineCanopy, color: '#2f5a32', shadeRange: 0.25 },
+      { geometry: at(new THREE.CylinderGeometry(0.08, 0.12, 0.6, 6), 0, 0.3, 0), color: '#5b4128', shadeRange: 0.1, role: 'trunk' },
+      { geometry: pineCanopy, color: '#2f5a32', shadeRange: 0.25, role: 'foliage' },
     ],
     round: [
-      { geometry: at(new THREE.CylinderGeometry(0.09, 0.13, 1.0, 6), 0, 0.5, 0), color: '#6b4b2e', shadeRange: 0.1 },
-      { geometry: roundCanopy, color: '#6f9a3c', shadeRange: 0.3 },
+      { geometry: at(new THREE.CylinderGeometry(0.09, 0.13, 1.0, 6), 0, 0.5, 0), color: '#6b4b2e', shadeRange: 0.1, role: 'trunk' },
+      { geometry: roundCanopy, color: '#6f9a3c', shadeRange: 0.3, role: 'foliage' },
     ],
-    bush: [{ geometry: bush, color: '#4f7a34', shadeRange: 0.3 }],
-    rock: [{ geometry: rock, color: '#8c8a83', shadeRange: 0.25 }],
+    bush: [{ geometry: bush, color: '#4f7a34', shadeRange: 0.3, role: 'foliage' }],
+    rock: [{ geometry: rock, color: '#8c8a83', shadeRange: 0.25, role: 'stone' }],
   }
 }
 

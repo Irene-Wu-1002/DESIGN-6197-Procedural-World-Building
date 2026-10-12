@@ -74,6 +74,15 @@ export const SCATTER_LAYERS = [
   },
 ]
 
+// How strongly terrain data shapes each instance (all in %). 0 = off,
+// 100 = as designed, 200 = exaggerated. randomness = plain per-instance noise.
+const DEFAULT_RESPONSE = {
+  sizeResponse: 100,
+  colorResponse: 100,
+  densityResponse: 100,
+  randomness: 30,
+}
+
 // Editable protocol per layer. amount: count for windmills, density % otherwise.
 export const DEFAULT_LAYER_RULES = {
   windmill: {
@@ -90,6 +99,7 @@ export const DEFAULT_LAYER_RULES = {
     spacing: 12,
     grouping: 'scattered',
     clumping: 4,
+    ...DEFAULT_RESPONSE,
   },
   rock: {
     on: true,
@@ -105,6 +115,7 @@ export const DEFAULT_LAYER_RULES = {
     spacing: 1.2,
     grouping: 'scattered',
     clumping: 4,
+    ...DEFAULT_RESPONSE,
   },
   pine: {
     on: true,
@@ -120,6 +131,7 @@ export const DEFAULT_LAYER_RULES = {
     spacing: 1.3,
     grouping: 'groves',
     clumping: 4,
+    ...DEFAULT_RESPONSE,
   },
   round: {
     on: true,
@@ -135,6 +147,7 @@ export const DEFAULT_LAYER_RULES = {
     spacing: 1.5,
     grouping: 'groves',
     clumping: 4,
+    ...DEFAULT_RESPONSE,
   },
   bush: {
     on: true,
@@ -150,6 +163,7 @@ export const DEFAULT_LAYER_RULES = {
     spacing: 1.0,
     grouping: 'groves',
     clumping: 4,
+    ...DEFAULT_RESPONSE,
   },
 }
 
@@ -160,9 +174,12 @@ export const MAX_UNDERWATER_DEPTH = 0.5
 // Soft edge of a grove in noise units, so forests fade out instead of stopping.
 const CLUSTER_EDGE = 0.08
 const HASH_CELL = 2
-const MAX_FOOTPRINT = Math.max(
-  ...SCATTER_LAYERS.map((layer) => layer.footprint * layer.scale[1])
-)
+// Terrain size response can grow an instance up to ~3× (at 200%), so the
+// overlap search reaches that far.
+const MAX_SIZE_GROWTH = 3
+const MAX_FOOTPRINT =
+  MAX_SIZE_GROWTH *
+  Math.max(...SCATTER_LAYERS.map((layer) => layer.footprint * layer.scale[1]))
 
 /**
  * The protocol check, shared by placement and the rule preview.
@@ -231,10 +248,112 @@ function smoothstep(edge0, edge1, value) {
   return t * t * (3 - 2 * t)
 }
 
+const clamp01 = (value) => Math.min(Math.max(value, 0), 1)
+// 1 right at a feature, fading to 0 over roughly `reach` metres.
+const nearness = (distance, reach) => Math.exp(-Math.max(distance, 0) / reach)
+// 1 on bone-dry ground, 0 once moisture reaches about 0.5.
+const dryness = (moisture) => 1 - smoothstep(0.15, 0.5, moisture)
+const LEAN_MAX_DEGREES = 6
+const MIN_SIZE_FACTOR = 0.35
+
 /**
- * Returns { [layerId]: [{ x, y, z, rotationY, scale: [sx, sy, sz], normal, shade }] }.
+ * Terrain response per layer: how terrain data reshapes each instance.
+ * t holds 0–1 terrain readings at the spot (see terrainReadings).
+ * Each value is a delta, scaled by the layer's response sliders:
+ *   size    → scale × (1 + size)
+ *   width   → foliage width × (1 + width)
+ *   color   → hue / saturation / lightness offsets for foliage or stone
+ *   moss    → how far stone is tinted toward moss green
+ *   flatten → squash height (and widen) – worn rocks by the water
+ *   density → keep chance × (1 + density); only ever thins
+ *   lean    → lean a little downhill on slopes
  */
-export function scatterLayers({ fields, seed, rules: allRules }) {
+const RESPONSES = {
+  pine: (t) => ({
+    // Big where moist; stunted toward the treeline and next to cliffs.
+    size: 0.35 * (t.moisture - 0.5) - 0.45 * smoothstep(0.6, 1, t.level) - 0.25 * t.cliffNear,
+    // Narrow and tall deep in a grove, wider at the edge.
+    width: 0.35 * (0.5 - t.grove),
+    // Moist: deep blue-green. Dry or high: yellow-olive. Sun: a little lighter.
+    color: {
+      h: 0.05 * (t.moisture - 0.5) - 0.04 * t.level,
+      s: 0.12 * (t.moisture - 0.5) - 0.1 * t.level,
+      l: -0.05 * (t.moisture - 0.5) + 0.06 * (t.sun - 0.6),
+    },
+    // Soft treeline over the top of the height range.
+    density: -0.9 * smoothstep(0.8, 1, t.level),
+    lean: true,
+  }),
+  round: (t) => ({
+    size: 0.4 * (t.moisture - 0.5) - 0.3 * t.steepness,
+    width: 0.4 * (0.5 - t.grove),
+    color: {
+      h: 0.06 * (t.moisture - 0.5),
+      s: 0.15 * (t.moisture - 0.5),
+      l: 0.08 * (t.sun - 0.6),
+    },
+    // Only dry ground thins them out.
+    density: -0.7 * dryness(t.moisture),
+    lean: true,
+  }),
+  bush: (t) => ({
+    // Largest and darkest at the shore.
+    size: 0.5 * (t.moisture - 0.5),
+    width: 0.15 * (t.moisture - 0.5),
+    color: {
+      h: 0.05 * (t.moisture - 0.5),
+      s: 0.1 * (t.moisture - 0.5),
+      l: -0.06 * (t.moisture - 0.5),
+    },
+    density: -0.7 * dryness(t.moisture),
+  }),
+  rock: (t) => ({
+    // Boulders on steep ground and below cliffs; small worn pebbles by water.
+    // Centered on typical rock ground, so only unusually steep spots grow.
+    size: 0.6 * (t.steepness - 0.75) + 0.4 * (t.cliffNear - 0.4) - 0.6 * t.wet,
+    flatten: 0.35 * t.wet,
+    // Wet rock is darker; high rock is paler; shaded damp rock grows moss.
+    color: { h: 0, s: 0, l: -0.15 * t.wet + 0.1 * (t.level - 0.5) },
+    moss: clamp01(t.moisture * (1 - t.sun) * 2 - 0.2),
+  }),
+  windmill: () => ({}),
+}
+
+// 0–1 terrain readings that the responses use.
+function terrainReadings(sample, fields, grove) {
+  let wet = 0
+  if (fields.hasWater) wet = sample.depth > 0 ? 1 : nearness(sample.waterDistance, 1.5)
+  return {
+    moisture: sample.moisture,
+    sun: sample.sun,
+    level: sample.level,
+    steepness: Math.min(sample.slope / 45, 1),
+    cliffNear: nearness(sample.cliffDistance, 2),
+    wet,
+    grove,
+  }
+}
+
+// Tilt "up" part of the way toward the surface normal, at most LEAN_MAX_DEGREES.
+function leanVector(sample, strength) {
+  if (sample.slope < 0.5 || strength <= 0) return [0, 1, 0]
+  const angle = LEAN_MAX_DEGREES * Math.min(sample.slope / 30, 1) * strength
+  const amount = Math.min(angle / sample.slope, 1)
+  const [nx, ny, nz] = sample.normal
+  const x = nx * amount
+  const y = 1 + (ny - 1) * amount
+  const z = nz * amount
+  const length = Math.hypot(x, y, z)
+  return [x / length, y / length, z / length]
+}
+
+/**
+ * Returns { [layerId]: [item] } where each item is
+ *   { x, y, z, rotationY, scale: [sx, sy, sz], normal, shade,
+ *     foliageWidth, color: { h, s, l }, moss, windSpeed }.
+ * windDirection (degrees) is the way the windmills face.
+ */
+export function scatterLayers({ fields, seed, rules: allRules, windDirection = 0 }) {
   const size = fields.size
   const occupancy = createOccupancy(MAX_FOOTPRINT)
   const result = {}
@@ -263,11 +382,19 @@ export function scatterLayers({ fields, seed, rules: allRules }) {
     )
     const sameLayer = createOccupancy(rules.spacing / 2)
     const threshold = 1 - density
+    const respond = RESPONSES[layer.id]
+    const sizeStrength = rules.sizeResponse / 100
+    const colorStrength = rules.colorResponse / 100
+    const densityStrength = rules.densityResponse / 100
+    const randomness = rules.randomness / 100
+    const windRadians = (windDirection * Math.PI) / 180
 
     for (const point of candidates) {
       if (placed.length >= target) break
+      // Grove value: 1 deep inside a grove, 0 outside; 0.5 when scattered.
+      let grove = 0.5
       if (rules.grouping === 'groves') {
-        const grove = clusterDensity(point.x, point.y, size, rules.clumping, layerSeed)
+        grove = clusterDensity(point.x, point.y, size, rules.clumping, layerSeed)
         const keep = smoothstep(threshold - CLUSTER_EDGE, threshold + CLUSTER_EDGE, grove)
         if (density < 1 && random() >= keep) continue
       } else if (random() >= density) {
@@ -279,7 +406,19 @@ export function scatterLayers({ fields, seed, rules: allRules }) {
       const sample = fields.sample(x, z)
       if (!passesRules(rules, sample, fields)) continue
 
-      const scale = layer.scale[0] + random() * (layer.scale[1] - layer.scale[0])
+      const response = respond(terrainReadings(sample, fields, grove))
+      const thinning = clamp01(1 + densityStrength * (response.density ?? 0))
+      if (thinning < 1 && random() >= thinning) continue
+
+      // Random size around the middle of the range (randomness = how far it
+      // strays), then grown or shrunk by the terrain.
+      const middle = (layer.scale[0] + layer.scale[1]) / 2
+      const spread = (layer.scale[1] - layer.scale[0]) * randomness
+      const sizeFactor = Math.min(
+        Math.max(1 + sizeStrength * (response.size ?? 0), MIN_SIZE_FACTOR),
+        MAX_SIZE_GROWTH
+      )
+      const scale = (middle + (random() - 0.5) * spread) * sizeFactor
       const radius = layer.footprint * scale
       // Keep the visible shape on the field so nothing hangs over the edge.
       if (Math.max(Math.abs(x), Math.abs(z)) > size / 2 - layer.reach * scale) continue
@@ -292,14 +431,41 @@ export function scatterLayers({ fields, seed, rules: allRules }) {
       const scaleXYZ = layer.alignToSurface
         ? [scale * (0.8 + random() * 0.4), scale * (0.5 + random() * 0.3), scale * (0.8 + random() * 0.4)]
         : [scale, scale, scale]
+      const flatten = sizeStrength * (response.flatten ?? 0)
+      if (flatten > 0) {
+        scaleXYZ[0] *= 1 + flatten * 0.5
+        scaleXYZ[1] *= Math.max(1 - flatten, 0.3)
+        scaleXYZ[2] *= 1 + flatten * 0.5
+      }
+
+      // Windmills face the shared wind with a little jitter; the rest spin freely.
+      const spin = random()
+      const rotationY =
+        layer.id === 'windmill' ? windRadians + (spin - 0.5) * 0.28 : spin * Math.PI * 2
+
+      let normal = [0, 1, 0]
+      if (layer.alignToSurface) normal = sample.normal
+      else if (response.lean) normal = leanVector(sample, sizeStrength)
+
+      const color = response.color ?? { h: 0, s: 0, l: 0 }
       placed.push({
         x,
         y: sample.y - layer.sink * scaleXYZ[1],
         z,
-        rotationY: random() * Math.PI * 2,
+        rotationY,
         scale: scaleXYZ,
-        normal: layer.alignToSurface ? sample.normal : [0, 1, 0],
-        shade: random(),
+        normal,
+        // Random light/dark jitter, shrunk toward 0.5 as randomness drops.
+        shade: 0.5 + (random() - 0.5) * randomness,
+        foliageWidth: Math.max(1 + sizeStrength * (response.width ?? 0), 0.5),
+        color: {
+          h: color.h * colorStrength,
+          s: color.s * colorStrength,
+          l: color.l * colorStrength,
+        },
+        moss: clamp01((response.moss ?? 0) * colorStrength),
+        // Higher windmills catch more wind.
+        windSpeed: 0.6 + 1.4 * sample.level,
       })
     }
   })

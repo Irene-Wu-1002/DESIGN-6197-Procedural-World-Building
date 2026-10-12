@@ -13,7 +13,7 @@ import {
   createInstancedAssetParts,
   createWindmillGeometry,
 } from '../utils/scatterAssets'
-import { createTerrainFields } from '../utils/terrainFields'
+import { SUN_DIRECTION, createTerrainFields } from '../utils/terrainFields'
 
 const TERRAIN_SIZE = 40
 const SEGMENTS = 200
@@ -25,6 +25,22 @@ const ROCK = new THREE.Color('#85837c')
 const ALLOWED_TINT = new THREE.Color('#f08a3c')
 const BLOCKED_DIM = 0.45
 const ALLOWED_MIX = 0.55
+const MOSS = new THREE.Color('#5c7a3a')
+const MOSS_MIX = 0.55
+
+// Data-map previews: [low colour, high colour, field on the terrain sample].
+const MAP_PREVIEWS = {
+  moisture: [new THREE.Color('#c9a35f'), new THREE.Color('#1f63b8'), 'moisture'],
+  sun: [new THREE.Color('#2b2457'), new THREE.Color('#ffd25a'), 'sun'],
+  altitude: [new THREE.Color('#163323'), new THREE.Color('#f2f2ee'), 'level'],
+}
+const MAP_MIX = 0.8
+const PREVIEW_NOTES = {
+  rules: 'Orange ground is allowed for the open layer; dark ground is blocked by its rules.',
+  moisture: 'Tan is dry, blue is wet. Wet ground grows bigger, darker trees and bushes.',
+  sun: 'Dark is shaded, yellow faces the sun. Sunny leaves are lighter; shaded damp rock grows moss.',
+  altitude: 'Dark is low, white is high. Pines shrink and thin out toward the top.',
+}
 
 const DEFAULT_TERRAIN = {
   seed: 5,
@@ -40,7 +56,9 @@ const DEFAULT_TERRAIN = {
 
 const DEFAULT_SCATTER = {
   seed: 7,
-  preview: false,
+  // off | rules (of the open layer) | moisture | sun | altitude
+  preview: 'off',
+  windDirection: 45,
   rules: DEFAULT_LAYER_RULES,
 }
 
@@ -101,15 +119,21 @@ export default function Week5Scene() {
   )
 
   const placements = useMemo(
-    () => scatterLayers({ fields, seed: scatter.seed, rules: scatter.rules }),
-    [fields, scatter.seed, scatter.rules]
+    () =>
+      scatterLayers({
+        fields,
+        seed: scatter.seed,
+        rules: scatter.rules,
+        windDirection: scatter.windDirection,
+      }),
+    [fields, scatter.seed, scatter.rules, scatter.windDirection]
   )
 
-  // The open layer's rules are tinted on the ground while preview is on.
+  // Ground preview (Scatter tab only): the open layer's rules, or a data map.
+  const previewing = panelTab === 'scatter' ? scatter.preview : 'off'
   const previewRules =
-    panelTab === 'scatter' && scatter.preview && openLayer
-      ? scatter.rules[openLayer]
-      : null
+    previewing === 'rules' && openLayer ? scatter.rules[openLayer] : null
+  const previewMap = MAP_PREVIEWS[previewing] ?? null
 
   // Scene setup: camera, lights, shadows, terrain mesh, and asset meshes.
   useEffect(() => {
@@ -201,7 +225,11 @@ export default function Week5Scene() {
         mesh.receiveShadow = true
         mesh.count = 0
         mesh.setColorAt(0, new THREE.Color(part.color))
-        mesh.userData = { color: new THREE.Color(part.color), shadeRange: part.shadeRange }
+        mesh.userData = {
+          color: new THREE.Color(part.color),
+          shadeRange: part.shadeRange,
+          role: part.role,
+        }
         scene.add(mesh)
         return mesh
       })
@@ -215,7 +243,8 @@ export default function Week5Scene() {
 
     scene.add(new THREE.HemisphereLight('#cfe3ff', '#3a3020', 0.7))
     const sun = new THREE.DirectionalLight('#fff1d6', 2)
-    sun.position.set(-22, 26, 14)
+    // Same direction the sun-exposure map uses.
+    sun.position.set(...SUN_DIRECTION).multiplyScalar(Math.hypot(-22, 26, 14))
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
     sun.shadow.bias = -0.0005
@@ -236,8 +265,8 @@ export default function Week5Scene() {
       const now = performance.now()
       const delta = (now - lastTime) / 1000
       lastTime = now
-      windmillsRef.current.rotors.forEach((rotor) => {
-        rotor.rotation.z += delta * BLADE_SPEED
+      windmillsRef.current.rotors.forEach(({ rotor, speed }) => {
+        rotor.rotation.z += delta * BLADE_SPEED * speed
       })
       controls.update()
       renderer.render(scene, camera)
@@ -280,7 +309,8 @@ export default function Week5Scene() {
   }, [])
 
   // Heights from the terrain maps; color from slope (flat = grass, steep = rock).
-  // With the rule preview on, allowed ground is tinted and blocked ground dimmed.
+  // Rule preview: allowed ground tinted, blocked ground dimmed.
+  // Map preview: the chosen data map drawn as a two-colour gradient.
   useEffect(() => {
     const geometry = geometryRef.current
     const water = waterRef.current
@@ -302,6 +332,7 @@ export default function Week5Scene() {
 
     const normals = geometry.attributes.normal
     const color = new THREE.Color()
+    const mapColor = new THREE.Color()
     for (let index = 0; index < positions.count; index += 1) {
       const slope = THREE.MathUtils.radToDeg(
         Math.acos(THREE.MathUtils.clamp(normals.getY(index), -1, 1))
@@ -319,6 +350,10 @@ export default function Week5Scene() {
         } else {
           color.multiplyScalar(BLOCKED_DIM)
         }
+      } else if (previewMap) {
+        const [low, high, key] = previewMap
+        const value = THREE.MathUtils.clamp(fields.sampleAt(gridIndex[index])[key], 0, 1)
+        color.lerp(mapColor.lerpColors(low, high, value), MAP_MIX)
       }
       colors.setXYZ(index, color.r, color.g, color.b)
     }
@@ -327,7 +362,7 @@ export default function Week5Scene() {
 
     water.visible = fields.hasWater
     if (fields.hasWater) water.position.y = fields.waterY
-  }, [fields, terrain.rockSlope, previewRules])
+  }, [fields, terrain.rockSlope, previewRules, previewMap])
 
   // Write the scatter result into the instanced meshes and windmill groups.
   useEffect(() => {
@@ -348,7 +383,7 @@ export default function Week5Scene() {
     Object.entries(assetMeshes).forEach(([id, meshes]) => {
       const items = placements[id]
       meshes.forEach((mesh) => {
-        const { color: baseColor, shadeRange } = mesh.userData
+        const { color: baseColor, shadeRange, role } = mesh.userData
         items.forEach((item, index) => {
           normal.fromArray(item.normal)
           tilt.setFromUnitVectors(up, normal)
@@ -356,9 +391,20 @@ export default function Week5Scene() {
           quaternion.multiplyQuaternions(tilt, spin)
           position.set(item.x, item.y, item.z)
           scale.fromArray(item.scale)
+          // Only the canopy gets wider or narrower; trunks keep their width.
+          if (role === 'foliage') {
+            scale.x *= item.foliageWidth
+            scale.z *= item.foliageWidth
+          }
           matrix.compose(position, quaternion, scale)
           mesh.setMatrixAt(index, matrix)
-          color.copy(baseColor).multiplyScalar(1 + (item.shade - 0.5) * shadeRange)
+
+          color.copy(baseColor)
+          if (role === 'stone') color.lerp(MOSS, item.moss * MOSS_MIX)
+          if (role === 'foliage' || role === 'stone') {
+            color.offsetHSL(item.color.h, item.color.s, item.color.l)
+          }
+          color.multiplyScalar(1 + (item.shade - 0.5) * shadeRange)
           mesh.setColorAt(index, color)
         })
         mesh.count = items.length
@@ -376,7 +422,7 @@ export default function Week5Scene() {
       group.scale.fromArray(item.scale)
       rotor.rotation.z = item.shade * Math.PI
       windmills.layer.add(group)
-      return rotor
+      return { rotor, speed: item.windSpeed }
     })
   }, [placements])
 
@@ -540,19 +586,30 @@ export default function Week5Scene() {
               format={(value) => value}
               onChange={(value) => setScatterParam('seed', value)}
             />
-            <label className="control control-inline shader-toggle">
-              <span>Preview rules of open layer</span>
-              <input
-                type="checkbox"
-                checked={scatter.preview}
-                onChange={(event) => setScatterParam('preview', event.target.checked)}
-              />
+            <Slider
+              label="Wind direction"
+              value={scatter.windDirection}
+              min={0}
+              max={359}
+              step={1}
+              format={(value) => `${value}°`}
+              onChange={(value) => setScatterParam('windDirection', value)}
+            />
+            <label className="control">
+              <span className="control-label">Preview on ground</span>
+              <select
+                value={scatter.preview}
+                onChange={(event) => setScatterParam('preview', event.target.value)}
+              >
+                <option value="off">Off</option>
+                <option value="rules">Rules of open layer</option>
+                <option value="moisture">Moisture map</option>
+                <option value="sun">Sun exposure map</option>
+                <option value="altitude">Altitude map</option>
+              </select>
             </label>
-            {scatter.preview && (
-              <p className="section-note">
-                Orange ground is allowed for the open layer; dark ground is
-                blocked by its rules.
-              </p>
+            {scatter.preview !== 'off' && (
+              <p className="section-note">{PREVIEW_NOTES[scatter.preview]}</p>
             )}
             <ScatterLayerPanel
               rules={scatter.rules}

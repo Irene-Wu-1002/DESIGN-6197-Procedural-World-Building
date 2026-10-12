@@ -8,12 +8,21 @@ import { getNoise } from './noise'
  *   slope          degrees, 0 = flat
  *   cliffDistance  metres to the nearest cliff (slope > rock slope + CLIFF_MARGIN)
  *   waterDistance  metres to the shoreline; negative under water
+ *   moisture       0 dry → 1 wet (near water, low, flat)
+ *   sun            0 shaded → 1 facing the sun
  *
  * Index = row * points + column, with x = -size/2 + column * step and
  * z = -size/2 + row * step.
  */
 
 export const CLIFF_MARGIN = 10
+// Direction toward the sun; the scene's sun light is placed along it.
+export const SUN_DIRECTION = (() => {
+  const length = Math.hypot(-22, 26, 14)
+  return [-22 / length, 26 / length, 14 / length]
+})()
+// Moisture fades with distance from water over roughly this many metres.
+const MOISTURE_REACH = 5
 // Stand-in for "no such feature anywhere" in the distance maps.
 const FAR = 1000
 
@@ -129,6 +138,29 @@ export function createTerrainFields({
     waterDistance[index] = isWater[index] ? -toLand[index] : toWater[index]
   }
 
+  // Moisture (0 dry → 1 wet): closeness to water, plus low and flat ground
+  // where water collects. Sun exposure (0 shaded → 1 facing the sun).
+  const moisture = new Float32Array(count)
+  const sun = new Float32Array(count)
+  for (let index = 0; index < count; index += 1) {
+    const low = 1 - level[index]
+    const flat = 1 - Math.min(slope[index] / 45, 1)
+    const wet = hasWater
+      ? Math.exp(-Math.max(waterDistance[index], 0) / MOISTURE_REACH)
+      : 0
+    moisture[index] = hasWater
+      ? Math.min(0.65 * wet + 0.25 * low + 0.1 * flat, 1)
+      : 0.65 * low + 0.35 * flat
+
+    const length = Math.hypot(gradientX[index], 1, gradientZ[index])
+    const facing =
+      (-gradientX[index] * SUN_DIRECTION[0] +
+        SUN_DIRECTION[1] -
+        gradientZ[index] * SUN_DIRECTION[2]) /
+      length
+    sun[index] = Math.max(facing, 0)
+  }
+
   // Bilinear lookup of any grid field at world (x, z).
   const lookup = (field, x, z) => {
     const gridX = Math.min(Math.max((x + size / 2) / step, 0), points - 1)
@@ -154,6 +186,8 @@ export function createTerrainFields({
       cliffDistance: values.cliffDistance,
       waterDistance: values.waterDistance,
       depth: waterY - y,
+      moisture: values.moisture,
+      sun: values.sun,
     }
   }
 
@@ -174,6 +208,8 @@ export function createTerrainFields({
         slope: lookup(slope, x, z),
         cliffDistance: lookup(cliffDistance, x, z),
         waterDistance: lookup(waterDistance, x, z),
+        moisture: lookup(moisture, x, z),
+        sun: lookup(sun, x, z),
       })
     },
     // Same data at an exact grid point (used for the rule preview tint).
@@ -185,6 +221,8 @@ export function createTerrainFields({
         slope: slope[index],
         cliffDistance: cliffDistance[index],
         waterDistance: waterDistance[index],
+        moisture: moisture[index],
+        sun: sun[index],
       })
     },
   }

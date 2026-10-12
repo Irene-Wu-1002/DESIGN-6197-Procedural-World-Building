@@ -173,6 +173,48 @@ export default function ScatterLayerPanel({
               />
             )}
 
+            {!layer.isCount && (
+              <>
+                <p className="section-note scatter-layer-group">Terrain response</p>
+                <Slider
+                  label="Size response"
+                  value={layerRules.sizeResponse}
+                  min={0}
+                  max={200}
+                  step={5}
+                  format={formatPercent}
+                  onChange={set('sizeResponse')}
+                />
+                <Slider
+                  label="Colour response"
+                  value={layerRules.colorResponse}
+                  min={0}
+                  max={200}
+                  step={5}
+                  format={formatPercent}
+                  onChange={set('colorResponse')}
+                />
+                <Slider
+                  label="Density response"
+                  value={layerRules.densityResponse}
+                  min={0}
+                  max={200}
+                  step={5}
+                  format={formatPercent}
+                  onChange={set('densityResponse')}
+                />
+                <Slider
+                  label="Random variation"
+                  value={layerRules.randomness}
+                  min={0}
+                  max={100}
+                  step={5}
+                  format={formatPercent}
+                  onChange={set('randomness')}
+                />
+              </>
+            )}
+
             <button type="button" className="layer-add" onClick={() => onResetLayer(id)}>
               Reset layer
             </button>
