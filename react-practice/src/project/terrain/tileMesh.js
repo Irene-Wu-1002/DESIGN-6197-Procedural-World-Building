@@ -9,7 +9,8 @@ import { colorTile } from './tileData'
  * detail are never visible.
  */
 
-const SKIRT_DEPTH = 0.006
+// Deeper than the far ground's sink, so no gap ever shows under a tile edge.
+const SKIRT_DEPTH = 0.012
 
 // Border vertex indices in order around the tile.
 function borderLoop(n) {
@@ -21,14 +22,20 @@ function borderLoop(n) {
   return loop
 }
 
-export function createTileMesh(data, material, mode) {
-  const { n, step, height, normal } = data
+/** depthMaterial: shadow-pass material that morphs like `material`. */
+export function createTileMesh(data, material, mode, depthMaterial) {
+  const { n, step, height, normal, smoothHeight, smoothNormal } = data
   const loop = borderLoop(n)
   const gridCount = n * n
   const total = gridCount + loop.length
   const positions = new Float32Array(total * 3)
   const normals = new Float32Array(total * 3)
   const colors = new Float32Array(total * 3)
+  // The smooth surface each vertex morphs to with distance.
+  const smoothY = new Float32Array(total)
+  const smoothNormals = new Float32Array(total * 3)
+  smoothY.set(smoothHeight)
+  smoothNormals.set(smoothNormal)
 
   for (let row = 0; row < n; row += 1) {
     for (let column = 0; column < n; column += 1) {
@@ -48,6 +55,10 @@ export function createTileMesh(data, material, mode) {
     normals[target * 3] = normal[source * 3]
     normals[target * 3 + 1] = normal[source * 3 + 1]
     normals[target * 3 + 2] = normal[source * 3 + 2]
+    smoothY[target] = smoothHeight[source] - SKIRT_DEPTH
+    smoothNormals[target * 3] = smoothNormal[source * 3]
+    smoothNormals[target * 3 + 1] = smoothNormal[source * 3 + 1]
+    smoothNormals[target * 3 + 2] = smoothNormal[source * 3 + 2]
   })
 
   const indices = []
@@ -73,10 +84,13 @@ export function createTileMesh(data, material, mode) {
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geometry.setAttribute('aSmoothY', new THREE.BufferAttribute(smoothY, 1))
+  geometry.setAttribute('aSmoothNormal', new THREE.BufferAttribute(smoothNormals, 3))
   geometry.setIndex(indices)
   geometry.computeBoundingSphere()
 
   const mesh = new THREE.Mesh(geometry, material)
+  if (depthMaterial) mesh.customDepthMaterial = depthMaterial
   mesh.position.set(data.tileX * TILE_SIZE, 0, data.tileZ * TILE_SIZE)
   mesh.castShadow = true
   mesh.receiveShadow = true

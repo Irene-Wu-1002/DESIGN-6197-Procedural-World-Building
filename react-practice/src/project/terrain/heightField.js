@@ -65,11 +65,14 @@ const smoothstep = (edge0, edge1, value) => {
 
 /**
  * Build a sampler for these settings. sample(x, z, out) fills `out` with
- *   height   metres
+ *   height   metres (the sum of the parts below plus any pebble)
+ *   broadHeight, bumpHeight, hillHeight   the parts
+ *   broadLowHeight   just the 30 cm octave of the slopes (smooth surface)
  *   broad    the broad-slope noise (-1–1); low ground collects moisture
  *   bump     the bumps/hollows noise (-1–1); negative in hollows
  *   pebble   0–1, how much this point is covered by a pebble
  *   shade    0–1, the pebble's own colour variation
+ *   pebbleChance  0–1, how likely this cell holds a pebble (for far ground)
  *   hill     0–1, how far onto the ant hill this point is
  */
 export function createGroundSampler(settings) {
@@ -89,6 +92,11 @@ export function createGroundSampler(settings) {
   const warpX = noise(WARP.wavelength, 2, 1)
   const warpZ = noise(WARP.wavelength, 2, 2)
   const broadNoise = noise(BROAD.wavelength, 3, 3)
+  // Just the first (30 cm) octave of the same noise: the smooth surface that
+  // distant tiles and the far ground share. In a 3-octave sum with
+  // persistence 0.5 the first octave carries 1 / 1.75 of the weight.
+  const broadLowNoise = { ...broadNoise, octaves: 1 }
+  const FIRST_OCTAVE_SHARE = 1 / 1.75
   const bumpNoise = noise(BUMPS.wavelength, 3, 4)
   const patchNoise = noise(PEBBLE.patchWavelength, 2, 5)
   const hillNoise = noise(0.05, 2, 6)
@@ -112,6 +120,7 @@ export function createGroundSampler(settings) {
   const pebbleAt = (x, z, hillMask, out) => {
     out.pebble = 0
     out.shade = 0
+    out.pebbleChance = 0
     if (pebbleDensity <= 0) return 0
     const cx = Math.floor(x / PEBBLE.cell)
     const cz = Math.floor(z / PEBBLE.cell)
@@ -124,6 +133,7 @@ export function createGroundSampler(settings) {
     }
     // Pebbles gather in patches and stay off the ant hill.
     const chance = pebbleDensity * (0.15 + 1.2 * patch * patch) * (1 - hillMask)
+    out.pebbleChance = Math.min(chance, 1)
     if (hash(cx, cz, seed) >= chance) return 0
     const radius =
       PEBBLE.radius[0] + hash(cx, cz, seed + 1) * (PEBBLE.radius[1] - PEBBLE.radius[0])
@@ -144,15 +154,20 @@ export function createGroundSampler(settings) {
       const wx = getNoise(x, z, warpX) * WARP.distance * warp
       const wz = getNoise(x, z, warpZ) * WARP.distance * warp
       const broad = getNoise(x + wx * 0.5, z + wz * 0.5, broadNoise)
-      let height = broad * BROAD.height * slopes
       // Hollows a little sharper than the bumps.
       const n = getNoise(x + wx, z + wz, bumpNoise)
       const shaped = n >= 0 ? n : -((-n) ** 0.75)
-      height += shaped * BUMPS.height * bumps
       const hill = hillAt(x, z)
-      height += hill.lift
-      height += pebbleAt(x, z, hill.mask, out)
-      out.height = height
+      out.broadHeight = broad * BROAD.height * slopes
+      out.broadLowHeight =
+        getNoise(x + wx * 0.5, z + wz * 0.5, broadLowNoise) *
+        FIRST_OCTAVE_SHARE *
+        BROAD.height *
+        slopes
+      out.bumpHeight = shaped * BUMPS.height * bumps
+      out.hillHeight = hill.lift
+      out.height =
+        out.broadHeight + out.bumpHeight + out.hillHeight + pebbleAt(x, z, hill.mask, out)
       out.broad = broad
       out.bump = shaped
       out.hill = hill.mask

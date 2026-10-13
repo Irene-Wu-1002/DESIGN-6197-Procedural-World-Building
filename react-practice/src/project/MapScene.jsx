@@ -2,18 +2,28 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import MapPanel from './MapPanel'
-import { DEFAULT_GROUND, TILE_SIZE } from './terrain/heightField'
+import { FOREST_COLORS, createForestSky } from './forest/sky'
+import { createFarGround, morphRange } from './terrain/farGround'
+import { DEFAULT_GROUND } from './terrain/heightField'
 import { createGroundMaterial } from './terrain/groundMaterial'
 import { createTileManager } from './terrain/tiles'
 
 /**
- * Project > Map: the endless forest floor at real scale (metres).
- * The camera orbits a focus point on the ground; W A S D slide that point
- * across the world and tiles stream in around it.
+ * Project > Map: the endless forest floor at real scale (metres), in a dim
+ * forest. The camera orbits a focus point on the ground; W A S D slide that
+ * point across the world. Detailed tiles stream in around it, a coarse far
+ * ground continues to the horizon, and haze in the sky's horizon colour
+ * hides where it ends.
  */
 
-const BACKGROUND = '#0e1014'
-const DEFAULT_VIEW = { distance: 3, preview: 'off' }
+// haze and dapple are 0–100 (%).
+// distance: tiles loaded around you (detail fades out toward the edge).
+const DEFAULT_VIEW = { distance: 4, preview: 'off', haze: 50, dapple: 60 }
+// Exponential fog density (per metre) at 0% and 100% haze. At 50% the haze
+// is half-way to the sky colour about 3 m away and complete by ~10 m, well
+// before the far ground ends.
+const HAZE_DENSITY = [0.12, 0.45]
+const hazeDensity = (haze) => HAZE_DENSITY[0] + (HAZE_DENSITY[1] - HAZE_DENSITY[0]) * (haze / 100)
 // Start beside the ant hill, which sits at the world origin.
 const START = { x: 0.14, z: 0.1 }
 const CAMERA_OFFSET = new THREE.Vector3(0, 0.42, 0.5)
@@ -31,7 +41,9 @@ const MOVE_KEYS = { KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right' }
 export default function MapScene() {
   const mountRef = useRef(null)
   const tilesRef = useRef(null)
-  const grainRef = useRef(null)
+  // Ground shader uniforms (grain, dappled light) and the fog.
+  const groundUniformsRef = useRef(null)
+  const fogRef = useRef(null)
   const viewRef = useRef(DEFAULT_VIEW)
   const [ground, setGround] = useState(DEFAULT_GROUND)
   const [view, setView] = useState(DEFAULT_VIEW)
@@ -45,8 +57,12 @@ export default function MapScene() {
   useEffect(() => {
     const mount = mountRef.current
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(BACKGROUND)
-    scene.fog = new THREE.Fog(BACKGROUND, 1, 2)
+    // Haze in the sky's horizon colour, so the far ground melts into the sky.
+    scene.background = new THREE.Color(FOREST_COLORS.horizon)
+    scene.fog = new THREE.FogExp2(FOREST_COLORS.horizon, hazeDensity(DEFAULT_VIEW.haze))
+    fogRef.current = scene.fog
+    const sky = createForestSky(SUN_OFFSET)
+    scene.add(sky.mesh)
 
     // Millimetres to metres in one view: a logarithmic depth buffer keeps
     // near and far surfaces from flickering.
@@ -70,18 +86,23 @@ export default function MapScene() {
     controls.maxDistance = 2.5
     controls.maxPolarAngle = Math.PI * 0.47
 
-    const { material, uniforms } = createGroundMaterial()
-    grainRef.current = uniforms
-    const tiles = createTileManager(scene, material)
+    const { material, depthMaterial, farMaterial, uniforms, morphUniforms, holeUniforms } =
+      createGroundMaterial(SUN_OFFSET)
+    groundUniformsRef.current = uniforms
+    const tiles = createTileManager(scene, material, depthMaterial)
     tilesRef.current = tiles
     tiles.setGround(DEFAULT_GROUND)
+    const farGround = createFarGround(farMaterial, holeUniforms)
+    scene.add(farGround.mesh)
 
     const startY = tiles.heightAt(START.x, START.z)
     controls.target.set(START.x, startY, START.z)
     camera.position.copy(controls.target).add(CAMERA_OFFSET)
 
-    scene.add(new THREE.HemisphereLight('#cfd8e6', '#3a2c20', 0.55))
-    const sun = new THREE.DirectionalLight('#ffe2b8', 2.2)
+    // Forest light: green-tinted light from the canopy above, a dim brown
+    // bounce from the soil, and a warm low sun breaking through.
+    scene.add(new THREE.HemisphereLight('#9fb48a', '#3a2c20', 0.6))
+    const sun = new THREE.DirectionalLight('#ffd9a0', 1.8)
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
     sun.shadow.bias = -0.00005
@@ -147,17 +168,18 @@ export default function MapScene() {
       controls.target.y += rise
       camera.position.y += rise
 
-      tiles.update(controls.target.x, controls.target.z, viewRef.current.distance, BUILD_BUDGET_MS)
+      const distance = viewRef.current.distance
+      tiles.update(controls.target.x, controls.target.z, distance, BUILD_BUDGET_MS)
+      farGround.update(tiles.sampler, controls.target.x, controls.target.z, distance, tiles.version)
+      // Tiles fade from full detail to the smooth surface around you, so they
+      // meet the far ground without a seam; this follows you continuously.
+      morphUniforms.uMorphCenter.value.set(controls.target.x, controls.target.z)
+      morphUniforms.uMorphRange.value.fromArray(morphRange(distance))
       controls.update()
       // Never let the camera dip under the ground.
       const floor = tiles.heightAt(camera.position.x, camera.position.z) + 0.01
       if (camera.position.y < floor) camera.position.y = floor
-
-      // Fog hides the edge of the loaded ring, measured from the focus.
-      const reach = viewRef.current.distance * TILE_SIZE
-      const cameraDistance = camera.position.distanceTo(controls.target)
-      scene.fog.near = cameraDistance + reach * 0.45
-      scene.fog.far = cameraDistance + reach * 0.95
+      sky.follow(camera)
 
       sun.position.copy(controls.target).add(SUN_OFFSET)
       sun.target.position.copy(controls.target)
@@ -190,12 +212,17 @@ export default function MapScene() {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
       tiles.dispose()
+      farGround.dispose()
+      sky.dispose()
       material.dispose()
+      farMaterial.dispose()
+      depthMaterial.dispose()
       controls.dispose()
       mount.removeChild(renderer.domElement)
       renderer.dispose()
       tilesRef.current = null
-      grainRef.current = null
+      groundUniformsRef.current = null
+      fogRef.current = null
     }
   }, [])
 
@@ -206,12 +233,14 @@ export default function MapScene() {
   }, [seed, slopes, bumps, warp, pebbles, antHill])
 
   useEffect(() => {
-    if (grainRef.current) grainRef.current.uGrain.value = grain / 100
+    if (groundUniformsRef.current) groundUniformsRef.current.uGrain.value = grain / 100
   }, [grain])
 
   useEffect(() => {
     viewRef.current = view
     tilesRef.current?.setPreview(view.preview)
+    if (groundUniformsRef.current) groundUniformsRef.current.uDapple.value = view.dapple / 100
+    if (fogRef.current) fogRef.current.density = hazeDensity(view.haze)
   }, [view])
 
   return (

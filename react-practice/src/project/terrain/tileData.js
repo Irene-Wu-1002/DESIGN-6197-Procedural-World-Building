@@ -2,7 +2,9 @@ import { TILE_SIZE } from './heightField'
 
 /**
  * One terrain tile's data: heights on a (segments + 1)² grid plus the maps
- * derived from them. Heights are sampled with a one-point apron around the
+ * derived from them, and a smooth version of the surface (smoothHeight,
+ * smoothNormal) that the tile morphs into with distance (see
+ * groundMaterial.js). Heights are sampled with a one-point apron around the
  * tile, so normals and slope at the edges use the neighbours'
  * real ground and the shading is seamless across tiles.
  *
@@ -18,6 +20,20 @@ export function tileKey(tileX, tileZ) {
   return `${tileX},${tileZ}`
 }
 
+/**
+ * The smooth ground (the 30 cm slopes + ant hill) from a sampler result:
+ * what distant tiles morph into and what the far ground is built from. It
+ * changes slowly enough for the coarse far-ground mesh to follow closely.
+ */
+export function smoothHeightOf(sample) {
+  return sample.broadLowHeight + sample.hillHeight
+}
+
+/** Moisture (0 dry – 1 wet) from the broad and bump noise values. */
+export function moistureOf(broad, bump) {
+  return Math.min(Math.max(MOISTURE.base - MOISTURE.low * broad - MOISTURE.hollow * bump, 0), 1)
+}
+
 export function buildTileData(sampler, tileX, tileZ, segments) {
   const n = segments + 1
   const step = TILE_SIZE / segments
@@ -25,6 +41,9 @@ export function buildTileData(sampler, tileX, tileZ, segments) {
   const x0 = tileX * TILE_SIZE
   const z0 = tileZ * TILE_SIZE
   const apron = new Float32Array(wide * wide)
+  // The smooth surface (broad slopes + ant hill, no bumps or pebbles) that
+  // far-away tiles morph into, matching the far ground.
+  const smoothApron = new Float32Array(wide * wide)
   const count = n * n
   const height = new Float32Array(count)
   const broad = new Float32Array(count)
@@ -40,6 +59,7 @@ export function buildTileData(sampler, tileX, tileZ, segments) {
       const z = z0 + (row - 1) * step
       sampler.sample(x, z, out)
       apron[row * wide + column] = out.height
+      smoothApron[row * wide + column] = smoothHeightOf(out)
       const inside = row > 0 && column > 0 && row < wide - 1 && column < wide - 1
       if (!inside) continue
       const index = (row - 1) * n + (column - 1)
@@ -53,30 +73,29 @@ export function buildTileData(sampler, tileX, tileZ, segments) {
   }
 
   const normal = new Float32Array(count * 3)
+  const smoothHeight = new Float32Array(count)
+  const smoothNormal = new Float32Array(count * 3)
   const slope = new Float32Array(count)
   const moisture = new Float32Array(count)
+  // Normal from the apron neighbours; returns the slope gradient length.
+  const writeNormal = (field, a, target, index) => {
+    const dx = (field[a + 1] - field[a - 1]) / (2 * step)
+    const dz = (field[a + wide] - field[a - wide]) / (2 * step)
+    const length = Math.hypot(dx, 1, dz)
+    target[index * 3] = -dx / length
+    target[index * 3 + 1] = 1 / length
+    target[index * 3 + 2] = -dz / length
+    return Math.hypot(dx, dz)
+  }
   for (let row = 0; row < n; row += 1) {
     for (let column = 0; column < n; column += 1) {
       const a = (row + 1) * wide + (column + 1)
-      const left = apron[a - 1]
-      const right = apron[a + 1]
-      const up = apron[a - wide]
-      const down = apron[a + wide]
-      const dx = (right - left) / (2 * step)
-      const dz = (down - up) / (2 * step)
-      const length = Math.hypot(dx, 1, dz)
       const index = row * n + column
-      normal[index * 3] = -dx / length
-      normal[index * 3 + 1] = 1 / length
-      normal[index * 3 + 2] = -dz / length
-      slope[index] = (Math.atan(Math.hypot(dx, dz)) * 180) / Math.PI
-      moisture[index] = Math.min(
-        Math.max(
-          MOISTURE.base - MOISTURE.low * broad[index] - MOISTURE.hollow * bump[index],
-          0
-        ),
-        1
-      )
+      const gradient = writeNormal(apron, a, normal, index)
+      writeNormal(smoothApron, a, smoothNormal, index)
+      smoothHeight[index] = smoothApron[a]
+      slope[index] = (Math.atan(gradient) * 180) / Math.PI
+      moisture[index] = moistureOf(broad[index], bump[index])
     }
   }
 
@@ -88,6 +107,8 @@ export function buildTileData(sampler, tileX, tileZ, segments) {
     step,
     height,
     normal,
+    smoothHeight,
+    smoothNormal,
     slope,
     moisture,
     pebble,
@@ -133,6 +154,17 @@ const smoothstep = (edge0, edge1, value) => {
 }
 
 /**
+ * Soil colour (linear RGB into `out`): damp soil in hollows, dry sand where
+ * it's driest, reddish fine soil on the ant hill.
+ */
+export function soilColor(moisture, hill, out) {
+  mix(GROUND_COLORS.soil, GROUND_COLORS.damp, smoothstep(0.55, 0.75, moisture), out)
+  mix(out, GROUND_COLORS.sand, 0.6 * smoothstep(0.42, 0.28, moisture), out)
+  mix(out, GROUND_COLORS.hill, 0.85 * hill, out)
+  return out
+}
+
+/**
  * Write a colour per grid point into `colors` (n² × 3, linear RGB).
  * mode: off | height | slope | moisture | tiles
  */
@@ -150,12 +182,8 @@ export function colorTile(data, mode, colors) {
     } else if (mode === 'moisture') {
       mix(PREVIEW.moisture[0], PREVIEW.moisture[1], data.moisture[index], c)
     } else {
-      // Natural ground: damp soil in hollows, dry sand where it's driest,
-      // reddish fine soil on the ant hill, pebbles on top.
-      const wet = data.moisture[index]
-      mix(GROUND_COLORS.soil, GROUND_COLORS.damp, smoothstep(0.55, 0.75, wet), c)
-      mix(c, GROUND_COLORS.sand, 0.6 * smoothstep(0.42, 0.28, wet), c)
-      mix(c, GROUND_COLORS.hill, 0.85 * data.hill[index], c)
+      // Natural ground, with pebbles on top.
+      soilColor(data.moisture[index], data.hill[index], c)
       if (data.pebble[index] > 0) {
         mix(GROUND_COLORS.pebbleDark, GROUND_COLORS.pebbleLight, data.shade[index], pebbleColor)
         mix(c, pebbleColor, data.pebble[index], c)

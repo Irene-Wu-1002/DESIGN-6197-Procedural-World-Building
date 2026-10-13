@@ -96,13 +96,31 @@ export default function MapPanel({ ground, view, status, onGroundChange, onViewC
       </label>
 
       <Slider
-        label="View distance"
+        label="Detail distance"
         value={view.distance}
-        min={1}
+        min={3}
         max={5}
         step={1}
         format={(value) => `${value} tiles`}
         onChange={(value) => onViewChange('distance', value)}
+      />
+      <Slider
+        label="Haze"
+        value={view.haze}
+        min={0}
+        max={100}
+        step={5}
+        format={formatPercent}
+        onChange={(value) => onViewChange('haze', value)}
+      />
+      <Slider
+        label="Dappled light"
+        value={view.dapple}
+        min={0}
+        max={100}
+        step={5}
+        format={formatPercent}
+        onChange={(value) => onViewChange('dapple', value)}
       />
       <label className="control">
         <span className="control-label">Preview</span>

@@ -5,7 +5,7 @@ import { createTileMesh, recolorTileMesh } from './tileMesh'
 
 /**
  * Streams terrain tiles around a focus point. Each frame update() decides
- * which tiles should exist (a square ring of `viewDistance` tiles), frees
+ * which tiles should exist (a round area `viewDistance` tiles across), frees
  * the rest, and builds missing or outdated tiles nearest-first within a
  * small time budget, so moving never stutters. Old meshes stay visible
  * until their replacement is ready.
@@ -16,7 +16,15 @@ const NEAR_SEGMENTS = 128
 const FAR_SEGMENTS = 64
 const NEAR_RING = 1
 
-export function createTileManager(scene, material) {
+/**
+ * Whether the tile (dx, dz) tiles away from the focus tile is loaded: a
+ * round area, so the detailed ground never ends in a square corner.
+ */
+export function inTileArea(dx, dz, viewDistance) {
+  return Math.hypot(dx, dz) <= viewDistance + 0.5
+}
+
+export function createTileManager(scene, material, depthMaterial) {
   const group = new THREE.Group()
   scene.add(group)
   const tiles = new Map()
@@ -45,6 +53,16 @@ export function createTileManager(scene, material) {
       return sampler ? sampler.height(x, z) : 0
     },
 
+    /** The current ground sampler (shared with the far ground). */
+    get sampler() {
+      return sampler
+    },
+
+    /** Bumps whenever the ground settings change. */
+    get version() {
+      return version
+    },
+
     setPreview(nextMode) {
       if (nextMode === mode) return
       mode = nextMode
@@ -58,6 +76,7 @@ export function createTileManager(scene, material) {
       const wanted = new Map()
       for (let dz = -viewDistance; dz <= viewDistance; dz += 1) {
         for (let dx = -viewDistance; dx <= viewDistance; dx += 1) {
+          if (!inTileArea(dx, dz, viewDistance)) continue
           const ring = Math.max(Math.abs(dx), Math.abs(dz))
           wanted.set(tileKey(centerX + dx, centerZ + dz), {
             x: centerX + dx,
@@ -82,7 +101,7 @@ export function createTileManager(scene, material) {
         // Always build at least one tile per frame, then stop at the budget.
         if (performance.now() - start > budgetMs && pending < todo.length) break
         const data = buildTileData(sampler, want.x, want.z, want.segments)
-        const mesh = createTileMesh(data, material, mode)
+        const mesh = createTileMesh(data, material, mode, depthMaterial)
         removeTile(key)
         group.add(mesh)
         tiles.set(key, { mesh, version, segments: want.segments })
