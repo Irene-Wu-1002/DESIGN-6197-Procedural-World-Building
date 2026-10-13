@@ -136,7 +136,7 @@ export function createFarGround(material, holeUniforms) {
         // Colour keeps the bumps' damp/dry pattern near the tiles, then
         // fades to the broad pattern (sampling it coarsely would only alias).
         const bumps = 1 - smoothstep(outerEdge, outerEdge + BUMP_COLOR_FADE, distance)
-        soilColor(moistureOf(out.broad, out.bump * bumps), out.hill, color)
+        soilColor(moistureOf(out.broad, out.bump * bumps), out.hill, color, out.litter)
         // No pebble shapes out here, but keep their average tone so the
         // speckled ground doesn't stop at the tile edge.
         const cover = out.pebbleChance * PEBBLE_AREA

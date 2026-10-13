@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import MapPanel from './MapPanel'
+import { DEFAULT_COVER } from './cover/coverRules'
+import { createCoverRenderer, createTrunkRenderer } from './cover/coverRenderer'
+import { createFlyAgaric } from './cover/flyAgaric'
+import { scatterTile } from './cover/scatterTile'
 import { FOREST_COLORS, createForestSky } from './forest/sky'
 import { createFarGround, morphRange } from './terrain/farGround'
 import { DEFAULT_GROUND } from './terrain/heightField'
@@ -37,6 +41,9 @@ const BUILD_BUDGET_MS = 6
 const STATUS_REFRESH_MS = 250
 const MAX_FRAME = 0.1
 const MOVE_KEYS = { KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right' }
+// Small cover shrinks away just as the ground starts to smooth (m, relative
+// to the start of the morph band).
+const COVER_FADE = [-0.06, 0.1]
 
 export default function MapScene() {
   const mountRef = useRef(null)
@@ -45,8 +52,13 @@ export default function MapScene() {
   const groundUniformsRef = useRef(null)
   const fogRef = useRef(null)
   const viewRef = useRef(DEFAULT_VIEW)
+  const coverRendererRef = useRef(null)
+  const flyAgaricRef = useRef(null)
+  // What the tile listener needs to scatter a new tile.
+  const coverContextRef = useRef({ cover: DEFAULT_COVER, seed: DEFAULT_GROUND.seed })
   const [ground, setGround] = useState(DEFAULT_GROUND)
   const [view, setView] = useState(DEFAULT_VIEW)
+  const [cover, setCover] = useState(DEFAULT_COVER)
   const [status, setStatus] = useState({
     loaded: 0,
     pending: 0,
@@ -89,7 +101,21 @@ export default function MapScene() {
     const { material, depthMaterial, farMaterial, uniforms, morphUniforms, holeUniforms } =
       createGroundMaterial(SUN_OFFSET)
     groundUniformsRef.current = uniforms
-    const tiles = createTileManager(scene, material, depthMaterial)
+
+    // Ground cover follows the tiles: scattered when a tile is built,
+    // dropped when it's freed.
+    const coverRenderer = createCoverRenderer(scene, morphUniforms)
+    coverRendererRef.current = coverRenderer
+    const trunkRenderer = createTrunkRenderer(scene)
+    const flyAgaric = createFlyAgaric(scene)
+    flyAgaricRef.current = flyAgaric
+    const tiles = createTileManager(scene, material, depthMaterial, {
+      onTileReady: (key, data) => {
+        const { cover, seed } = coverContextRef.current
+        coverRenderer.setTile(key, scatterTile(data, { cover, seed, trunks: tiles.trunks }))
+      },
+      onTileRemoved: (key) => coverRenderer.removeTile(key),
+    })
     tilesRef.current = tiles
     tiles.setGround(DEFAULT_GROUND)
     const farGround = createFarGround(farMaterial, holeUniforms)
@@ -174,7 +200,11 @@ export default function MapScene() {
       // Tiles fade from full detail to the smooth surface around you, so they
       // meet the far ground without a seam; this follows you continuously.
       morphUniforms.uMorphCenter.value.set(controls.target.x, controls.target.z)
-      morphUniforms.uMorphRange.value.fromArray(morphRange(distance))
+      const [morphStart, morphEnd] = morphRange(distance)
+      morphUniforms.uMorphRange.value.set(morphStart, morphEnd)
+      coverRenderer.setFadeRange(morphStart + COVER_FADE[0], morphStart + COVER_FADE[1])
+      coverRenderer.sync()
+      trunkRenderer.update(tiles.trunks, tiles.sampler, controls.target.x, controls.target.z, tiles.version)
       controls.update()
       // Never let the camera dip under the ground.
       const floor = tiles.heightAt(camera.position.x, camera.position.z) + 0.01
@@ -212,6 +242,11 @@ export default function MapScene() {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
       tiles.dispose()
+      coverRenderer.dispose()
+      trunkRenderer.dispose()
+      flyAgaric.dispose()
+      coverRendererRef.current = null
+      flyAgaricRef.current = null
       farGround.dispose()
       sky.dispose()
       material.dispose()
@@ -226,11 +261,29 @@ export default function MapScene() {
     }
   }, [])
 
-  // Shape settings rebuild the tiles; grain is only a shader uniform.
-  const { seed, slopes, bumps, warp, pebbles, antHill, grain } = ground
+  // Shape settings (and trunks) rebuild the tiles, which re-scatter their
+  // cover as they finish; grain is only a shader uniform.
+  const { seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, grain } = ground
   useEffect(() => {
-    tilesRef.current?.setGround({ seed, slopes, bumps, warp, pebbles, antHill })
-  }, [seed, slopes, bumps, warp, pebbles, antHill])
+    coverContextRef.current = { ...coverContextRef.current, seed }
+    tilesRef.current?.setGround({ seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing })
+  }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing])
+
+  // The fly agaric stands by the ant hill (only while there is one).
+  useEffect(() => {
+    flyAgaricRef.current?.place(tilesRef.current?.sampler, seed, cover.flyAgaric && antHill)
+  }, [seed, slopes, bumps, warp, pebbles, antHill, cover.flyAgaric])
+
+  // Cover settings only re-scatter the tiles already built (no ground rebuild).
+  useEffect(() => {
+    coverContextRef.current = { ...coverContextRef.current, cover }
+    const tiles = tilesRef.current
+    const renderer = coverRendererRef.current
+    if (!tiles || !renderer) return
+    tiles.forEachTile((key, data) => {
+      renderer.setTile(key, scatterTile(data, { cover, seed: coverContextRef.current.seed, trunks: tiles.trunks }))
+    })
+  }, [cover])
 
   useEffect(() => {
     if (groundUniformsRef.current) groundUniformsRef.current.uGrain.value = grain / 100
@@ -249,12 +302,15 @@ export default function MapScene() {
       <MapPanel
         ground={ground}
         view={view}
+        cover={cover}
         status={status}
         onGroundChange={(key, value) => setGround((current) => ({ ...current, [key]: value }))}
         onViewChange={(key, value) => setView((current) => ({ ...current, [key]: value }))}
+        onCoverChange={(key, value) => setCover((current) => ({ ...current, [key]: value }))}
         onReset={() => {
           setGround(DEFAULT_GROUND)
           setView(DEFAULT_VIEW)
+          setCover(DEFAULT_COVER)
         }}
       />
     </div>

@@ -27,7 +27,13 @@ export const DEFAULT_GROUND = {
   grain: 100,
   pebbles: 50,
   antHill: true,
+  // Tree trunks change ground moisture and colour, so they live here.
+  trunks: true,
+  trunkSpacing: 3.5,
 }
+
+// Leaf litter: where fallen leaves pile up (used for density and soil tint).
+const LITTER = { wavelength: 0.25 }
 
 const BROAD = { wavelength: 0.3, height: 0.03 }
 const BUMPS = { wavelength: 0.03, height: 0.005 }
@@ -51,7 +57,7 @@ export const ANT_HILL = {
 }
 
 // Integer hash → 0–1, independent per (x, z, seed).
-function hash(x, z, seed) {
+export function hash(x, z, seed) {
   let h = Math.imul(x, 374761393) + Math.imul(z, 668265263) + Math.imul(seed, 1274126177)
   h = Math.imul(h ^ (h >>> 13), 1103515245)
   h ^= h >>> 16
@@ -74,6 +80,7 @@ const smoothstep = (edge0, edge1, value) => {
  *   shade    0–1, the pebble's own colour variation
  *   pebbleChance  0–1, how likely this cell holds a pebble (for far ground)
  *   hill     0–1, how far onto the ant hill this point is
+ *   litter   0–1, how much leaf litter gathers here (slow, ~25 cm patches)
  */
 export function createGroundSampler(settings) {
   const seed = settings.seed
@@ -100,6 +107,8 @@ export function createGroundSampler(settings) {
   const bumpNoise = noise(BUMPS.wavelength, 3, 4)
   const patchNoise = noise(PEBBLE.patchWavelength, 2, 5)
   const hillNoise = noise(0.05, 2, 6)
+  // One octave is enough: litter only needs slow, soft patches.
+  const litterNoise = noise(LITTER.wavelength, 1, 7)
   // Pebble patchiness is the same for every point in a cell, so cache it.
   const patchCache = new Map()
 
@@ -171,6 +180,7 @@ export function createGroundSampler(settings) {
       out.broad = broad
       out.bump = shaped
       out.hill = hill.mask
+      out.litter = 0.5 + 0.5 * getNoise(x, z, litterNoise)
       return out
     },
     height(x, z) {

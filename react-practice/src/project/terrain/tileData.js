@@ -15,6 +15,11 @@ import { TILE_SIZE } from './heightField'
 // the bump noise (smooth over ~3 cm), not from grid curvature, which picks
 // up millimetre detail and would flip between wet and dry every few mm.
 const MOISTURE = { base: 0.5, low: 0.35, hollow: 0.3 }
+// Ground is damper close to a trunk (shade, roots): extra moisture at the
+// bark, fading over TRUNK_DAMP.reach metres.
+const TRUNK_DAMP = { amount: 0.3, reach: 0.25 }
+// How far around a tile to look for trunks (beyond this they don't matter).
+const TRUNK_REACH = 3
 
 export function tileKey(tileX, tileZ) {
   return `${tileX},${tileZ}`
@@ -34,12 +39,27 @@ export function moistureOf(broad, bump) {
   return Math.min(Math.max(MOISTURE.base - MOISTURE.low * broad - MOISTURE.hollow * bump, 0), 1)
 }
 
-export function buildTileData(sampler, tileX, tileZ, segments) {
+/**
+ * trunks: the trunk field (cover/trunks.js) or null. Adds per point
+ * trunkDistance (m to the nearest bark) and litter (0–1) for ground cover.
+ */
+export function buildTileData(sampler, tileX, tileZ, segments, trunks = null) {
   const n = segments + 1
   const step = TILE_SIZE / segments
   const wide = n + 2
   const x0 = tileX * TILE_SIZE
   const z0 = tileZ * TILE_SIZE
+  // Only a handful of trunks can matter for one tile; check those directly.
+  const nearTrunks = trunks
+    ? trunks.trunksNear(x0 + TILE_SIZE / 2, z0 + TILE_SIZE / 2, TRUNK_REACH + TILE_SIZE)
+    : []
+  const trunkDistanceAt = (x, z) => {
+    let best = TRUNK_REACH
+    for (const trunk of nearTrunks) {
+      best = Math.min(best, Math.max(Math.hypot(trunk.x - x, trunk.z - z) - trunk.radius, 0))
+    }
+    return best
+  }
   const apron = new Float32Array(wide * wide)
   // The smooth surface (broad slopes + ant hill, no bumps or pebbles) that
   // far-away tiles morph into, matching the far ground.
@@ -51,6 +71,8 @@ export function buildTileData(sampler, tileX, tileZ, segments) {
   const pebble = new Float32Array(count)
   const shade = new Float32Array(count)
   const hill = new Float32Array(count)
+  const litter = new Float32Array(count)
+  const trunkDistance = new Float32Array(count)
   const out = {}
 
   for (let row = 0; row < wide; row += 1) {
@@ -69,6 +91,8 @@ export function buildTileData(sampler, tileX, tileZ, segments) {
       pebble[index] = out.pebble
       shade[index] = out.shade
       hill[index] = out.hill
+      litter[index] = out.litter
+      trunkDistance[index] = trunkDistanceAt(x, z)
     }
   }
 
@@ -95,7 +119,11 @@ export function buildTileData(sampler, tileX, tileZ, segments) {
       writeNormal(smoothApron, a, smoothNormal, index)
       smoothHeight[index] = smoothApron[a]
       slope[index] = (Math.atan(gradient) * 180) / Math.PI
-      moisture[index] = moistureOf(broad[index], bump[index])
+      const nearBark = Math.exp(-trunkDistance[index] / TRUNK_DAMP.reach)
+      moisture[index] = Math.min(
+        moistureOf(broad[index], bump[index]) + TRUNK_DAMP.amount * nearBark,
+        1
+      )
     }
   }
 
@@ -114,6 +142,8 @@ export function buildTileData(sampler, tileX, tileZ, segments) {
     pebble,
     shade,
     hill,
+    litter,
+    trunkDistance,
   }
 }
 
@@ -132,6 +162,8 @@ export const GROUND_COLORS = {
   hill: hex('#7b4b33'),
   pebbleLight: hex('#99928a'),
   pebbleDark: hex('#5f5a53'),
+  // Rotting leaf litter: the soil tint where fallen leaves gather.
+  litter: hex('#5e3d1f'),
 }
 
 const PREVIEW = {
@@ -157,9 +189,11 @@ const smoothstep = (edge0, edge1, value) => {
  * Soil colour (linear RGB into `out`): damp soil in hollows, dry sand where
  * it's driest, reddish fine soil on the ant hill.
  */
-export function soilColor(moisture, hill, out) {
+export function soilColor(moisture, hill, out, litter = 0) {
   mix(GROUND_COLORS.soil, GROUND_COLORS.damp, smoothstep(0.55, 0.75, moisture), out)
   mix(out, GROUND_COLORS.sand, 0.6 * smoothstep(0.42, 0.28, moisture), out)
+  // Leaf litter darkens and warms the soil where leaves gather.
+  mix(out, GROUND_COLORS.litter, 0.45 * smoothstep(0.45, 0.8, litter), out)
   mix(out, GROUND_COLORS.hill, 0.85 * hill, out)
   return out
 }
@@ -183,7 +217,7 @@ export function colorTile(data, mode, colors) {
       mix(PREVIEW.moisture[0], PREVIEW.moisture[1], data.moisture[index], c)
     } else {
       // Natural ground, with pebbles on top.
-      soilColor(data.moisture[index], data.hill[index], c)
+      soilColor(data.moisture[index], data.hill[index], c, data.litter[index])
       if (data.pebble[index] > 0) {
         mix(GROUND_COLORS.pebbleDark, GROUND_COLORS.pebbleLight, data.shade[index], pebbleColor)
         mix(c, pebbleColor, data.pebble[index], c)

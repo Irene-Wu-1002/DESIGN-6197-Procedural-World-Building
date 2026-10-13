@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { createTrunkField } from '../cover/trunks'
 import { TILE_SIZE, createGroundSampler } from './heightField'
 import { buildTileData, tileKey } from './tileData'
 import { createTileMesh, recolorTileMesh } from './tileMesh'
@@ -24,11 +25,16 @@ export function inTileArea(dx, dz, viewDistance) {
   return Math.hypot(dx, dz) <= viewDistance + 0.5
 }
 
-export function createTileManager(scene, material, depthMaterial) {
+/**
+ * listeners (optional): onTileReady(key, data) after a tile is built,
+ * onTileRemoved(key) when it's freed – used by the ground cover.
+ */
+export function createTileManager(scene, material, depthMaterial, listeners = {}) {
   const group = new THREE.Group()
   scene.add(group)
   const tiles = new Map()
   let sampler = null
+  let trunks = null
   let version = 0
   let mode = 'off'
   let pending = 0
@@ -39,13 +45,25 @@ export function createTileManager(scene, material, depthMaterial) {
     group.remove(tile.mesh)
     tile.mesh.geometry.dispose()
     tiles.delete(key)
+    listeners.onTileRemoved?.(key)
   }
 
   return {
     /** New ground settings; anything shape-related rebuilds every tile. */
     setGround(next) {
       sampler = createGroundSampler(next)
+      trunks = createTrunkField(next.seed, next.trunkSpacing, next.trunks)
       version += 1
+    },
+
+    /** The tree trunks of the current ground (cover/trunks.js). */
+    get trunks() {
+      return trunks
+    },
+
+    /** Call fn(key, data) for every loaded tile (e.g. to re-scatter cover). */
+    forEachTile(fn) {
+      tiles.forEach((tile, key) => fn(key, tile.mesh.userData.data))
     },
 
     /** Height of the ground at a world point (for the camera and focus). */
@@ -100,11 +118,12 @@ export function createTileManager(scene, material, depthMaterial) {
       for (const [key, want] of todo) {
         // Always build at least one tile per frame, then stop at the budget.
         if (performance.now() - start > budgetMs && pending < todo.length) break
-        const data = buildTileData(sampler, want.x, want.z, want.segments)
+        const data = buildTileData(sampler, want.x, want.z, want.segments, trunks)
         const mesh = createTileMesh(data, material, mode, depthMaterial)
         removeTile(key)
         group.add(mesh)
         tiles.set(key, { mesh, version, segments: want.segments })
+        listeners.onTileReady?.(key, data)
         pending -= 1
       }
     },
