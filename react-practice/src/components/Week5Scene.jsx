@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import PathsPanel from './PathsPanel'
 import ScatterLayerPanel from './ScatterLayerPanel'
 import Slider from './Slider'
+import { createPathMeshes } from '../utils/pathMeshes'
+import { DEFAULT_RIVERS, carveRivers } from '../utils/rivers'
+import { DEFAULT_ROADS, buildRoads } from '../utils/roads'
 import {
   DEFAULT_LAYER_RULES,
   SCATTER_LAYERS,
@@ -13,7 +17,11 @@ import {
   createInstancedAssetParts,
   createWindmillGeometry,
 } from '../utils/scatterAssets'
-import { SUN_DIRECTION, createTerrainFields } from '../utils/terrainFields'
+import {
+  SUN_DIRECTION,
+  buildTerrainFields,
+  createHeightGrid,
+} from '../utils/terrainFields'
 
 const TERRAIN_SIZE = 40
 const SEGMENTS = 200
@@ -28,11 +36,17 @@ const ALLOWED_MIX = 0.55
 const MOSS = new THREE.Color('#5c7a3a')
 const MOSS_MIX = 0.55
 
-// Data-map previews: [low colour, high colour, field on the terrain sample].
+// Data-map previews: [low colour, high colour, 0–1 value from a terrain sample].
+const ROAD_PREVIEW_REACH = 6
 const MAP_PREVIEWS = {
-  moisture: [new THREE.Color('#c9a35f'), new THREE.Color('#1f63b8'), 'moisture'],
-  sun: [new THREE.Color('#2b2457'), new THREE.Color('#ffd25a'), 'sun'],
-  altitude: [new THREE.Color('#163323'), new THREE.Color('#f2f2ee'), 'level'],
+  moisture: [new THREE.Color('#c9a35f'), new THREE.Color('#1f63b8'), (s) => s.moisture],
+  sun: [new THREE.Color('#2b2457'), new THREE.Color('#ffd25a'), (s) => s.sun],
+  altitude: [new THREE.Color('#163323'), new THREE.Color('#f2f2ee'), (s) => s.level],
+  road: [
+    new THREE.Color('#1c2230'),
+    new THREE.Color('#f0a040'),
+    (s) => 1 - s.roadDistance / ROAD_PREVIEW_REACH,
+  ],
 }
 const MAP_MIX = 0.8
 const PREVIEW_NOTES = {
@@ -40,6 +54,7 @@ const PREVIEW_NOTES = {
   moisture: 'Tan is dry, blue is wet. Wet ground grows bigger, darker trees and bushes.',
   sun: 'Dark is shaded, yellow faces the sun. Sunny leaves are lighter; shaded damp rock grows moss.',
   altitude: 'Dark is low, white is high. Pines shrink and thin out toward the top.',
+  road: `Orange is on or near a road, fading out over ${ROAD_PREVIEW_REACH} m. Each layer's road buffer keeps it clear.`,
 }
 
 const DEFAULT_TERRAIN = {
@@ -54,9 +69,20 @@ const DEFAULT_TERRAIN = {
   showWater: true,
 }
 
+const PANEL_TABS = [
+  ['terrain', 'Terrain'],
+  ['paths', 'Paths'],
+  ['scatter', 'Scatter'],
+]
+
+const DEFAULT_PATHS = {
+  rivers: DEFAULT_RIVERS,
+  roads: DEFAULT_ROADS,
+}
+
 const DEFAULT_SCATTER = {
   seed: 7,
-  // off | rules (of the open layer) | moisture | sun | altitude
+  // off | rules (of the open layer) | moisture | sun | altitude | road
   preview: 'off',
   windDirection: 45,
   rules: DEFAULT_LAYER_RULES,
@@ -79,7 +105,9 @@ export default function Week5Scene() {
   const assetMeshesRef = useRef(null)
   const windmillsRef = useRef(null)
   const waterRef = useRef(null)
+  const pathsRef = useRef(null)
   const [terrain, setTerrain] = useState(DEFAULT_TERRAIN)
+  const [paths, setPaths] = useState(DEFAULT_PATHS)
   const [scatter, setScatter] = useState(DEFAULT_SCATTER)
   const [panelTab, setPanelTab] = useState('terrain')
   const [openLayer, setOpenLayer] = useState('pine')
@@ -102,20 +130,88 @@ export default function Week5Scene() {
       rules: { ...current.rules, [id]: DEFAULT_LAYER_RULES[id] },
     }))
 
-  // Terrain maps (height, slope, cliff and water distance) shared by the
-  // mesh, the scatter rules, and the rule preview.
-  const fields = useMemo(
+  const setPathParam = (group, key, value) =>
+    setPaths((current) => ({
+      ...current,
+      [group]: { ...current[group], [key]: value },
+    }))
+
+  // World pipeline. Each step is cached, so e.g. a tree slider only re-runs
+  // the last step and never re-routes roads.
+  //   1. heights from noise
+  //   2. rivers traced and carved
+  //   3. terrain maps (water includes rivers)
+  //   4. windmills placed
+  //   5. roads routed between windmills, ground flattened
+  //   6. terrain maps again (adds road distance)
+  //   7. everything else scattered; windmills keep their spots
+  // Rock slope isn't needed for heights, so it's left out to keep the
+  // rivers (and everything after them) cached while it changes.
+  const { seed, scale, height, octaves, persistence, lacunarity, waterLevel, showWater } =
+    terrain
+  const grid = useMemo(
     () =>
-      createTerrainFields({
+      createHeightGrid({
         size: TERRAIN_SIZE,
         segments: SEGMENTS,
-        height: terrain.height,
-        noise: noiseParams(terrain),
-        rockSlope: terrain.rockSlope,
-        waterLevel: terrain.waterLevel,
-        showWater: terrain.showWater,
+        height,
+        noise: noiseParams({ seed, scale, octaves, persistence, lacunarity }),
+        waterLevel,
+        showWater,
       }),
-    [terrain]
+    [seed, scale, height, octaves, persistence, lacunarity, waterLevel, showWater]
+  )
+
+  const rivers = useMemo(() => carveRivers(grid, paths.rivers), [grid, paths.rivers])
+  const carvedHeights = rivers ? rivers.heights : grid.heights
+
+  const riverFields = useMemo(
+    () =>
+      buildTerrainFields(grid, {
+        heights: carvedHeights,
+        rockSlope: terrain.rockSlope,
+        rivers,
+      }),
+    [grid, carvedHeights, terrain.rockSlope, rivers]
+  )
+
+  // Only the windmill rules matter here, so other layers' sliders don't
+  // re-place windmills (and re-route roads).
+  const windmillRules = scatter.rules.windmill
+  const windmillSpots = useMemo(
+    () =>
+      scatterLayers({
+        fields: riverFields,
+        seed: scatter.seed,
+        rules: { windmill: windmillRules },
+        windDirection: scatter.windDirection,
+        only: ['windmill'],
+      }).windmill,
+    [riverFields, scatter.seed, windmillRules, scatter.windDirection]
+  )
+
+  const roads = useMemo(
+    () =>
+      buildRoads(
+        riverFields,
+        windmillSpots.map((item) => ({ x: item.x, z: item.z, scale: item.scale[0] })),
+        paths.roads,
+        carvedHeights
+      ),
+    [riverFields, windmillSpots, paths.roads, carvedHeights]
+  )
+
+  const fields = useMemo(
+    () =>
+      roads
+        ? buildTerrainFields(grid, {
+            heights: roads.heights,
+            rockSlope: terrain.rockSlope,
+            rivers,
+            roads,
+          })
+        : riverFields,
+    [grid, roads, terrain.rockSlope, rivers, riverFields]
   )
 
   const placements = useMemo(
@@ -125,8 +221,9 @@ export default function Week5Scene() {
         seed: scatter.seed,
         rules: scatter.rules,
         windDirection: scatter.windDirection,
+        fixed: { windmill: windmillSpots },
       }),
-    [fields, scatter.seed, scatter.rules, scatter.windDirection]
+    [fields, scatter.seed, scatter.rules, scatter.windDirection, windmillSpots]
   )
 
   // Ground preview (Scatter tab only): the open layer's rules, or a data map.
@@ -203,6 +300,11 @@ export default function Week5Scene() {
     water.receiveShadow = true
     scene.add(water)
     waterRef.current = water
+
+    // River, road, and bridge meshes are rebuilt into this group.
+    const pathLayer = new THREE.Group()
+    scene.add(pathLayer)
+    pathsRef.current = { layer: pathLayer, meshes: null }
 
     // One InstancedMesh per asset part; instance colours carry the tint.
     const parts = createInstancedAssetParts()
@@ -305,6 +407,8 @@ export default function Week5Scene() {
       waterGeometry.dispose()
       waterMaterial.dispose()
       waterRef.current = null
+      pathsRef.current?.meshes?.dispose()
+      pathsRef.current = null
     }
   }, [])
 
@@ -351,8 +455,8 @@ export default function Week5Scene() {
           color.multiplyScalar(BLOCKED_DIM)
         }
       } else if (previewMap) {
-        const [low, high, key] = previewMap
-        const value = THREE.MathUtils.clamp(fields.sampleAt(gridIndex[index])[key], 0, 1)
+        const [low, high, valueOf] = previewMap
+        const value = THREE.MathUtils.clamp(valueOf(fields.sampleAt(gridIndex[index])), 0, 1)
         color.lerp(mapColor.lerpColors(low, high, value), MAP_MIX)
       }
       colors.setXYZ(index, color.r, color.g, color.b)
@@ -360,9 +464,20 @@ export default function Week5Scene() {
     colors.needsUpdate = true
     geometry.computeBoundingSphere()
 
-    water.visible = fields.hasWater
-    if (fields.hasWater) water.position.y = fields.waterY
+    // The lake plane; rivers have their own ribbons.
+    water.visible = fields.hasLake
+    if (fields.hasLake) water.position.y = fields.waterY
   }, [fields, terrain.rockSlope, previewRules, previewMap])
+
+  // Rebuild the river, road, and bridge meshes when the paths change.
+  useEffect(() => {
+    const pathMeshes = pathsRef.current
+    if (!pathMeshes) return
+    pathMeshes.meshes?.dispose()
+    pathMeshes.layer.clear()
+    pathMeshes.meshes = createPathMeshes(rivers, roads)
+    pathMeshes.layer.add(pathMeshes.meshes.group)
+  }, [rivers, roads])
 
   // Write the scatter result into the instanced meshes and windmill groups.
   useEffect(() => {
@@ -444,7 +559,7 @@ export default function Week5Scene() {
         </div>
 
         <div className="panel-tabs" role="tablist">
-          {['terrain', 'scatter'].map((tab) => (
+          {PANEL_TABS.map(([tab, label]) => (
             <button
               key={tab}
               type="button"
@@ -453,7 +568,7 @@ export default function Week5Scene() {
               className={panelTab === tab ? 'active' : ''}
               onClick={() => setPanelTab(tab)}
             >
-              {tab === 'terrain' ? 'Terrain' : 'Scatter'}
+              {label}
             </button>
           ))}
         </div>
@@ -464,6 +579,7 @@ export default function Week5Scene() {
             className="layer-add"
             onClick={() => {
               setTerrain(DEFAULT_TERRAIN)
+              setPaths(DEFAULT_PATHS)
               setScatter(DEFAULT_SCATTER)
             }}
           >
@@ -473,16 +589,17 @@ export default function Week5Scene() {
             type="button"
             className="layer-add"
             onClick={() => {
-              const seed = Math.floor(Math.random() * 1000)
-              if (panelTab === 'terrain') setTerrainParam('seed', seed)
-              else setScatterParam('seed', seed)
+              const randomSeed = Math.floor(Math.random() * 1000)
+              if (panelTab === 'terrain') setTerrainParam('seed', randomSeed)
+              else if (panelTab === 'paths') setPathParam('rivers', 'seed', randomSeed)
+              else setScatterParam('seed', randomSeed)
             }}
           >
             Random Seed
           </button>
         </div>
 
-        {panelTab === 'terrain' ? (
+        {panelTab === 'terrain' && (
           <>
             <p className="section-note">
               Flat ground is grass; steep slopes become rock.
@@ -569,7 +686,21 @@ export default function Week5Scene() {
               />
             )}
           </>
-        ) : (
+        )}
+
+        {panelTab === 'paths' && (
+          <PathsPanel
+            rivers={paths.rivers}
+            roads={paths.roads}
+            riverCount={rivers?.rivers.length ?? 0}
+            roadCount={roads?.roads.length ?? 0}
+            bridgeCount={roads?.roads.reduce((sum, road) => sum + road.bridges.length, 0) ?? 0}
+            windmillCount={windmillSpots.length}
+            onChange={setPathParam}
+          />
+        )}
+
+        {panelTab === 'scatter' && (
           <>
             <p className="section-note">
               Each layer follows its own protocol: surface, slope, height,
@@ -606,6 +737,7 @@ export default function Week5Scene() {
                 <option value="moisture">Moisture map</option>
                 <option value="sun">Sun exposure map</option>
                 <option value="altitude">Altitude map</option>
+                <option value="road">Road distance map</option>
               </select>
             </label>
             {scatter.preview !== 'off' && (

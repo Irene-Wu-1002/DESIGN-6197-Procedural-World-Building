@@ -108,6 +108,18 @@ export default function ScatterLayerPanel({
               onChange={set('cliffBuffer')}
             />
 
+            {!layer.isCount && (
+              <Slider
+                label="Road buffer"
+                value={layerRules.roadBuffer}
+                min={0}
+                max={5}
+                step={0.1}
+                format={(value) => (value === 0 ? 'off' : formatMetres(value))}
+                onChange={set('roadBuffer')}
+              />
+            )}
+
             <label className="control">
               <span className="control-label">Water</span>
               <select

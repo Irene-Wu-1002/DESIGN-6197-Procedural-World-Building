@@ -93,6 +93,7 @@ export const DEFAULT_LAYER_RULES = {
     heightMin: 55,
     heightMax: 100,
     cliffBuffer: 2,
+    roadBuffer: 0,
     water: 'avoid',
     waterDistance: 4,
     underwater: false,
@@ -109,6 +110,7 @@ export const DEFAULT_LAYER_RULES = {
     heightMin: 0,
     heightMax: 100,
     cliffBuffer: 0,
+    roadBuffer: 0.8,
     water: 'ignore',
     waterDistance: 0,
     underwater: true,
@@ -125,6 +127,7 @@ export const DEFAULT_LAYER_RULES = {
     heightMin: 30,
     heightMax: 100,
     cliffBuffer: 0.5,
+    roadBuffer: 1,
     water: 'avoid',
     waterDistance: 1.5,
     underwater: false,
@@ -141,6 +144,7 @@ export const DEFAULT_LAYER_RULES = {
     heightMin: 0,
     heightMax: 70,
     cliffBuffer: 1,
+    roadBuffer: 1,
     water: 'avoid',
     waterDistance: 0.5,
     underwater: false,
@@ -157,6 +161,7 @@ export const DEFAULT_LAYER_RULES = {
     heightMin: 0,
     heightMax: 100,
     cliffBuffer: 0,
+    roadBuffer: 0.5,
     water: 'near',
     waterDistance: 6,
     underwater: false,
@@ -197,6 +202,9 @@ export function passesRules(rules, sample, fields) {
   const level = sample.level * 100
   if (level < rules.heightMin || level > rules.heightMax) return false
   if (rules.cliffBuffer > 0 && sample.cliffDistance < rules.cliffBuffer) return false
+  if (fields.hasRoads && rules.roadBuffer > 0 && sample.roadDistance < rules.roadBuffer) {
+    return false
+  }
   // Without water the water rules have nothing to measure, so they switch off.
   if (fields.hasWater) {
     if (rules.water === 'avoid' && sample.waterDistance < rules.waterDistance) return false
@@ -352,14 +360,36 @@ function leanVector(sample, strength) {
  *   { x, y, z, rotationY, scale: [sx, sy, sz], normal, shade,
  *     foliageWidth, color: { h, s, l }, moss, windSpeed }.
  * windDirection (degrees) is the way the windmills face.
+ * only:  place just these layer ids (e.g. windmills before routing roads).
+ * fixed: { [layerId]: items } placed as given, re-seated on the current
+ *        ground, instead of being scattered again.
  */
-export function scatterLayers({ fields, seed, rules: allRules, windDirection = 0 }) {
+export function scatterLayers({
+  fields,
+  seed,
+  rules: allRules,
+  windDirection = 0,
+  only = null,
+  fixed = {},
+}) {
   const size = fields.size
   const occupancy = createOccupancy(MAX_FOOTPRINT)
   const result = {}
 
   SCATTER_LAYERS.forEach((layer, layerIndex) => {
+    if (only && !only.includes(layer.id)) {
+      result[layer.id] = []
+      return
+    }
     const rules = allRules[layer.id]
+    if (fixed[layer.id]) {
+      result[layer.id] = fixed[layer.id].map((item) => {
+        const sample = fields.sample(item.x, item.z)
+        occupancy.add(item.x, item.z, layer.footprint * item.scale[0])
+        return { ...item, y: sample.y - layer.sink * item.scale[1] }
+      })
+      return
+    }
     // Windmills: amount is a count. Groves: amount is how much of the land
     // the groves cover. Scattered: amount is the chance to keep a point.
     const target = rules.on ? (layer.isCount ? rules.amount : layer.maxCount) : 0

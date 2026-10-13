@@ -7,9 +7,14 @@ import { getNoise } from './noise'
  *   level          normalized height, 0 = lowest point, 1 = highest
  *   slope          degrees, 0 = flat
  *   cliffDistance  metres to the nearest cliff (slope > rock slope + CLIFF_MARGIN)
- *   waterDistance  metres to the shoreline; negative under water
+ *   waterDistance  metres to the nearest lake or river; negative under water
  *   moisture       0 dry → 1 wet (near water, low, flat)
  *   sun            0 shaded → 1 facing the sun
+ *   roadDistance   metres to the nearest road
+ *
+ * Built in two steps so rivers and roads can reshape the ground in between:
+ *   createHeightGrid()   heights from noise
+ *   buildTerrainFields() every map above, from (possibly carved) heights
  *
  * Index = row * points + column, with x = -size/2 + column * step and
  * z = -size/2 + row * step.
@@ -28,7 +33,7 @@ const FAR = 1000
 
 // Two-pass chamfer distance transform: distance (in metres) from every cell
 // to the nearest cell where isSource is true.
-function distanceTransform(isSource, points, step) {
+export function distanceTransform(isSource, points, step) {
   const distance = new Float32Array(points * points)
   for (let index = 0; index < distance.length; index += 1) {
     distance[index] = isSource[index] ? 0 : Infinity
@@ -69,20 +74,14 @@ function distanceTransform(isSource, points, step) {
   return distance
 }
 
-export function createTerrainFields({
-  size,
-  segments,
-  height,
-  noise,
-  rockSlope,
-  waterLevel,
-  showWater,
-}) {
+/**
+ * Step 1: heights from noise. min/max are kept from this original surface so
+ * normalized height and the lake level don't shift when rivers carve in.
+ */
+export function createHeightGrid({ size, segments, height, noise, waterLevel, showWater }) {
   const points = segments + 1
   const step = size / segments
-  const count = points * points
-  const heights = new Float32Array(count)
-
+  const heights = new Float32Array(points * points)
   let min = Infinity
   let max = -Infinity
   for (let row = 0; row < points; row += 1) {
@@ -95,6 +94,31 @@ export function createTerrainFields({
     }
   }
   const range = Math.max(max - min, 1e-6)
+  // Lake: a flat plane at waterLevel% of the height range.
+  const hasLake = showWater && waterLevel > 0
+  return {
+    size,
+    segments,
+    points,
+    step,
+    heights,
+    min,
+    max,
+    range,
+    hasLake,
+    lakeY: hasLake ? min + (waterLevel / 100) * range : -FAR,
+  }
+}
+
+/**
+ * Step 2: every terrain map from a height grid.
+ *   rivers: { mask, surface } – river water cells and their surface height
+ *   roads:  { mask }          – road cells
+ * heights may differ from grid.heights (carved / flattened copies).
+ */
+export function buildTerrainFields(grid, { heights = grid.heights, rockSlope, rivers, roads }) {
+  const { size, points, step, min, range, hasLake, lakeY } = grid
+  const count = points * points
 
   // Gradient by central differences (one-sided at the border).
   const gradientX = new Float32Array(count)
@@ -122,21 +146,35 @@ export function createTerrainFields({
   }
   const cliffDistance = distanceTransform(isCliff, points, step)
 
-  // Water: a flat plane at waterLevel% of the height range.
-  const hasWater = showWater && waterLevel > 0
-  const waterY = hasWater ? min + (waterLevel / 100) * range : -Infinity
+  // Water: lake cells below the lake plane, plus river channels. depth is how
+  // far below the local water surface the ground is (negative on dry land).
+  const isLake = new Uint8Array(count)
+  const isRiver = rivers ? rivers.mask : new Uint8Array(count)
   const isWater = new Uint8Array(count)
   const isLand = new Uint8Array(count)
+  const depth = new Float32Array(count)
+  let hasRiver = false
   for (let index = 0; index < count; index += 1) {
-    isWater[index] = heights[index] < waterY ? 1 : 0
+    isLake[index] = hasLake && heights[index] < lakeY ? 1 : 0
+    isWater[index] = isLake[index] || isRiver[index] ? 1 : 0
     isLand[index] = 1 - isWater[index]
+    depth[index] = isRiver[index] && !isLake[index]
+      ? rivers.surface[index] - heights[index]
+      : lakeY - heights[index]
+    if (isRiver[index]) hasRiver = true
   }
+  const hasWater = hasLake || hasRiver
   const toWater = distanceTransform(isWater, points, step)
   const toLand = distanceTransform(isLand, points, step)
   const waterDistance = new Float32Array(count)
   for (let index = 0; index < count; index += 1) {
     waterDistance[index] = isWater[index] ? -toLand[index] : toWater[index]
   }
+
+  const hasRoads = Boolean(roads)
+  const roadDistance = hasRoads
+    ? distanceTransform(roads.mask, points, step)
+    : new Float32Array(count).fill(FAR)
 
   // Moisture (0 dry → 1 wet): closeness to water, plus low and flat ground
   // where water collects. Sun exposure (0 shaded → 1 facing the sun).
@@ -185,9 +223,10 @@ export function createTerrainFields({
       normal: [-values.dx / length, 1 / length, -values.dz / length],
       cliffDistance: values.cliffDistance,
       waterDistance: values.waterDistance,
-      depth: waterY - y,
+      depth: values.depth,
       moisture: values.moisture,
       sun: values.sun,
+      roadDistance: values.roadDistance,
     }
   }
 
@@ -196,9 +235,14 @@ export function createTerrainFields({
     points,
     step,
     heights,
-    waterY,
+    // Lake plane height (lakeY) and whether it's shown.
+    waterY: lakeY,
+    hasLake,
     hasWater,
+    hasRoads,
     rockSlope,
+    // Raw grids, for routing roads and drawing previews.
+    grids: { slope, level, cliffDistance, waterDistance, isLake, isRiver, roadDistance },
     // Everything the placement rules need at one world position.
     sample(x, z) {
       return toSample(lookup(heights, x, z), {
@@ -208,8 +252,10 @@ export function createTerrainFields({
         slope: lookup(slope, x, z),
         cliffDistance: lookup(cliffDistance, x, z),
         waterDistance: lookup(waterDistance, x, z),
+        depth: lookup(depth, x, z),
         moisture: lookup(moisture, x, z),
         sun: lookup(sun, x, z),
+        roadDistance: lookup(roadDistance, x, z),
       })
     },
     // Same data at an exact grid point (used for the rule preview tint).
@@ -221,9 +267,17 @@ export function createTerrainFields({
         slope: slope[index],
         cliffDistance: cliffDistance[index],
         waterDistance: waterDistance[index],
+        depth: depth[index],
         moisture: moisture[index],
         sun: sun[index],
+        roadDistance: roadDistance[index],
       })
     },
   }
+}
+
+/** One-call version (heights straight from noise, no rivers or roads). */
+export function createTerrainFields(options) {
+  const grid = createHeightGrid(options)
+  return buildTerrainFields(grid, { rockSlope: options.rockSlope })
 }
