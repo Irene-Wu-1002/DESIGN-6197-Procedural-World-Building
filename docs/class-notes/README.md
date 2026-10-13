@@ -13,6 +13,7 @@ This section records what was assigned, what I explored, how the prototype chang
 | [Week 2: Infinite Noise Map](week-2-infinite-noise-map.md) | Week 2 | Noise types, octaves, seeds, layer blending, shaping, and height colours |
 | [Class 04: Voxel Terrain](week-3-voxel-terrain.md) | Week 3 | Density fields, cubic voxels, CSG, chunking, meshing, optimization, and criteria evaluation |
 | [Week 4: Shape Exploring — Shader Studies](week-4-shape-exploring.md) | Week 4 | Height, slope, biome, displacement, fresnel, fog, and noise shaders |
+| [Week 5: Distributions — A Procedural World](week-5.md) | Week 5 | Noise terrain, rule-based scattering, terrain-driven variation, rivers and roads, wind particles |
 
 Each weekly note explains **what I built**, **what the parameters mean**, and **why I built it** for the ant micro-world project.
 
