@@ -358,7 +358,7 @@ function leanVector(sample, strength) {
 /**
  * Returns { [layerId]: [item] } where each item is
  *   { x, y, z, rotationY, scale: [sx, sy, sz], normal, shade,
- *     foliageWidth, color: { h, s, l }, moss, windSpeed }.
+ *     foliageWidth, color: { h, s, l }, moss }.
  * windDirection (degrees) is the way the windmills face.
  * only:  place just these layer ids (e.g. windmills before routing roads).
  * fixed: { [layerId]: items } placed as given, re-seated on the current
@@ -494,8 +494,6 @@ export function scatterLayers({
           l: color.l * colorStrength,
         },
         moss: clamp01((response.moss ?? 0) * colorStrength),
-        // Higher windmills catch more wind.
-        windSpeed: 0.6 + 1.4 * sample.level,
       })
     }
   })

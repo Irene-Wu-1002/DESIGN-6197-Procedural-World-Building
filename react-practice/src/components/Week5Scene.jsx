@@ -4,6 +4,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import PathsPanel from './PathsPanel'
 import ScatterLayerPanel from './ScatterLayerPanel'
 import Slider from './Slider'
+import WindPanel from './WindPanel'
+import {
+  createLeafRenderer,
+  createPointsRenderer,
+  createWindStreaks,
+} from '../utils/particleRenderers'
+import { createGround } from '../utils/particles'
 import { createPathMeshes } from '../utils/pathMeshes'
 import { DEFAULT_RIVERS, carveRivers } from '../utils/rivers'
 import { DEFAULT_ROADS, buildRoads } from '../utils/roads'
@@ -22,11 +29,32 @@ import {
   buildTerrainFields,
   createHeightGrid,
 } from '../utils/terrainFields'
+import { applySway, createSwayDepthMaterial, createSwayUniforms } from '../utils/treeSway'
+import { DEFAULT_WIND, buildWindField, windVector } from '../utils/windField'
+import { createWindParticles } from '../utils/windParticles'
 
 const TERRAIN_SIZE = 40
 const SEGMENTS = 200
 const BLEND_DEGREES = 4
-const BLADE_SPEED = 1.2
+const CAMERA_FOV = 45
+// Blade turn rate (rad/s) per m/s of local wind at the hub.
+const BLADE_PER_WIND = 0.3
+const HUB_HEIGHT = 3.2
+// Particles advance in steps of at most MAX_STEP, so slow frames are split
+// into several steps instead of slowing the simulation down. Frames longer
+// than MAX_FRAME (e.g. after switching browser tabs) are cut short.
+const MAX_STEP = 1 / 30
+const MAX_FRAME = 0.25
+// How stiff each layer's foliage is in the wind (1 = fully flexible).
+const SWAY_STIFFNESS = { pine: 0.6, round: 1, bush: 0.5 }
+// Sheltered trees sway this much less (at full shelter).
+const SHELTER_CALM = 0.7
+// Rough canopy size per unit of tree scale, for where leaves start.
+const CANOPY = {
+  pine: { radius: 0.6, base: 0.6, height: 1.9 },
+  round: { radius: 0.75, base: 0.9, height: 1.3 },
+}
+const COUNT_REFRESH_MS = 500
 
 const GRASS = new THREE.Color('#5f8a3a')
 const ROCK = new THREE.Color('#85837c')
@@ -55,6 +83,7 @@ const PREVIEW_NOTES = {
   sun: 'Dark is shaded, yellow faces the sun. Sunny leaves are lighter; shaded damp rock grows moss.',
   altitude: 'Dark is low, white is high. Pines shrink and thin out toward the top.',
   road: `Orange is on or near a road, fading out over ${ROAD_PREVIEW_REACH} m. Each layer's road buffer keeps it clear.`,
+  wind: 'Dark is calm, bright is windy (without gusts). Hilltops catch the wind; ridges and forests shelter the ground behind them.',
 }
 
 const DEFAULT_TERRAIN = {
@@ -73,6 +102,7 @@ const PANEL_TABS = [
   ['terrain', 'Terrain'],
   ['paths', 'Paths'],
   ['scatter', 'Scatter'],
+  ['wind', 'Wind'],
 ]
 
 const DEFAULT_PATHS = {
@@ -82,9 +112,8 @@ const DEFAULT_PATHS = {
 
 const DEFAULT_SCATTER = {
   seed: 7,
-  // off | rules (of the open layer) | moisture | sun | altitude | road
+  // off | rules (of the open layer) | moisture | sun | altitude | road | wind
   preview: 'off',
-  windDirection: 45,
   rules: DEFAULT_LAYER_RULES,
 }
 
@@ -106,11 +135,22 @@ export default function Week5Scene() {
   const windmillsRef = useRef(null)
   const waterRef = useRef(null)
   const pathsRef = useRef(null)
+  // Latest wind field + settings, read by the animation loop every frame.
+  const windRef = useRef(null)
+  const particlesRef = useRef(null)
+  // Shared shader uniforms for tree sway (created with the scene).
+  const swayRef = useRef(null)
   const [terrain, setTerrain] = useState(DEFAULT_TERRAIN)
   const [paths, setPaths] = useState(DEFAULT_PATHS)
   const [scatter, setScatter] = useState(DEFAULT_SCATTER)
+  const [wind, setWind] = useState(DEFAULT_WIND)
+  const [particleCounts, setParticleCounts] = useState({ leaves: 0, seeds: 0, dust: 0 })
   const [panelTab, setPanelTab] = useState('terrain')
   const [openLayer, setOpenLayer] = useState('pine')
+
+  const setWindParam = (key, value) => setWind((current) => ({ ...current, [key]: value }))
+  const setWindGroup = (group, key, value) =>
+    setWind((current) => ({ ...current, [group]: { ...current[group], [key]: value } }))
 
   const setTerrainParam = (key, value) =>
     setTerrain((current) => ({ ...current, [key]: value }))
@@ -176,7 +216,8 @@ export default function Week5Scene() {
   )
 
   // Only the windmill rules matter here, so other layers' sliders don't
-  // re-place windmills (and re-route roads).
+  // re-place windmills (and re-route roads). Windmills are placed facing 0°
+  // plus a little jitter; the wind direction turns them when drawn.
   const windmillRules = scatter.rules.windmill
   const windmillSpots = useMemo(
     () =>
@@ -184,10 +225,9 @@ export default function Week5Scene() {
         fields: riverFields,
         seed: scatter.seed,
         rules: { windmill: windmillRules },
-        windDirection: scatter.windDirection,
         only: ['windmill'],
       }).windmill,
-    [riverFields, scatter.seed, windmillRules, scatter.windDirection]
+    [riverFields, scatter.seed, windmillRules]
   )
 
   const roads = useMemo(
@@ -220,17 +260,41 @@ export default function Week5Scene() {
         fields,
         seed: scatter.seed,
         rules: scatter.rules,
-        windDirection: scatter.windDirection,
         fixed: { windmill: windmillSpots },
       }),
-    [fields, scatter.seed, scatter.rules, scatter.windDirection, windmillSpots]
+    [fields, scatter.seed, scatter.rules, windmillSpots]
+  )
+
+  // Wind field: rebuilt only when terrain, trees, or the wind itself change
+  // (not when particle amounts or sway are adjusted).
+  const { direction, strength, gustiness, turbulence, terrainInfluence } = wind
+  const windField = useMemo(
+    () =>
+      buildWindField(fields, [...placements.pine, ...placements.round], {
+        direction,
+        strength,
+        gustiness,
+        turbulence,
+        terrainInfluence,
+      }),
+    [fields, placements, direction, strength, gustiness, turbulence, terrainInfluence]
   )
 
   // Ground preview (Scatter tab only): the open layer's rules, or a data map.
   const previewing = panelTab === 'scatter' ? scatter.preview : 'off'
   const previewRules =
     previewing === 'rules' && openLayer ? scatter.rules[openLayer] : null
-  const previewMap = MAP_PREVIEWS[previewing] ?? null
+  const previewMap = useMemo(() => {
+    if (previewing !== 'wind') return MAP_PREVIEWS[previewing] ?? null
+    // Stretch the colours over this map's own calmest → windiest range.
+    const [slowest, fastest] = windField.speedRange
+    const span = Math.max(fastest - slowest, 0.1)
+    return [
+      new THREE.Color('#14213d'),
+      new THREE.Color('#e8f4ff'),
+      (sample, x, z) => (windField.speedAt(x, z) - slowest) / span,
+    ]
+  }, [previewing, windField])
 
   // Scene setup: camera, lights, shadows, terrain mesh, and asset meshes.
   useEffect(() => {
@@ -240,7 +304,7 @@ export default function Week5Scene() {
     scene.fog = new THREE.Fog('#0e1014', 60, 140)
 
     const camera = new THREE.PerspectiveCamera(
-      45,
+      CAMERA_FOV,
       mount.clientWidth / mount.clientHeight,
       0.1,
       300
@@ -307,6 +371,8 @@ export default function Week5Scene() {
     pathsRef.current = { layer: pathLayer, meshes: null }
 
     // One InstancedMesh per asset part; instance colours carry the tint.
+    const swayUniforms = createSwayUniforms()
+    swayRef.current = swayUniforms
     const parts = createInstancedAssetParts()
     const assetMaterials = []
     const assetMeshes = {}
@@ -323,6 +389,16 @@ export default function Week5Scene() {
           partMaterial,
           asset.maxCount
         )
+        // Foliage bends in the wind; its shadow bends with it.
+        if (part.role === 'foliage') {
+          applySway(partMaterial, swayUniforms)
+          part.geometry.setAttribute(
+            'aSway',
+            new THREE.InstancedBufferAttribute(new Float32Array(asset.maxCount).fill(1), 1)
+          )
+          mesh.customDepthMaterial = createSwayDepthMaterial(swayUniforms)
+          assetMaterials.push(mesh.customDepthMaterial)
+        }
         mesh.castShadow = true
         mesh.receiveShadow = true
         mesh.count = 0
@@ -361,15 +437,50 @@ export default function Week5Scene() {
     })
     scene.add(sun)
 
+    // Wind particles: leaves (instanced), seeds and dust (soft dots), streaks.
+    const particles = createWindParticles()
+    particlesRef.current = particles
+    const leafRenderer = createLeafRenderer(particles.pools.leaves)
+    const seedRenderer = createPointsRenderer(particles.pools.seeds)
+    const dustRenderer = createPointsRenderer(particles.pools.dust)
+    const streaks = createWindStreaks()
+    streaks.object.visible = false
+    scene.add(leafRenderer.object, seedRenderer.object, dustRenderer.object, streaks.object)
+    const pointRenderers = [seedRenderer, dustRenderer]
+    const setPointScale = () => {
+      const heightPx = mount.clientHeight * renderer.getPixelRatio()
+      pointRenderers.forEach((points) => points.setViewport(heightPx, CAMERA_FOV))
+    }
+    setPointScale()
+
+    const air = { x: 0, y: 0, z: 0, gust: 1, speed: 0 }
+    let simulationTime = 0
     let lastTime = performance.now()
     let frameId
     const animate = () => {
       const now = performance.now()
-      const delta = (now - lastTime) / 1000
+      const delta = Math.min((now - lastTime) / 1000, MAX_FRAME)
       lastTime = now
-      windmillsRef.current.rotors.forEach(({ rotor, speed }) => {
-        rotor.rotation.z += delta * BLADE_SPEED * speed
-      })
+      const current = windRef.current
+      if (current) streaks.object.visible = current.settings.showField
+      if (current && current.settings.playing) {
+        simulationTime += delta
+        const { field, settings, ground } = current
+        field.update(simulationTime)
+        const steps = Math.ceil(delta / MAX_STEP)
+        for (let step = 0; step < steps; step += 1) {
+          particles.update(delta / steps, settings)
+        }
+        leafRenderer.update()
+        pointRenderers.forEach((points) => points.update())
+        if (settings.showField) streaks.update(delta, field, ground)
+        swayUniforms.uTime.value = simulationTime
+        // Blades turn with the local wind (gusts included) at hub height.
+        windmillsRef.current.rotors.forEach(({ rotor, x, y, z, hub }) => {
+          field.sample(x, y + hub, z, air)
+          rotor.rotation.z += delta * BLADE_PER_WIND * air.speed
+        })
+      }
       controls.update()
       renderer.render(scene, camera)
       frameId = requestAnimationFrame(animate)
@@ -382,12 +493,35 @@ export default function Week5Scene() {
       camera.aspect = width / height
       camera.updateProjectionMatrix()
       renderer.setSize(width, height)
+      setPointScale()
     }
     window.addEventListener('resize', onResize)
 
+    // Live particle counts for the panel (twice a second, not every frame).
+    const countTimer = setInterval(() => {
+      const next = {
+        leaves: particles.pools.leaves.alive,
+        seeds: particles.pools.seeds.alive,
+        dust: particles.pools.dust.alive,
+      }
+      setParticleCounts((previous) =>
+        previous.leaves === next.leaves &&
+        previous.seeds === next.seeds &&
+        previous.dust === next.dust
+          ? previous
+          : next
+      )
+    }, COUNT_REFRESH_MS)
+
     return () => {
       cancelAnimationFrame(frameId)
+      clearInterval(countTimer)
       window.removeEventListener('resize', onResize)
+      leafRenderer.dispose()
+      seedRenderer.dispose()
+      dustRenderer.dispose()
+      streaks.dispose()
+      particlesRef.current = null
       controls.dispose()
       mount.removeChild(renderer.domElement)
       geometry.dispose()
@@ -409,6 +543,7 @@ export default function Week5Scene() {
       waterRef.current = null
       pathsRef.current?.meshes?.dispose()
       pathsRef.current = null
+      swayRef.current = null
     }
   }, [])
 
@@ -456,7 +591,12 @@ export default function Week5Scene() {
         }
       } else if (previewMap) {
         const [low, high, valueOf] = previewMap
-        const value = THREE.MathUtils.clamp(valueOf(fields.sampleAt(gridIndex[index])), 0, 1)
+        const sample = fields.sampleAt(gridIndex[index])
+        const value = THREE.MathUtils.clamp(
+          valueOf(sample, positions.getX(index), positions.getZ(index)),
+          0,
+          1
+        )
         color.lerp(mapColor.lerpColors(low, high, value), MAP_MIX)
       }
       colors.setXYZ(index, color.r, color.g, color.b)
@@ -533,13 +673,97 @@ export default function Week5Scene() {
     windmills.rotors = placements.windmill.map((item) => {
       const { group, rotor } = windmills.kit.build()
       group.position.set(item.x, item.y, item.z)
-      group.rotation.y = item.rotationY
       group.scale.fromArray(item.scale)
       rotor.rotation.z = item.shade * Math.PI
       windmills.layer.add(group)
-      return { rotor, speed: item.windSpeed }
+      return {
+        rotor,
+        group,
+        // Facing jitter from placement; the wind direction is added below.
+        jitter: item.rotationY,
+        x: item.x,
+        y: item.y,
+        z: item.z,
+        hub: HUB_HEIGHT * item.scale[1],
+      }
     })
   }, [placements])
+
+  // Windmills turn to face into the wind (direction = where it comes from).
+  useEffect(() => {
+    const windmills = windmillsRef.current
+    if (!windmills) return
+    const facing = (direction * Math.PI) / 180
+    windmills.rotors.forEach(({ group, jitter }) => {
+      group.rotation.y = facing + jitter
+    })
+  }, [placements, direction])
+
+  // Hand the latest wind field and settings to the animation loop.
+  useEffect(() => {
+    windRef.current = { field: windField, settings: wind, ground: createGround(fields) }
+  }, [windField, wind, fields])
+
+  // Particle sources: tree canopies (leaves keep their tree's colour),
+  // bushes and sunny grass (seeds), and roads (dust).
+  useEffect(() => {
+    const particles = particlesRef.current
+    const assetMeshes = assetMeshesRef.current
+    if (!particles || !assetMeshes) return
+    const color = new THREE.Color()
+    const leafSources = []
+    for (const id of ['pine', 'round']) {
+      const foliage = assetMeshes[id].find((mesh) => mesh.userData.role === 'foliage')
+      const { color: baseColor, shadeRange } = foliage.userData
+      const canopy = CANOPY[id]
+      for (const item of placements[id]) {
+        color
+          .copy(baseColor)
+          .offsetHSL(item.color.h, item.color.s, item.color.l)
+          .multiplyScalar(1 + (item.shade - 0.5) * shadeRange)
+        leafSources.push({
+          x: item.x,
+          y: item.y + canopy.base * item.scale[1],
+          z: item.z,
+          radius: canopy.radius * item.scale[0] * item.foliageWidth,
+          height: canopy.height * item.scale[1],
+          color: [color.r, color.g, color.b],
+        })
+      }
+    }
+    particles.setEnvironment({
+      fields,
+      wind: windField,
+      leafSources,
+      bushes: placements.bush,
+      roads,
+    })
+  }, [fields, windField, placements, roads])
+
+  // Per-tree sway: stiffness by layer, calmer where sheltered.
+  useEffect(() => {
+    const assetMeshes = assetMeshesRef.current
+    if (!assetMeshes) return
+    for (const [id, stiffness] of Object.entries(SWAY_STIFFNESS)) {
+      const foliage = assetMeshes[id].find((mesh) => mesh.userData.role === 'foliage')
+      const attribute = foliage.geometry.attributes.aSway
+      placements[id].forEach((item, index) => {
+        attribute.setX(index, stiffness * (1 - SHELTER_CALM * windField.shelterAt(item.x, item.z)))
+      })
+      attribute.needsUpdate = true
+    }
+  }, [placements, windField])
+
+  // Sway uniforms follow the wind settings.
+  useEffect(() => {
+    const uniforms = swayRef.current
+    if (!uniforms) return
+    const [dx, dz] = windVector(direction)
+    uniforms.uWindDir.value.set(dx, dz)
+    uniforms.uWindStrength.value = wind.sway.on ? strength : 0
+    uniforms.uSway.value = wind.sway.strength / 100
+    uniforms.uGustiness.value = gustiness / 100
+  }, [direction, strength, gustiness, wind.sway])
 
   const counts = Object.fromEntries(
     Object.entries(placements).map(([id, items]) => [id, items.length])
@@ -581,6 +805,7 @@ export default function Week5Scene() {
               setTerrain(DEFAULT_TERRAIN)
               setPaths(DEFAULT_PATHS)
               setScatter(DEFAULT_SCATTER)
+              setWind(DEFAULT_WIND)
             }}
           >
             Reset All
@@ -592,6 +817,8 @@ export default function Week5Scene() {
               const randomSeed = Math.floor(Math.random() * 1000)
               if (panelTab === 'terrain') setTerrainParam('seed', randomSeed)
               else if (panelTab === 'paths') setPathParam('rivers', 'seed', randomSeed)
+              // On the Wind tab there's no seed, so pick a new wind direction.
+              else if (panelTab === 'wind') setWindParam('direction', randomSeed % 360)
               else setScatterParam('seed', randomSeed)
             }}
           >
@@ -717,15 +944,6 @@ export default function Week5Scene() {
               format={(value) => value}
               onChange={(value) => setScatterParam('seed', value)}
             />
-            <Slider
-              label="Wind direction"
-              value={scatter.windDirection}
-              min={0}
-              max={359}
-              step={1}
-              format={(value) => `${value}°`}
-              onChange={(value) => setScatterParam('windDirection', value)}
-            />
             <label className="control">
               <span className="control-label">Preview on ground</span>
               <select
@@ -738,6 +956,7 @@ export default function Week5Scene() {
                 <option value="sun">Sun exposure map</option>
                 <option value="altitude">Altitude map</option>
                 <option value="road">Road distance map</option>
+                <option value="wind">Wind speed map</option>
               </select>
             </label>
             {scatter.preview !== 'off' && (
@@ -753,6 +972,15 @@ export default function Week5Scene() {
               hasWater={fields.hasWater}
             />
           </>
+        )}
+
+        {panelTab === 'wind' && (
+          <WindPanel
+            wind={wind}
+            counts={particleCounts}
+            onChange={setWindParam}
+            onGroupChange={setWindGroup}
+          />
         )}
       </aside>
     </div>
