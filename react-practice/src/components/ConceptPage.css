@@ -1,0 +1,358 @@
+/* Project > Concept page: a scrollable reading layout in the app's theme. */
+
+.concept-page {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.concept {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 32px 24px 96px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.concept p {
+  margin: 0 0 14px;
+  max-width: 680px;
+}
+
+.concept h3 {
+  margin: 36px 0 10px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.concept h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.concept a {
+  color: var(--text-strong);
+  text-decoration-color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+.concept a:hover {
+  color: var(--accent);
+}
+
+.concept kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--panel-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  font: 600 12px/20px system-ui, sans-serif;
+  text-align: center;
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Hero */
+
+.concept-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--panel-border);
+  min-height: 340px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.concept-hero-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Keep the mushroom cap in frame. */
+  object-position: center 18%;
+}
+
+.concept-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(14, 16, 20, 0) 25%, rgba(14, 16, 20, 0.92) 100%);
+}
+
+.concept-hero-text {
+  position: relative;
+  z-index: 1;
+  padding: 28px;
+}
+
+.concept-hero h1 {
+  margin: 0;
+  font-size: clamp(40px, 7vw, 64px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+}
+
+.concept-kicker,
+.concept-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.concept .concept-kicker {
+  margin-bottom: 8px;
+}
+
+.concept .concept-subtitle {
+  margin: 8px 0 14px;
+  font-size: 18px;
+  color: var(--text-strong);
+}
+
+.concept .concept-pitch {
+  margin: 0;
+  color: var(--text);
+}
+
+/* Sections */
+
+.concept-section {
+  margin-top: 56px;
+  padding-top: 24px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.concept-section h2 {
+  margin: 0;
+}
+
+.concept-section h2 + h3 {
+  margin-top: 14px;
+}
+
+/* Scale examples */
+
+.concept-scale {
+  display: grid;
+  /* min(…, 100%) lets a card shrink below 190px instead of overflowing. */
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.concept-scale li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    'object object'
+    'real feels';
+  column-gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.concept-scale-object {
+  grid-area: object;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.concept-scale-real {
+  grid-area: real;
+  color: var(--text);
+}
+
+.concept-scale-feels {
+  grid-area: feels;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.concept-scale-feels::before {
+  content: '→ ';
+  color: var(--accent);
+}
+
+/* Perception modes */
+
+.concept-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.concept-mode {
+  padding: 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.concept-mode p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.concept-swatch {
+  display: flex;
+  height: 8px;
+  margin-bottom: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.concept-swatch span {
+  flex: 1;
+}
+
+/* Quote */
+
+.concept-quote {
+  margin: 0 0 18px;
+  padding: 18px 22px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  background: rgba(255, 138, 61, 0.06);
+}
+
+.concept-quote p {
+  margin: 0 0 8px;
+  font-size: 20px;
+  line-height: 1.4;
+  color: var(--text-strong);
+}
+
+.concept-quote footer {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* References */
+
+.concept-reference {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.concept-reference + .concept-reference {
+  margin-top: 16px;
+}
+
+.concept-reference-heading {
+  margin-bottom: 10px;
+}
+
+.concept .concept-meta {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.concept-gallery {
+  display: grid;
+  grid-template-columns: repeat(var(--columns), 1fr);
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.concept-gallery figure {
+  margin: 0;
+}
+
+.concept-gallery img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.concept-gallery figcaption {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.concept .concept-takeaway-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.concept-takeaways {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.concept-takeaways li {
+  margin-bottom: 4px;
+}
+
+.concept-takeaways li::marker {
+  color: var(--accent);
+}
+
+/* Phones */
+
+@media (max-width: 640px) {
+  .concept {
+    padding: 16px 16px 72px;
+    font-size: 14px;
+  }
+
+  .concept-hero {
+    min-height: 260px;
+  }
+
+  .concept-hero-text {
+    padding: 20px;
+  }
+
+  .concept-gallery {
+    grid-template-columns: 1fr;
+  }
+
+  .concept-scale,
+  .concept-modes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 360px) {
+  .concept-scale,
+  .concept-modes {
+    grid-template-columns: 1fr;
+  }
+
+  .concept-reference {
+    padding: 16px;
+  }
+}

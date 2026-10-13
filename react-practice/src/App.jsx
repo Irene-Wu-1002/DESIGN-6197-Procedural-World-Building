@@ -6,6 +6,7 @@ import Week2Scene from './components/Week2Scene'
 import Week3Scene from './components/Week3Scene'
 import Week4Scene from './components/Week4Scene'
 import Week5Scene from './components/Week5Scene'
+import ConceptPage from './components/ConceptPage'
 import ProjectPlaceholder from './components/ProjectPlaceholder'
 import './App.css'
 
@@ -114,12 +115,7 @@ export default function App() {
         {activeTab === 3 && <Week3Scene />}
         {activeTab === 4 && <Week4Scene />}
         {activeTab === 5 && <Week5Scene />}
-        {activeTab === 'concept' && (
-          <ProjectPlaceholder
-            title="Concept"
-            description="The project concept, references, and design goals will live here."
-          />
-        )}
+        {activeTab === 'concept' && <ConceptPage />}
         {activeTab === 'map' && (
           <ProjectPlaceholder
             title="Map"
