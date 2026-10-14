@@ -37,11 +37,11 @@ const ALL_TABS = SECTIONS.flatMap((section) =>
 )
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState(3)
+  const [activeTab, setActiveTab] = useState('map')
   // Last sub tab opened in each main tab, so switching back returns to it.
   const [lastTabBySection, setLastTabBySection] = useState({
     exploration: 3,
-    project: 'concept',
+    project: 'map',
   })
   const [settings, setSettings] = useState({
     size: 1,
