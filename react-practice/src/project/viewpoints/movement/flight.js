@@ -3,7 +3,7 @@
  * into the turn), rise and sink. Every rate is smoothed so the camera never
  * jerks; bank and flutter are off when motion effects are off.
  * Altitude stays between minClearance above the ground and maxAltitude.
- * See walk.js for the strategy interface.
+ * See orbit.js for the strategy interface.
  */
 
 const smooth = (rate, dt) => 1 - Math.exp(-rate * dt)

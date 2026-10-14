@@ -12,7 +12,7 @@ import * as THREE from 'three'
  *
  * Presets are plain numbers, so blending between viewpoints only changes
  * uniforms: the shader is compiled once, at start-up. When nothing is
- * active (Human, no fade) the pass is skipped and the scene renders
+ * active (Free, no fade) the pass is skipped and the scene renders
  * straight to the screen.
  */
 

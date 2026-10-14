@@ -313,26 +313,6 @@
   pointer-events: none;
 }
 
-.embody-hand {
-  position: absolute;
-  bottom: 0;
-  width: min(15vmin, 140px);
-  fill: rgba(196, 160, 128, 0.94);
-  filter: blur(1px) drop-shadow(0 0 12px rgba(0, 0, 0, 0.35));
-  opacity: calc(var(--presence, 0) * var(--walk, 0));
-  transform: translateY(calc((1 - var(--walk, 0)) * 90% + 22% + var(--bob, 0) * 5%));
-}
-
-.embody-hand-left {
-  left: 14%;
-  transform: translateY(calc((1 - var(--walk, 0)) * 90% + 22% + var(--bob, 0) * 5%)) rotate(14deg);
-}
-
-.embody-hand-right {
-  right: 14%;
-  transform: translateY(calc((1 - var(--walk, 0)) * 90% + 22% - var(--bob, 0) * 5%)) scaleX(-1) rotate(14deg);
-}
-
 .embody-wing {
   position: absolute;
   top: 6%;

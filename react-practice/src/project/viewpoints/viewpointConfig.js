@@ -1,6 +1,6 @@
 /**
- * Viewpoints: the same forest floor through three bodies. Everything that
- * differs between them lives here as data; the controller
+ * Viewpoints: the same forest floor through a free camera and two bodies.
+ * Everything that differs between them lives here as data; the controller
  * (viewController.js) and the movement strategies (movement/) read it, so a
  * new viewpoint is a new entry plus, at most, a new movement type.
  *
@@ -12,13 +12,15 @@
  *                end of the world (12 m) hidden from high eyes
  *   streamAhead  how far ahead along your gaze the detailed ground centres
  *   shadowReach  half-size of the sun's shadow box (m)
- *   movement     type ('walk' | 'flight' | 'crawl') and its parameters
+ *   eyeHeight    m above the ground, or null with no body; `summary` and
+ *                `switchLabel` then replace "Eye height: …"
+ *   movement     type ('orbit' | 'flight' | 'crawl') and its parameters
  *   collision    radius and which obstacles block you
  *   effects      post-processing preset (viewEffects.js)
  *   perception   what this body notices: scent trails, ultraviolet,
  *                air currents, spores (0–1, or a size boost for spores)
  *   body         model shown during transitions (bodies.js) and where its
- *                eye sits relative to its feet ([forward, up])
+ *                eye sits relative to its feet ([forward, up]), or null
  *   embodiment   first-person cue (Embodiment.jsx)
  *   framing      third-person shot used to reveal the body
  *   actions      species actions: key, label, and mode (hold: while
@@ -27,33 +29,45 @@
  *   controls     instruction lines (keyboard and mouse)
  */
 
-export const VIEWPOINT_ORDER = ['human', 'butterfly', 'ant']
+export const VIEWPOINT_ORDER = ['free', 'butterfly', 'ant']
 
 export const VIEWPOINTS = {
-  human: {
-    id: 'human',
-    label: 'Human',
+  // No body: a camera you steer yourself around a point on the ground.
+  free: {
+    id: 'free',
+    label: 'Free',
     shortcut: '1',
-    eyeHeight: 1.7,
-    eyeHeightLabel: '1.7 m',
+    eyeHeight: null,
+    summary: 'Zoom: 5 cm – 3 m',
+    switchLabel: 'Free view · zoom 5 cm – 3 m',
     description:
-      'Upright, three-colour vision at walking pace. The forest floor is a small patch of ground at your feet: the clearest overview.',
-    camera: { fov: 60, near: 0.01, far: 30, startPitch: -0.85, pitchLimits: [-1.4, 0.7] },
-    haze: { scale: 0.6, min: 0.19 },
-    streamAhead: 1.6,
-    shadowReach: 1.2,
-    movement: { type: 'walk', speed: 1.1, runFactor: 2, bob: 0.008, stride: 1.7 },
-    collision: { radius: 0.25, trunks: true, flyAgaric: false, mushrooms: false },
+      'No body: steer the camera yourself. Circle any spot, zoom from a single pebble out to the whole patch, and glide across the floor.',
+    camera: { fov: 50, near: 0.002, far: 30, startPitch: -0.7, pitchLimits: [-1.45, -0.05] },
+    haze: { scale: 1, min: 0 },
+    streamAhead: 3.5,
+    shadowReach: 0.9,
+    movement: {
+      type: 'orbit',
+      startDistance: 0.6,
+      distance: [0.05, 3],
+      // Focus speed per metre of zoom (m/s), and + / − zoom rate (per s).
+      speed: 0.6,
+      runFactor: 3,
+      zoomRate: 1.4,
+    },
+    collision: { radius: 0, trunks: false, flyAgaric: false, mushrooms: false },
     effects: 'natural',
     perception: { scent: 0, uv: 0, air: 0, spores: 1 },
-    body: { model: 'human', eye: [0.09, 1.7] },
-    embodiment: 'hands',
-    framing: { distance: 3.2, elevation: 0.32, lookUp: 0.95, orbit: 0.5 },
+    body: null,
+    embodiment: null,
+    // Only its distance is used: how far to pull back when leaving.
+    framing: { distance: 0.6, elevation: 0, lookUp: 0, orbit: 0 },
     actions: {},
     controls: [
-      ['Move', 'W A S D'],
-      ['Run', 'Shift'],
-      ['Look', 'Drag or arrow keys'],
+      ['Rotate', 'Drag or arrow keys'],
+      ['Zoom', 'Scroll or + / −'],
+      ['Move', 'W A S D (Shift faster)'],
+      ['Re-centre', 'Double-click the ground'],
     ],
   },
 
@@ -143,6 +157,14 @@ export const VIEW_SHARED = {
   // Tunnel: fade to dark, stay, fade back.
   tunnelSeconds: [0.45, 0.35, 0.55],
 }
+
+/** "Eye height: 4 mm", or the free camera's own line. */
+export const summaryOf = (viewpoint) =>
+  viewpoint.eyeHeight ? `Eye height: ${viewpoint.eyeHeightLabel}` : viewpoint.summary
+
+/** The label shown while switching to this viewpoint. */
+export const switchLabelOf = (viewpoint) =>
+  viewpoint.switchLabel ?? `${viewpoint.label} · eye height ${viewpoint.eyeHeightLabel}`
 
 export const DEFAULT_PERCEPTION_SETTINGS = {
   compoundEye: true,

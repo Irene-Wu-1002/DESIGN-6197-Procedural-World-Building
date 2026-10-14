@@ -1,14 +1,11 @@
 import * as THREE from 'three'
 
 /**
- * The three bodies, built from simple shapes at real size (metres), each
- * facing -z with its origin on the ground below it (the butterfly's origin
- * is its body centre). They're hidden except while a transition or "View
- * body" reveals them; materials are transparent from the start so fading
- * them never recompiles a shader.
- *
- * Also an invisible copy of the human that only casts a shadow: the
- * walker's embodiment cue.
+ * The bodies (butterfly, ant), built from simple shapes at real size
+ * (metres), each facing -z with its origin on the ground below it (the
+ * butterfly's origin is its body centre). They're hidden except while a
+ * transition or "View body" reveals them; materials are transparent from
+ * the start so fading them never recompiles a shader.
  */
 
 const fadeMaterial = (options) =>
@@ -31,29 +28,6 @@ function blob(geometry, material, position, scale) {
   mesh.position.set(...position)
   mesh.scale.set(...scale)
   return mesh
-}
-
-function createHuman(material) {
-  const group = new THREE.Group()
-  const sphere = new THREE.SphereGeometry(1, 24, 16)
-  const capsule = new THREE.CapsuleGeometry(1, 1, 6, 16)
-  const add = (mesh) => {
-    mesh.castShadow = true
-    group.add(mesh)
-    return mesh
-  }
-  add(blob(sphere, material, [0, 1.63, 0], [0.1, 0.12, 0.11]))
-  // Nose, so the body shows which way it faces.
-  add(blob(sphere, material, [0, 1.62, -0.105], [0.018, 0.025, 0.02]))
-  add(blob(capsule, material, [0, 1.49, 0], [0.05, 0.08, 0.05]))
-  add(blob(capsule, material, [0, 1.2, 0], [0.17, 0.32, 0.11]))
-  add(blob(capsule, material, [0, 0.92, 0], [0.16, 0.06, 0.1]))
-  for (const side of [-1, 1]) {
-    add(blob(capsule, material, [side * 0.095, 0.46, 0], [0.065, 0.7, 0.065]))
-    const arm = add(blob(capsule, material, [side * 0.235, 1.1, 0], [0.045, 0.52, 0.045]))
-    arm.rotation.z = side * 0.09
-  }
-  return { group, geometries: [sphere, capsule], animate() {} }
 }
 
 function wingTexture() {
@@ -192,11 +166,9 @@ function createAnt(material) {
 }
 
 export function createBodies(scene) {
-  const humanMaterial = fadeMaterial({ color: '#c8b296', roughness: 0.75 })
   const butterflyMaterial = fadeMaterial({ color: '#2b2118', roughness: 0.6 })
   const antMaterial = fadeMaterial({ color: '#21140d', roughness: 0.35, metalness: 0.1 })
   const bodies = {
-    human: { ...createHuman(humanMaterial), materials: [humanMaterial] },
     butterfly: { ...createButterfly(butterflyMaterial), materials: [butterflyMaterial] },
     ant: { ...createAnt(antMaterial), materials: [antMaterial] },
   }
@@ -205,15 +177,6 @@ export function createBodies(scene) {
     body.group.visible = false
     scene.add(body.group)
   }
-
-  // The walker's shadow: the human shape, drawn into the shadow map only.
-  const shadowMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false })
-  const shadow = createHuman(shadowMaterial).group
-  shadow.traverse((object) => {
-    object.castShadow = true
-  })
-  shadow.visible = false
-  scene.add(shadow)
 
   const origin = new THREE.Vector3()
   const place = (group, eye, yaw, offset) => {
@@ -238,16 +201,11 @@ export function createBodies(scene) {
     hideAll() {
       for (const body of Object.values(bodies)) body.group.visible = false
     },
-    /** The walker's shadow (eye position, yaw, offset); null hides it. */
-    setShadow(eye, yaw, offset) {
-      shadow.visible = Boolean(eye)
-      if (eye) place(shadow, eye, yaw, offset)
-    },
     animate(time) {
       for (const body of Object.values(bodies)) if (body.group.visible) body.animate(time)
     },
     /** Every group, for compiling shaders up front. */
-    groups: [...Object.values(bodies).map((body) => body.group), shadow],
+    groups: Object.values(bodies).map((body) => body.group),
     dispose() {
       for (const body of Object.values(bodies)) {
         scene.remove(body.group)
@@ -255,9 +213,6 @@ export function createBodies(scene) {
         for (const material of body.materials) material.dispose()
         body.extra?.[1]?.dispose()
       }
-      scene.remove(shadow)
-      shadow.traverse((object) => object.geometry?.dispose())
-      shadowMaterial.dispose()
     },
   }
 }

@@ -17,15 +17,15 @@ import { createAntWorld } from './viewpoints/antWorld'
 import { createBodies } from './viewpoints/bodies'
 import { createViewController } from './viewpoints/viewController'
 import { createViewEffects } from './viewpoints/viewEffects'
-import { DEFAULT_PERCEPTION_SETTINGS, VIEWPOINTS } from './viewpoints/viewpointConfig'
+import { DEFAULT_PERCEPTION_SETTINGS, VIEWPOINTS, summaryOf } from './viewpoints/viewpointConfig'
 import { createWorldQueries } from './viewpoints/worldQueries'
 import './viewpoints/viewpoints.css'
 
 /**
  * Project > Map: the endless forest floor at real scale (metres), in a dim
- * forest, seen through one of three bodies (VIEW AS: human, butterfly,
- * ant). The viewpoint controller (viewpoints/) owns the camera and the
- * viewer; detailed tiles stream in around the ground you're looking at, a
+ * forest, seen with a free camera or through a body (VIEW AS: free,
+ * butterfly, ant). The viewpoint controller (viewpoints/) owns the camera
+ * and the viewer; detailed tiles stream in around the ground you're looking at, a
  * coarse far ground continues to the horizon, and haze in the sky's horizon
  * colour hides where it ends. Switching bodies never touches the world:
  * the same tiles, cover, and landmarks are seen through a different camera,
@@ -40,10 +40,10 @@ const DEFAULT_VIEW = { distance: 4, preview: 'off', haze: 50, dapple: 60 }
 // before the far ground ends. Each viewpoint scales it (viewpointConfig.js).
 const HAZE_DENSITY = [0.12, 0.45]
 const hazeDensity = (haze) => HAZE_DENSITY[0] + (HAZE_DENSITY[1] - HAZE_DENSITY[0]) * (haze / 100)
-// Start as a human, a step back from the ant hill (at the world origin) and
-// the fly agaric, looking down at both.
-const START_VIEW = 'human'
-const START_BACK = 1.3
+// Start with the free camera looking at the ant hill (at the world origin)
+// and the fly agaric from 65 cm away.
+const START_VIEW = 'free'
+const START = { distance: 0.65, yaw: 0, pitch: -0.7 }
 // Sun direction relative to the area you see; shadows only cover the area
 // near it (the half-size comes from the viewpoint; the sun moves back to match).
 const SUN_OFFSET = new THREE.Vector3(0.9, 1.1, 0.5)
@@ -173,10 +173,6 @@ export default function MapScene() {
 
     let latestFrame = null
     const spot = flyAgaric.spot(DEFAULT_GROUND.seed)
-    const middle = { x: spot.x / 2, z: spot.z / 2 }
-    const across = Math.hypot(spot.x, spot.z) || 1
-    const startX = middle.x - (spot.z / across) * START_BACK
-    const startZ = middle.z + (spot.x / across) * START_BACK
     const controller = createViewController({
       camera,
       world,
@@ -184,10 +180,9 @@ export default function MapScene() {
       antWorld,
       start: {
         id: START_VIEW,
-        x: startX,
-        z: startZ,
-        yaw: Math.atan2(-(middle.x - startX), -(middle.z - startZ)),
-        pitch: -Math.atan2(startConfig.eyeHeight, START_BACK),
+        x: spot.x / 2,
+        z: spot.z / 2,
+        ...START,
       },
       hooks: {
         onUi: setViewUi,
@@ -209,7 +204,7 @@ export default function MapScene() {
     sun.shadow.camera.near = 0.05
     scene.add(sun, sun.target)
     // The shadow box covers what this body sees; a taller body needs a
-    // bigger box and the sun further back (so a 1.7 m walker still casts).
+    // bigger box and the sun further back.
     let shadowReach = 0
     const setShadowReach = (reach) => {
       if (Math.abs(reach - shadowReach) < 1e-3) return
@@ -260,6 +255,20 @@ export default function MapScene() {
     canvas.addEventListener('pointermove', onPointerMove)
     canvas.addEventListener('pointerup', onPointerUp)
     canvas.addEventListener('pointercancel', onPointerUp)
+    // Zoom with the wheel (the free camera); double-click re-centres it.
+    const onWheel = (event) => {
+      event.preventDefault()
+      controller.input.zoom(event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY)
+    }
+    const onDoubleClick = (event) => {
+      const rect = canvas.getBoundingClientRect()
+      controller.focusAt(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      )
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    canvas.addEventListener('dblclick', onDoubleClick)
 
     // Once the first tiles exist, compile every shader for both outputs
     // (screen and the effects pass), with the hidden bodies and layers
@@ -274,14 +283,12 @@ export default function MapScene() {
     }
 
     // Body cues: CSS variables on the overlay, written only when they change.
-    const overlay = { presence: -1, walk: -1, bob: -1, turn: -1 }
+    const overlay = { presence: -1, turn: -1 }
     const writeOverlay = (embodiment) => {
       const element = overlayRef.current
       if (!element) return
       const values = {
         presence: embodiment.presence,
-        walk: embodiment.walk,
-        bob: embodiment.motion ? Math.sin((embodiment.phase ?? 0) * 2) : 0,
         turn: embodiment.turn,
       }
       for (const [key, value] of Object.entries(values)) {
@@ -390,6 +397,8 @@ export default function MapScene() {
       canvas.removeEventListener('pointermove', onPointerMove)
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerUp)
+      canvas.removeEventListener('wheel', onWheel)
+      canvas.removeEventListener('dblclick', onDoubleClick)
       if (import.meta.env.DEV) delete window.__umwelt
       controllerRef.current = null
       antWorld.dispose()
@@ -483,7 +492,11 @@ export default function MapScene() {
         className="scene map-scene"
         ref={mountRef}
         role="img"
-        aria-label={`Forest floor seen as a ${viewpoint.label.toLowerCase()}, eye height ${viewpoint.eyeHeightLabel}`}
+        aria-label={
+          viewpoint.body
+            ? `Forest floor seen as a ${viewpoint.label.toLowerCase()}, ${summaryOf(viewpoint).toLowerCase()}`
+            : `Forest floor, free camera: drag to rotate, scroll to zoom`
+        }
       />
       <div className="scene map-overlays" style={{ pointerEvents: 'none' }}>
         <Embodiment ref={overlayRef} id={viewUi.id} motion={perception.motionEffects} />

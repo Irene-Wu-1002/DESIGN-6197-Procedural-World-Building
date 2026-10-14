@@ -5,7 +5,7 @@
  *
  * Follow scent (toggle): near a pheromone trail the ant walks along it on
  * its own, turning with the trail, until the trail ends or you move.
- * See walk.js for the strategy interface.
+ * See orbit.js for the strategy interface.
  */
 
 const smooth = (rate, dt) => 1 - Math.exp(-rate * dt)

@@ -1,11 +1,10 @@
 import { useState } from 'react'
-import { VIEWPOINTS, VIEWPOINT_ORDER } from './viewpointConfig'
+import { VIEWPOINTS, VIEWPOINT_ORDER, summaryOf } from './viewpointConfig'
 
 const ICONS = {
-  human: (
+  free: (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="4.5" r="2.5" />
-      <path d="M12 8c-2.6 0-4 1.4-4 3.6V15h1.8v6h4.4v-6H16v-3.4C16 9.4 14.6 8 12 8Z" />
+      <path d="M12 2.5 15 6h-2v5h5V9l3.5 3-3.5 3v-2h-5v5h2L12 21.5 9 18h2v-5H6v2l-3.5-3L6 9v2h5V6H9Z" />
     </svg>
   ),
   butterfly: (
@@ -79,7 +78,7 @@ export default function ViewAsPanel({ ui, settings, onSelect, onSettingChange, o
               aria-pressed={selected}
               aria-disabled={locked || undefined}
               aria-keyshortcuts={viewpoint.shortcut}
-              aria-label={`${viewpoint.label}, eye height ${viewpoint.eyeHeightLabel}`}
+              aria-label={`${viewpoint.label}, ${summaryOf(viewpoint).toLowerCase()}`}
               title={`${viewpoint.label} (key ${viewpoint.shortcut})`}
               onClick={() => {
                 if (!locked) onSelect(id)
@@ -94,7 +93,7 @@ export default function ViewAsPanel({ ui, settings, onSelect, onSettingChange, o
 
       <div className="view-as-summary">
         <strong>{config.label}</strong>
-        <span>Eye height: {config.eyeHeightLabel}</span>
+        <span>{summaryOf(config)}</span>
       </div>
 
       <div id="view-as-details" className="view-as-details" hidden={!open}>
@@ -108,19 +107,21 @@ export default function ViewAsPanel({ ui, settings, onSelect, onSettingChange, o
           ))}
         </dl>
         <div className="view-as-actions">
-          <button
-            type="button"
-            className="view-as-body"
-            aria-pressed={ui.bodyView}
-            aria-keyshortcuts="V"
-            aria-disabled={(ui.busy && !ui.bodyView) || undefined}
-            onClick={() => {
-              if (!ui.busy || ui.bodyView) onViewBody()
-            }}
-          >
-            {ui.bodyView ? 'Back to eye' : 'View body'}
-          </button>
-          <span className="view-as-key">Switch: 1 2 3 · Body: V</span>
+          {config.body && (
+            <button
+              type="button"
+              className="view-as-body"
+              aria-pressed={ui.bodyView}
+              aria-keyshortcuts="V"
+              aria-disabled={(ui.busy && !ui.bodyView) || undefined}
+              onClick={() => {
+                if (!ui.busy || ui.bodyView) onViewBody()
+              }}
+            >
+              {ui.bodyView ? 'Back to eye' : 'View body'}
+            </button>
+          )}
+          <span className="view-as-key">Switch: 1 2 3{config.body ? ' · Body: V' : ''}</span>
         </div>
         <details className="view-as-options">
           <summary>Perception options</summary>

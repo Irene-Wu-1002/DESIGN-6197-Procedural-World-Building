@@ -2,9 +2,9 @@ import * as THREE from 'three'
 import { createViewInput } from './input'
 import { createCrawlMovement } from './movement/crawl'
 import { createFlightMovement } from './movement/flight'
-import { createWalkMovement } from './movement/walk'
+import { createOrbitMovement } from './movement/orbit'
 import { lerpPreset, presetValues } from './viewEffects'
-import { VIEWPOINTS, VIEW_SHARED } from './viewpointConfig'
+import { VIEWPOINTS, VIEW_SHARED, switchLabelOf } from './viewpointConfig'
 
 /**
  * The viewpoint controller: one place that owns the viewer and the camera.
@@ -16,6 +16,8 @@ import { VIEWPOINTS, VIEW_SHARED } from './viewpointConfig'
  *   haze, vision effects, and perception blend across. With reduced motion
  *   it crossfades instead. New switches wait until it finishes, and the
  *   last frame always lands exactly on the new eye.
+ * - Switching to the free camera (no body) pulls back out to its orbit
+ *   while the body you leave fades where it stood.
  * - "View body" (out to third person and back) and the ant's tunnels use
  *   the same machinery.
  * - Each frame returns what the scene needs: where to stream detail, the
@@ -25,7 +27,7 @@ import { VIEWPOINTS, VIEW_SHARED } from './viewpointConfig'
  * frame and streams around it exactly as before.
  */
 
-const MOVEMENTS = { walk: createWalkMovement, flight: createFlightMovement, crawl: createCrawlMovement }
+const MOVEMENTS = { orbit: createOrbitMovement, flight: createFlightMovement, crawl: createCrawlMovement }
 
 const clamp01 = (t) => Math.min(Math.max(t, 0), 1)
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2)
@@ -40,6 +42,8 @@ const BODY_OUT = [0.8, 0.96]
 // Fastest the detailed area may move (m/s), so tiles keep up with it.
 const ANCHOR_SPEED = 2.5
 const UI_CHECK_SECONDS = 0.15
+// How far a double-click looks for the ground (m).
+const FOCUS_REACH = 12
 const HINT_SECONDS = 2.6
 
 function paramsOf(config) {
@@ -115,6 +119,7 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
   const partQ = new THREE.Quaternion()
   const lookQ = new THREE.Quaternion()
   const direction = new THREE.Vector3()
+  const raycaster = new THREE.Raycaster()
   const anchor = new THREE.Vector3(state.position.x, 0, state.position.z)
   let anchorReady = false
 
@@ -193,7 +198,7 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     hintUntil = time + HINT_SECONDS
   }
   const showLabel = (forConfig, text) =>
-    setUi({ label: text ?? `${forConfig.label} · eye height ${forConfig.eyeHeightLabel}`, labelId: ui.labelId + 1 })
+    setUi({ label: text ?? switchLabelOf(forConfig), labelId: ui.labelId + 1 })
 
   // --- Switching viewpoints.
   const finishSwitch = (next) => {
@@ -207,6 +212,9 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     setUi({ id, target: null, nearTunnel: false, following: false, scentNearby: false })
   }
 
+  // Where you are: the free camera's focus, or your body's eye.
+  const here = () => (movement.anchor ? movement.anchor() : state.position)
+
   const select = (nextId) => {
     if (action || nextId === id || !VIEWPOINTS[nextId]) return false
     const nextConfig = VIEWPOINTS[nextId]
@@ -214,7 +222,8 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     const nextState = newState()
     nextState.yaw = state.yaw
     nextState.pitch = clampPitch(nextConfig, nextConfig.camera.startPitch)
-    nextMovement.place(nextState, { x: state.position.x, z: state.position.z }, ctxFor(nextConfig))
+    const spot = here()
+    nextMovement.place(nextState, { x: spot.x, z: spot.z }, ctxFor(nextConfig))
     if (movement.stopScent) movement.stopScent()
     const next = { id: nextId, movement: nextMovement, state: nextState, params: paramsOf(nextConfig) }
     showLabel(nextConfig)
@@ -227,15 +236,34 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       return true
     }
     const eye = nextState.position.clone()
-    const focus = new THREE.Vector3()
-    const shot = new THREE.Vector3()
-    framingOf(nextConfig, eye, nextState.yaw, focus, shot)
     // Pull back along your current gaze, by a step sized to your old body.
     camera.getWorldDirection(direction)
     const pulled = camera.position
       .clone()
       .addScaledVector(direction, -config.framing.distance * 0.15)
       .addScaledVector(up, config.framing.distance * 0.04)
+    if (!nextConfig.body) {
+      // To the free camera: out to its orbit, around the spot you stood on;
+      // the body you leave stays a moment, for scale, and fades.
+      action = {
+        kind: 'release',
+        t: 0,
+        duration: VIEW_SHARED.transitionSeconds * 0.8,
+        next,
+        fromQuaternion: camera.quaternion.clone(),
+        fromPosition: camera.position.clone(),
+        fromParams: copyParams(params),
+        pulled,
+        eye,
+        eyeQ: eyeQuaternion(nextState, new THREE.Quaternion()),
+        focus: nextMovement.anchor().clone(),
+        leaving: config.body ? { model: config.body.model, eye: state.position.clone(), yaw: state.yaw, offset: config.body.eye } : null,
+      }
+      return true
+    }
+    const focus = new THREE.Vector3()
+    const shot = new THREE.Vector3()
+    framingOf(nextConfig, eye, nextState.yaw, focus, shot)
     action = {
       kind: 'switch',
       t: 0,
@@ -286,6 +314,30 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     return u >= 1
   }
 
+  const stepRelease = (a) => {
+    const u = clamp01(a.t / a.duration)
+    lerpParams(a.fromParams, a.next.params, smootherstep(u), params)
+    const position = camera.position
+    const pull = SWITCH.pull * 1.2
+    if (u < pull) {
+      position.lerpVectors(a.fromPosition, a.pulled, ease(stage(u, 0, pull)))
+      camera.quaternion.copy(a.fromQuaternion)
+    } else {
+      const k = ease(stage(u, pull, 1))
+      dolly(a.focus, a.pulled, a.eye, k, position)
+      lookAtQuaternion(position, a.focus, lookQ)
+      camera.quaternion.slerpQuaternions(a.fromQuaternion, lookQ, k)
+      // Settle on the orbit's own angle (it may sit higher over bumps).
+      camera.quaternion.slerp(a.eyeQ, stage(u, 0.85, 1))
+    }
+    if (a.leaving) {
+      bodies.show(a.leaving.model, a.leaving.eye, a.leaving.yaw, a.leaving.offset, 1 - stage(u, 0.5, 0.95))
+    }
+    position.y = Math.max(position.y, world.heightAt(position.x, position.z) + 0.002)
+    params.near = Math.max(Math.min(params.near, position.distanceTo(a.focus) * 0.05), 0.0002)
+    return u >= 1
+  }
+
   // --- View body: out to third person, hold, back.
   const viewBody = () => {
     if (action?.kind === 'body') {
@@ -294,7 +346,7 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       if (action.t < out + hold) action.t = Math.max(action.t, out + hold)
       return true
     }
-    if (action) return false
+    if (action || !config.body) return false
     if (movement.stopScent) movement.stopScent()
     const eye = state.position.clone()
     const focus = new THREE.Vector3()
@@ -414,7 +466,7 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     eyeQuaternion(state, camera.quaternion)
   }
 
-  const embodiment = { id, presence: 0, walk: 0, phase: 0, turn: 0, following: false }
+  const embodiment = { id, presence: 0, turn: 0, following: false }
   const frame = {
     anchor,
     viewer: new THREE.Vector3(),
@@ -424,7 +476,6 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     prevMix: 0,
     dark: 0,
     embodiment,
-    shadow: null,
   }
 
   applyIdlePose()
@@ -486,8 +537,8 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       if (action) {
         action.t += dt
         let done = false
-        if (action.kind === 'switch') {
-          done = stepSwitch(action)
+        if (action.kind === 'switch' || action.kind === 'release') {
+          done = action.kind === 'switch' ? stepSwitch(action) : stepRelease(action)
           if (done) {
             finishSwitch(action.next)
             applyIdlePose()
@@ -507,7 +558,7 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         }
         // Never leave the camera somewhere invalid.
         if (!Number.isFinite(camera.position.x + camera.position.y + camera.position.z)) {
-          if (action.kind === 'switch') finishSwitch(action.next)
+          if (action.kind === 'switch' || action.kind === 'release') finishSwitch(action.next)
           done = true
           applyIdlePose()
         }
@@ -519,7 +570,8 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         info = { moving: false, turn: 0 }
       }
 
-      // Lens.
+      // Lens (the free camera's near plane follows its zoom).
+      if (!action && movement.near) params.near = movement.near()
       if (camera.fov !== params.fov || camera.near !== params.near || camera.far !== params.far) {
         camera.fov = params.fov
         camera.near = params.near
@@ -536,8 +588,10 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       const flat = Math.hypot(direction.x, direction.z)
       let ahead = direction.y < -0.02 ? (altitude * flat) / -direction.y : params.streamAhead
       ahead = Math.min(ahead, params.streamAhead)
-      const targetX = camera.position.x + (flat > 1e-4 ? (direction.x / flat) * ahead : 0)
-      const targetZ = camera.position.z + (flat > 1e-4 ? (direction.z / flat) * ahead : 0)
+      // The free camera always looks at its focus: stream right there.
+      const focus = !action && movement.anchor ? movement.anchor() : null
+      const targetX = focus ? focus.x : camera.position.x + (flat > 1e-4 ? (direction.x / flat) * ahead : 0)
+      const targetZ = focus ? focus.z : camera.position.z + (flat > 1e-4 ? (direction.z / flat) * ahead : 0)
       if (!anchorReady) {
         anchor.x = targetX
         anchor.z = targetZ
@@ -557,9 +611,11 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         anchor.z += dz
       }
       anchor.y = world.heightAt(anchor.x, anchor.z)
-      const viewer = action ? camera.position : state.position
+      // Where you are (status, shadows): the focus, or your eye.
+      const viewer = action ? camera.position : focus ?? state.position
       frame.viewer.copy(viewer)
-      frame.shadowCenter.set((viewer.x + anchor.x) / 2, (viewer.z + anchor.z) / 2)
+      if (focus) frame.shadowCenter.set(anchor.x, anchor.z)
+      else frame.shadowCenter.set((viewer.x + anchor.x) / 2, (viewer.z + anchor.z) / 2)
 
       // Vision: the blended preset, with the compound eye switchable.
       frame.effects.saturation = params.effects.saturation
@@ -576,13 +632,9 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       // Embodiment cues fade in once you're settled in the new body.
       embodiment.id = id
       embodiment.presence += ((action ? 0 : 1) - embodiment.presence) * smooth(action ? 12 : 3, dt)
-      embodiment.walk += ((info.moving ? 1 : 0) - embodiment.walk) * smooth(3, dt)
-      embodiment.phase = info.phase ?? embodiment.phase
       embodiment.turn += ((info.turn ?? 0) - embodiment.turn) * smooth(5, dt)
       embodiment.following = Boolean(info.following)
       embodiment.motion = settings.motionEffects
-      // The walker's own shadow, while standing in the human body.
-      frame.shadow = !action && config.embodiment === 'hands' ? state : null
 
       // Contextual UI (ant): near an entrance, on a trail.
       uiCheck -= dt
@@ -602,7 +654,6 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         if (ui.hint && time > hintUntil) setUi({ hint: '' })
       }
       frame.nearEntrance = nearEntrance
-      bodies.setShadow(frame.shadow ? state.position : null, state.yaw, config.body.eye)
       bodies.animate(time)
 
       if (uiDirty) {
@@ -610,6 +661,29 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         hooks.onUi({ ...ui })
       }
       return frame
+    },
+
+    /**
+     * Free camera only: glide the focus to the ground under a screen point
+     * (x, y in -1–1). Marches along the view ray until it meets the ground.
+     */
+    focusAt(x, y) {
+      if (action || !movement.setFocus) return false
+      raycaster.setFromCamera({ x, y }, camera)
+      const { origin, direction: ray } = raycaster.ray
+      let t = camera.near
+      let step = Math.max((origin.y - world.heightAt(origin.x, origin.z)) * 0.01, 0.0005)
+      const point = new THREE.Vector3()
+      while (t < FOCUS_REACH) {
+        point.copy(origin).addScaledVector(ray, t)
+        if (point.y <= world.heightAt(point.x, point.z)) {
+          movement.setFocus(point.x, point.z)
+          return true
+        }
+        t += step
+        step *= 1.02
+      }
+      return false
     },
 
     /** For checks in development: stand at (x, z) facing yaw. */
@@ -636,6 +710,7 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         yaw: state.yaw,
         pitch: state.pitch,
         following: Boolean(movement.following),
+        focus: movement.anchor ? movement.anchor().toArray() : null,
       }
     },
   }

@@ -1,18 +1,23 @@
 /**
- * One input state: held keys, drag look, and species actions (held,
- * toggled, or pressed once). Movement
- * strategies only read `move`, `run`, and `held(action)`; the controller
+ * One input state: held keys, drag look, zoom (wheel and + / −), and
+ * species actions (held, toggled, or pressed once). Movement strategies
+ * read `move`, `run`, `held(action)`, and `takeZoom`; the controller
  * drains look deltas and presses each frame.
  */
 
 const MOVE_KEYS = { KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right' }
 const LOOK_KEYS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
+const ZOOM_KEYS = { Equal: 'in', NumpadAdd: 'in', Minus: 'out', NumpadSubtract: 'out' }
+// Zoom per wheel pixel (log of the distance factor).
+const WHEEL_ZOOM = 0.0012
 
 export function createViewInput() {
   const keys = new Set()
   const lookKeys = new Set()
+  const zoomKeys = new Set()
   const held = new Set()
   const look = { x: 0, y: 0 }
+  let wheel = 0
   let presses = []
   let run = false
   const move = { x: 0, y: 0 }
@@ -51,6 +56,11 @@ export function createViewInput() {
         else lookKeys.delete(LOOK_KEYS[code])
         return true
       }
+      if (ZOOM_KEYS[code]) {
+        if (down) zoomKeys.add(ZOOM_KEYS[code])
+        else zoomKeys.delete(ZOOM_KEYS[code])
+        return true
+      }
       if (code === 'ShiftLeft' || code === 'ShiftRight') {
         run = down
         return true
@@ -71,6 +81,18 @@ export function createViewInput() {
     drag(dx, dy) {
       look.x += dx
       look.y += dy
+    },
+    /** Mouse wheel (deltaY in pixels; positive zooms out). */
+    zoom(deltaY) {
+      wheel += deltaY
+    },
+
+    /** Zoom this frame as the log of a distance factor (> 0 is out). */
+    takeZoom(dt, keyRate) {
+      const keysZoom = ((zoomKeys.has('out') ? 1 : 0) - (zoomKeys.has('in') ? 1 : 0)) * keyRate * dt
+      const amount = wheel * WHEEL_ZOOM + keysZoom
+      wheel = 0
+      return amount
     },
 
     /** Look change this frame: { yaw, pitch } in radians. */
@@ -93,9 +115,11 @@ export function createViewInput() {
     clear() {
       keys.clear()
       lookKeys.clear()
+      zoomKeys.clear()
       held.clear()
       presses = []
       run = false
+      wheel = 0
       look.x = 0
       look.y = 0
     },
