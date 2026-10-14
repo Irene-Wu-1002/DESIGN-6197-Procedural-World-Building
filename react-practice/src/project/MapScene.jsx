@@ -12,6 +12,10 @@ import { FOREST_COLORS, createForestSky } from './forest/sky'
 import { DEFAULT_HABITAT, sunDirectionOf } from './habitat/habitatFields'
 import { DEFAULT_PATHS, createAntTrail } from './paths/antTrail'
 import { createExclusions } from './paths/exclusionZones'
+import SimulationPanel from './simulation/SimulationPanel'
+import { createAmbientLife } from './simulation/ambientLife'
+import { DEFAULT_DAY } from './simulation/dayCycle'
+import { createSimulation } from './simulation/simulation'
 import { createFarGround, morphRange } from './terrain/farGround'
 import { DEFAULT_GROUND } from './terrain/heightField'
 import { createGroundMaterial } from './terrain/groundMaterial'
@@ -99,7 +103,6 @@ export default function MapScene() {
   const flyAgaricRef = useRef(null)
   const antWorldRef = useRef(null)
   const farGroundRef = useRef(null)
-  const skyRef = useRef(null)
   // Where the sun light sits relative to the area you see.
   const sunOffsetRef = useRef(sunOffsetOf(DEFAULT_HABITAT))
   const controllerRef = useRef(null)
@@ -131,6 +134,21 @@ export default function MapScene() {
   // Show exclusion zones: paints them for a few seconds (a counter, so a
   // second press restarts the timer).
   const [zoneFlash, setZoneFlash] = useState(0)
+  // Simulation: settings here; the clock and its effects run in the frame
+  // loop (simulationRef), and simStatus is its snapshot for the panel.
+  const simulationRef = useRef(null)
+  const [simSettings, setSimSettings] = useState({ day: DEFAULT_DAY })
+  const [simStatus, setSimStatus] = useState({
+    running: false,
+    blend: 0,
+    time: DEFAULT_DAY.time,
+    sunAzimuth: 0,
+    sunElevation: 0,
+    air: 0,
+    surface: 0,
+    butterflies: 0,
+    ants: 0,
+  })
   const [status, setStatus] = useState({
     loaded: 0,
     pending: 0,
@@ -162,7 +180,6 @@ export default function MapScene() {
     scene.background = new THREE.Color(FOREST_COLORS.horizon)
     scene.fog = new THREE.FogExp2(FOREST_COLORS.horizon, hazeDensity(DEFAULT_VIEW.haze))
     const sky = createForestSky(sunOffsetRef.current)
-    skyRef.current = sky
     scene.add(sky.mesh)
 
     // Millimetres to metres in one view: a logarithmic depth buffer keeps
@@ -223,6 +240,11 @@ export default function MapScene() {
     const antWorld = createAntWorld(scene, morphUniforms)
     antWorldRef.current = antWorld
     const airLayer = createAirLayer(scene)
+    // The simulation's clock and the life it brings (butterflies, ants).
+    const simulation = createSimulation()
+    simulationRef.current = simulation
+    const ambientLife = createAmbientLife(scene)
+    const staticSun = new THREE.Vector3()
     const bodies = createBodies(scene)
 
     let latestFrame = null
@@ -249,7 +271,8 @@ export default function MapScene() {
 
     // Forest light: green-tinted light from the canopy above, a dim brown
     // bounce from the soil, and a warm low sun breaking through.
-    scene.add(new THREE.HemisphereLight('#9fb48a', '#3a2c20', 0.6))
+    const hemisphere = new THREE.HemisphereLight('#9fb48a', '#3a2c20', 0.6)
+    scene.add(hemisphere)
     const sun = new THREE.DirectionalLight('#ffd9a0', 1.8)
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
@@ -336,7 +359,9 @@ export default function MapScene() {
     // shown for a moment, so switching viewpoints never stalls on it.
     let warmed = false
     const warmUp = () => {
-      const hidden = [...bodies.groups, ...antWorld.meshes, ...airLayer.meshes].filter((object) => !object.visible)
+      const hidden = [...bodies.groups, ...antWorld.meshes, ...airLayer.meshes, ...ambientLife.meshes].filter(
+        (object) => !object.visible
+      )
       for (const object of hidden) object.visible = true
       effects.warmUp(scene, camera)
       for (const object of hidden) object.visible = false
@@ -418,9 +443,38 @@ export default function MapScene() {
         pixels: canvas.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)),
       })
 
+      // The light: the Habitat tab's sun, or the simulation's sun and moon,
+      // sky and fog colours, flowers opening, and the life it brings.
+      staticSun.copy(sunOffsetRef.current).normalize()
+      const env = simulation.update(delta, staticSun)
+      sun.color.copy(env.lightColor)
+      sun.intensity = env.lightIntensity
+      hemisphere.color.copy(env.hemiSky)
+      hemisphere.groundColor.copy(env.hemiGround)
+      hemisphere.intensity = env.hemiIntensity
+      uniforms.uSunDirection.value.copy(env.sunDirection)
+      uniforms.uDapple.value = (viewRef.current.dapple / 100) * env.dapple
+      sky.setSunDirection(env.sunDirection)
+      sky.setColors(env.sky)
+      scene.background.copy(env.sky.horizon)
+      scene.fog.color.copy(env.sky.horizon)
+      coverRenderer.setFlowerOpen(env.flowerOpen)
+      ambientLife.update({
+        dt: delta,
+        time,
+        activity: { butterflies: env.butterflies, ants: env.ants },
+        anchor,
+        sampler: tiles.sampler,
+        trails: antWorld.trails,
+        flowers: (x, z) =>
+          coverContextRef.current.cover.flowers.on ? coverContextRef.current.flowers?.coloniesIn(x - 1, z - 1, x + 1, z + 1) : [],
+      })
+
       setShadowReach(params.shadowReach)
       sun.target.position.set(frame.shadowCenter.x, anchor.y, frame.shadowCenter.y)
-      sun.position.copy(sun.target.position).addScaledVector(sunOffsetRef.current, sunScaleFor(params.shadowReach))
+      sun.position
+        .copy(sun.target.position)
+        .addScaledVector(env.sunDirection, SUN_DISTANCE * sunScaleFor(params.shadowReach))
 
       if (!warmed && tiles.stats().loaded > 0) warmUp()
       effects.render(scene, camera, frame.effects, { prevMix: frame.prevMix, dark: frame.dark })
@@ -436,6 +490,7 @@ export default function MapScene() {
         focus: [viewer.x, viewer.z],
         ground: tiles.heightAt(viewer.x, viewer.z),
       })
+      setSimStatus(simulation.snapshot())
     }, STATUS_REFRESH_MS)
 
     const onResize = () => {
@@ -449,7 +504,7 @@ export default function MapScene() {
     // For checks during development: the controller and how many tiles
     // have been built (switching viewpoints must not build any).
     if (import.meta.env.DEV) {
-      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms }
+      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere }
     }
 
     return () => {
@@ -470,6 +525,8 @@ export default function MapScene() {
       controllerRef.current = null
       antWorld.dispose()
       airLayer.dispose()
+      ambientLife.dispose()
+      simulationRef.current = null
       bodies.dispose()
       effects.dispose()
       antWorldRef.current = null
@@ -481,7 +538,6 @@ export default function MapScene() {
       flyAgaricRef.current = null
       farGround.dispose()
       sky.dispose()
-      skyRef.current = null
       material.dispose()
       farMaterial.dispose()
       depthMaterial.dispose()
@@ -587,20 +643,21 @@ export default function MapScene() {
     return () => clearTimeout(timer)
   }, [zoneFlash])
 
-  // The sun itself (light, shadows, sky glow, dappled light) moves at once.
+  // The Habitat tab's sun is the visible sun whenever the simulation isn't
+  // running (the frame loop applies it to the light, sky and dappling).
   const { sunDirection, sunElevation } = habitat
   useEffect(() => {
-    const offset = sunOffsetOf({ sunDirection, sunElevation }, sunOffsetRef.current)
-    const direction = offset.clone().normalize()
-    groundUniformsRef.current?.uSunDirection.value.copy(direction)
-    skyRef.current?.setSunDirection(direction)
+    sunOffsetOf({ sunDirection, sunElevation }, sunOffsetRef.current)
   }, [sunDirection, sunElevation])
+
+  useEffect(() => {
+    simulationRef.current?.setSettings(simSettings)
+  }, [simSettings])
 
   // Haze is applied every frame (each body scales it), from viewRef.
   useEffect(() => {
     viewRef.current = view
     tilesRef.current?.setPreview(zoneFlash ? 'exclusion' : view.preview)
-    if (groundUniformsRef.current) groundUniformsRef.current.uDapple.value = view.dapple / 100
   }, [view, zoneFlash])
 
   useEffect(() => {
@@ -646,13 +703,32 @@ export default function MapScene() {
         {viewUi.label}
         {viewUi.hint ? `. ${viewUi.hint}` : ''}
       </p>
-      <ViewAsPanel
-        ui={viewUi}
-        settings={perception}
-        onSelect={(id) => controllerRef.current?.select(id)}
-        onViewBody={() => controllerRef.current?.viewBody()}
-        onSettingChange={(key, value) => setPerception((current) => ({ ...current, [key]: value }))}
-      />
+      <div className="map-left-column">
+        <ViewAsPanel
+          ui={viewUi}
+          settings={perception}
+          onSelect={(id) => controllerRef.current?.select(id)}
+          onViewBody={() => controllerRef.current?.viewBody()}
+          onSettingChange={(key, value) => setPerception((current) => ({ ...current, [key]: value }))}
+        />
+        <SimulationPanel
+          settings={simSettings}
+          status={simStatus}
+          onChange={(group, value) => setSimSettings((current) => ({ ...current, [group]: value }))}
+          onStart={() => {
+            simulationRef.current?.start()
+            setSimStatus((current) => ({ ...current, running: true }))
+          }}
+          onEnd={() => {
+            simulationRef.current?.end()
+            setSimStatus((current) => ({ ...current, running: false }))
+          }}
+          onTime={(hours) => {
+            simulationRef.current?.setTime(hours)
+            setSimStatus((current) => ({ ...current, time: hours }))
+          }}
+        />
+      </div>
       <MapPanel
         ground={ground}
         view={view}

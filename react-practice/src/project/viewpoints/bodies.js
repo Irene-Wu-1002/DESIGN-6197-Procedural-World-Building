@@ -86,7 +86,7 @@ function wingTexture() {
   return texture
 }
 
-function createButterfly(material) {
+export function createButterfly(material) {
   const group = new THREE.Group()
   const texture = wingTexture()
   const wingMaterial = fadeMaterial({ map: texture, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.8 })
@@ -129,7 +129,7 @@ function createButterfly(material) {
   }
 }
 
-function createAnt(material) {
+export function createAnt(material) {
   const group = new THREE.Group()
   const sphere = new THREE.SphereGeometry(1, 20, 14)
   const cylinder = new THREE.CylinderGeometry(1, 1, 1, 6)

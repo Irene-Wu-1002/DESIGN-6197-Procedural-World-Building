@@ -76,9 +76,17 @@ const MOSS_COLOR = /* glsl */ `
 // Flowers only: yellow stamens, and the nectar guides that only
 // ultraviolet vision sees (uUV, 0–1): a dark violet bullseye at the base of
 // the petals around bright, UV-reflecting tips.
+// Petals fold up into a bud as the light fades (uOpen 1 open – 0 closed):
+// each petal is pulled in and its tip lifted, more toward the tip.
 const FLOWER_VERTEX = /* glsl */ `
 #include <begin_vertex>
 vPetal = aPetal;
+if (aPetal >= 0.0) {
+  float closed = 1.0 - uOpen;
+  float reach = max(length(transformed.xz) - 0.012, 0.0);
+  transformed.xz *= mix(1.0, 0.3, closed * smoothstep(0.0, 0.2, reach));
+  transformed.y += reach * closed * 0.9;
+}
 `
 const FLOWER_FRAGMENT_DECLARATIONS = /* glsl */ `
 uniform float uUV;
@@ -111,7 +119,7 @@ function applyFade(material, uniforms, key, { moss = false, flower = false } = {
     }
     if (flower) {
       vertex = vertex
-        .replace('#include <common>', '#include <common>\nattribute float aPetal;\nvarying float vPetal;')
+        .replace('#include <common>', '#include <common>\nattribute float aPetal;\nvarying float vPetal;\nuniform float uOpen;')
         .replace('#include <begin_vertex>', FLOWER_VERTEX)
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${FLOWER_FRAGMENT_DECLARATIONS}`)
@@ -137,6 +145,8 @@ export function createCoverRenderer(scene, morphUniforms) {
     uMorphCenter: morphUniforms.uMorphCenter,
     uCoverFade: { value: new THREE.Vector2(1, 2) },
     uUV: { value: 0 },
+    // Flowers: 1 open – 0 closed (the day cycle closes them at night).
+    uOpen: { value: 1 },
   }
   const leafGeometries = createLeafGeometries()
   const mushroom = createMushroomGeometries()
@@ -293,6 +303,10 @@ export function createCoverRenderer(scene, morphUniforms) {
     /** How much the viewer sees in ultraviolet (0–1): flower nectar guides. */
     setUV(value) {
       uniforms.uUV.value = value
+    },
+    /** How open the flowers are (0 closed – 1 open). */
+    setFlowerOpen(value) {
+      uniforms.uOpen.value = value
     },
     /** Fade small items out between these distances (m) from the viewer. */
     setFadeRange(start, end) {

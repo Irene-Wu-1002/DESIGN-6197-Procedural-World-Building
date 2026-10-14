@@ -311,9 +311,13 @@ export default function MapPanel({
             {habitatSlider('Overall wetness', 'wetness', 0, 100, 5)}
           </ControlCard>
           <ControlCard title="Sunlight">
-            {habitatSlider('Sun direction', 'sunDirection', 0, 359, 1, formatDegrees)}
-            {habitatSlider('Sun elevation', 'sunElevation', 5, 90, 1, formatDegrees)}
+            {habitatSlider('Typical sun direction', 'sunDirection', 0, 359, 1, formatDegrees)}
+            {habitatSlider('Typical sun elevation', 'sunElevation', 5, 90, 1, formatDegrees)}
             {habitatSlider('Light threshold', 'lightThreshold', 0, 100, 5)}
+            <p className="section-note">
+              The typical sun shapes where plants grow, and lights the forest while the simulation is
+              off. Running the simulation moves the visible sun with the time of day.
+            </p>
           </ControlCard>
           <ControlCard title="Wind">
             {habitatSlider('Direction', 'windDirection', 0, 355, 5, formatDegrees)}

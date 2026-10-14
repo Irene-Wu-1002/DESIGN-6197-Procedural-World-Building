@@ -609,6 +609,55 @@ input[type='checkbox'] {
   outline-offset: -2px;
 }
 
+/* Map: the left column holds View as and, below it, Simulation, which
+   takes the rest of the height and scrolls (so they never overlap). */
+.map-left-column {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  bottom: 16px;
+  z-index: 3;
+  width: 252px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.map-left-column > * {
+  pointer-events: auto;
+}
+
+.map-left-column .view-as {
+  position: static;
+  flex: none;
+}
+
+.noise-panel.sim-panel {
+  position: static;
+  flex: 0 1 auto;
+  min-height: 0;
+  width: auto;
+  padding: 12px 14px;
+  gap: 12px;
+}
+
+.sim-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sim-label {
+  display: block;
+  margin-bottom: -6px;
+}
+
+.sim-readout {
+  min-height: 2.9em;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Map > Scatter: pick one ground-cover element (3 × 2). */
 .panel-tabs.element-picker {
   grid-auto-flow: row;
@@ -1468,6 +1517,15 @@ input[type='checkbox'] {
     left: 20px;
     width: auto;
     max-height: 38%;
+  }
+
+  /* Above the Forest Floor panel, which is a bottom sheet here. */
+  .map-left-column {
+    bottom: calc(38% + 32px);
+  }
+
+  .noise-panel.sim-panel {
+    max-height: none;
   }
 
   .voxel-workspace .scene {

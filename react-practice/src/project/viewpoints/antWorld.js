@@ -343,6 +343,11 @@ export function createAntWorld(scene, morphUniforms) {
       entranceMesh.geometry = buildEntranceGeometry(sampler)
     },
 
+    /** The scent trails ({ points, lengths, count, length, pointAt }). */
+    get trails() {
+      return trails
+    },
+
     /** Nearest trail point: { trail, s, distance } or null. */
     nearestTrail(x, z) {
       let found = null

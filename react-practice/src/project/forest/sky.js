@@ -69,6 +69,13 @@ export function createForestSky(sunDirection) {
 
   return {
     mesh,
+    /** Sky colours { canopy, middle, horizon, sunGlow } (THREE.Color each). */
+    setColors(colors) {
+      material.uniforms.uCanopy.value.copy(colors.canopy)
+      material.uniforms.uMiddle.value.copy(colors.middle)
+      material.uniforms.uHorizon.value.copy(colors.horizon)
+      material.uniforms.uSunGlow.value.copy(colors.sunGlow)
+    },
     /** Point the sun glow toward this direction (a THREE.Vector3). */
     setSunDirection(direction) {
       material.uniforms.uSunDirection.value.copy(direction).normalize()
