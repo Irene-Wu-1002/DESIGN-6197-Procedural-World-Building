@@ -59,6 +59,12 @@ const isTyping = (event) => ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.targe
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 const sunScaleFor = (reach) => Math.max(1, (reach / SHADOW_BASE.reach) * 1.5)
+// Settings with just these keys put back to their defaults (the panel's
+// per-tab and per-element resets).
+const withDefaults = (current, defaults, keys) => ({
+  ...current,
+  ...Object.fromEntries(keys.map((key) => [key, defaults[key]])),
+})
 
 export default function MapScene() {
   const mountRef = useRef(null)
@@ -549,6 +555,11 @@ export default function MapScene() {
         onGroundChange={(key, value) => setGround((current) => ({ ...current, [key]: value }))}
         onViewChange={(key, value) => setView((current) => ({ ...current, [key]: value }))}
         onCoverChange={(key, value) => setCover((current) => ({ ...current, [key]: value }))}
+        onResetKeys={({ ground: groundKeys, view: viewKeys, cover: coverKeys }) => {
+          if (groundKeys) setGround((current) => withDefaults(current, DEFAULT_GROUND, groundKeys))
+          if (viewKeys) setView((current) => withDefaults(current, DEFAULT_VIEW, viewKeys))
+          if (coverKeys) setCover((current) => withDefaults(current, DEFAULT_COVER, coverKeys))
+        }}
         onReset={() => {
           setGround(DEFAULT_GROUND)
           setView(DEFAULT_VIEW)

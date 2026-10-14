@@ -1,27 +1,42 @@
-import Slider from '../components/Slider'
+import { useState } from 'react'
+import {
+  AdvancedSection,
+  ControlCard,
+  EnableToggle,
+  LabeledSlider,
+  ResetButton,
+  SeedButton,
+  SegmentedButtons,
+  SelectMenu,
+} from './panel/PanelControls'
+import { ELEMENT_KEYS, MAP_TABS, SCATTER_ELEMENTS, TAB_KEYS } from './panel/mapPanelLayout'
 
 const formatPercent = (value) => `${value}%`
 
-function Toggle({ label, checked, onChange }) {
-  return (
-    <label className="control control-inline shader-toggle">
-      <span>{label}</span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-    </label>
-  )
+// Full names for the scatter cards (the picker buttons use short ones).
+const ELEMENT_TITLES = {
+  moss: 'Moss',
+  flowers: 'Wood anemones',
+  leaves: 'Fallen leaves',
+  twigs: 'Twigs & branches',
+  pebbles: 'Pebbles',
+  mushrooms: 'Mushrooms',
 }
 
-const COVER_GROUPS = [
-  ['leaves', 'Fallen leaves'],
-  ['twigs', 'Twigs & branches'],
-  ['moss', 'Moss'],
-  ['mushrooms', 'Mushrooms'],
-  ['flowers', 'Wood anemones'],
+const PREVIEW_OPTIONS = [
+  ['off', 'Off'],
+  ['height', 'Height'],
+  ['slope', 'Slope'],
+  ['moisture', 'Moisture'],
+  ['tiles', 'Tile borders'],
 ]
 
 /**
- * Map tab controls: the ground's shape, ground cover, view, and previews.
+ * Map tab controls, in tabs: the ground's shape, habitat, ground cover,
+ * paths, and debug previews.
  * status: { loaded, pending, focus: [x, z], ground } from the scene.
+ * onResetKeys({ ground: [...], cover: [...], view: [...] }) restores just
+ * those settings to their defaults; onReset restores everything.
  */
 export default function MapPanel({
   ground,
@@ -31,198 +46,191 @@ export default function MapPanel({
   onGroundChange,
   onViewChange,
   onCoverChange,
+  onResetKeys,
   onReset,
 }) {
+  const [tab, setTab] = useState('terrain')
+  const [element, setElement] = useState('moss')
+
   const setGround = (key) => (value) => onGroundChange(key, value)
+  const setView = (key) => (value) => onViewChange(key, value)
   const setGroup = (group, key) => (value) => onCoverChange(group, { ...cover[group], [key]: value })
+
+  const percentSlider = (label, value, onChange, max = 200) => (
+    <LabeledSlider
+      label={label}
+      value={value}
+      min={0}
+      max={max}
+      step={5}
+      format={formatPercent}
+      onChange={onChange}
+    />
+  )
+
+  // Enable + Amount for one ground-cover group.
+  const coverAmount = (id) => (
+    <>
+      <EnableToggle checked={cover[id].on} onChange={setGroup(id, 'on')} />
+      {cover[id].on && percentSlider('Amount', cover[id].amount, setGroup(id, 'amount'), 100)}
+    </>
+  )
+
+  const elementControls = {
+    moss: coverAmount('moss'),
+    flowers: coverAmount('flowers'),
+    twigs: coverAmount('twigs'),
+    leaves: (
+      <>
+        {coverAmount('leaves')}
+        {cover.leaves.on && (
+          <AdvancedSection>
+            {percentSlider('Autumn colours', cover.autumn, (value) => onCoverChange('autumn', value), 100)}
+          </AdvancedSection>
+        )}
+      </>
+    ),
+    pebbles: percentSlider('Amount', ground.pebbles, setGround('pebbles'), 100),
+    mushrooms: (
+      <>
+        {coverAmount('mushrooms')}
+        <EnableToggle
+          label="Fly agaric (needs the ant hill)"
+          checked={cover.flyAgaric}
+          onChange={(value) => onCoverChange('flyAgaric', value)}
+        />
+      </>
+    ),
+  }
 
   return (
     <aside className="noise-panel voxel-panel basic-voxel-panel">
       <div className="panel-title">
         <h2>Forest Floor</h2>
       </div>
-      <p className="section-note">
-        Real scale: one tile is 20 × 20 cm. Choose a body under <strong>View as</strong>; the
-        world stays the same, only the eyes and the way you move change.
-      </p>
+
+      <SegmentedButtons items={MAP_TABS} value={tab} onChange={setTab} label="Forest floor settings" />
 
       <div className="panel-actions">
-        <button type="button" className="layer-add" onClick={onReset}>
-          Reset All
-        </button>
-        <button
-          type="button"
-          className="layer-add"
-          onClick={() => onGroundChange('seed', Math.floor(Math.random() * 1000))}
-        >
-          Random Seed
-        </button>
+        <ResetButton
+          label="Reset Tab"
+          onReset={() => onResetKeys(TAB_KEYS[tab])}
+          disabled={Object.keys(TAB_KEYS[tab]).length === 0}
+        />
+        <ResetButton label="Reset All" onReset={onReset} />
+        <SeedButton onSeed={setGround('seed')} />
       </div>
 
-      <Slider
-        label="World seed"
-        value={ground.seed}
-        min={0}
-        max={999}
-        step={1}
-        format={(value) => value}
-        onChange={setGround('seed')}
-      />
-      <Slider
-        label="Slopes"
-        value={ground.slopes}
-        min={0}
-        max={200}
-        step={5}
-        format={formatPercent}
-        onChange={setGround('slopes')}
-      />
-      <Slider
-        label="Bumps & hollows"
-        value={ground.bumps}
-        min={0}
-        max={200}
-        step={5}
-        format={formatPercent}
-        onChange={setGround('bumps')}
-      />
-      <Slider
-        label="Warp"
-        value={ground.warp}
-        min={0}
-        max={200}
-        step={5}
-        format={formatPercent}
-        onChange={setGround('warp')}
-      />
-      <Slider
-        label="Fine grain"
-        value={ground.grain}
-        min={0}
-        max={200}
-        step={5}
-        format={formatPercent}
-        onChange={setGround('grain')}
-      />
-      <Slider
-        label="Pebbles"
-        value={ground.pebbles}
-        min={0}
-        max={100}
-        step={5}
-        format={formatPercent}
-        onChange={setGround('pebbles')}
-      />
-      <label className="control control-inline shader-toggle">
-        <span>Ant hill</span>
-        <input
-          type="checkbox"
-          checked={ground.antHill}
-          onChange={(event) => onGroundChange('antHill', event.target.checked)}
-        />
-      </label>
-
-      <details className="control-section scatter-layer" open>
-        <summary>
-          <span className="scatter-layer-name">Ground cover</span>
-        </summary>
-        <div className="control-section-body">
-          <Toggle label="Tree trunks" checked={ground.trunks} onChange={setGround('trunks')} />
-          {ground.trunks && (
-            <Slider
-              label="Trunk spacing"
-              value={ground.trunkSpacing}
-              min={2}
-              max={6}
-              step={0.5}
-              format={(value) => `${value.toFixed(1)} m`}
-              onChange={setGround('trunkSpacing')}
+      {tab === 'terrain' && (
+        <>
+          <p className="section-note">
+            Real scale: one tile is 20 × 20 cm. Choose a body under <strong>View as</strong>; the
+            world stays the same, only the eyes and the way you move change.
+          </p>
+          <ControlCard title="Ground shape">
+            <LabeledSlider
+              label="World seed"
+              value={ground.seed}
+              min={0}
+              max={999}
+              step={1}
+              format={(value) => value}
+              onChange={setGround('seed')}
             />
-          )}
-          {COVER_GROUPS.map(([id, label]) => (
-            <div key={id} className="control">
-              <Toggle label={label} checked={cover[id].on} onChange={setGroup(id, 'on')} />
-              {cover[id].on && (
-                <Slider
-                  label="Amount"
-                  value={cover[id].amount}
-                  min={0}
-                  max={100}
-                  step={5}
-                  format={formatPercent}
-                  onChange={setGroup(id, 'amount')}
-                />
-              )}
-              {id === 'leaves' && cover.leaves.on && (
-                <Slider
-                  label="Autumn colours"
-                  value={cover.autumn}
-                  min={0}
-                  max={100}
-                  step={5}
-                  format={formatPercent}
-                  onChange={(value) => onCoverChange('autumn', value)}
-                />
-              )}
-            </div>
-          ))}
-          <Toggle
-            label="Fly agaric (needs the ant hill)"
-            checked={cover.flyAgaric}
-            onChange={(value) => onCoverChange('flyAgaric', value)}
+            {percentSlider('Slopes', ground.slopes, setGround('slopes'))}
+            {percentSlider('Bumps & hollows', ground.bumps, setGround('bumps'))}
+            <AdvancedSection>
+              {percentSlider('Warp', ground.warp, setGround('warp'))}
+              {percentSlider('Fine grain', ground.grain, setGround('grain'))}
+            </AdvancedSection>
+          </ControlCard>
+        </>
+      )}
+
+      {tab === 'habitat' && (
+        <>
+          <p className="section-note">
+            Tree trunks change the soil's moisture and colour around them. The ant hill brings ant
+            trails, and the fly agaric grows beside it.
+          </p>
+          <ControlCard title="Trees & creatures">
+            <EnableToggle label="Tree trunks" checked={ground.trunks} onChange={setGround('trunks')} />
+            {ground.trunks && (
+              <LabeledSlider
+                label="Trunk spacing"
+                value={ground.trunkSpacing}
+                min={2}
+                max={6}
+                step={0.5}
+                format={(value) => `${value.toFixed(1)} m`}
+                onChange={setGround('trunkSpacing')}
+              />
+            )}
+            <EnableToggle label="Ant hill" checked={ground.antHill} onChange={setGround('antHill')} />
+          </ControlCard>
+          <ControlCard title="Light">
+            {percentSlider('Haze', view.haze, setView('haze'), 100)}
+            {percentSlider('Dappled light', view.dapple, setView('dapple'), 100)}
+          </ControlCard>
+        </>
+      )}
+
+      {tab === 'scatter' && (
+        <>
+          <SegmentedButtons
+            items={SCATTER_ELEMENTS}
+            value={element}
+            onChange={setElement}
+            className="panel-tabs element-picker"
+            label="Ground cover element"
           />
-        </div>
-      </details>
+          <ControlCard
+            title={ELEMENT_TITLES[element]}
+            action={
+              <ResetButton small label="Reset" onReset={() => onResetKeys(ELEMENT_KEYS[element])} />
+            }
+          >
+            {elementControls[element]}
+          </ControlCard>
+        </>
+      )}
 
-      <Slider
-        label="Detail distance"
-        value={view.distance}
-        min={3}
-        max={5}
-        step={1}
-        format={(value) => `${value} tiles`}
-        onChange={(value) => onViewChange('distance', value)}
-      />
-      <Slider
-        label="Haze"
-        value={view.haze}
-        min={0}
-        max={100}
-        step={5}
-        format={formatPercent}
-        onChange={(value) => onViewChange('haze', value)}
-      />
-      <Slider
-        label="Dappled light"
-        value={view.dapple}
-        min={0}
-        max={100}
-        step={5}
-        format={formatPercent}
-        onChange={(value) => onViewChange('dapple', value)}
-      />
-      <label className="control">
-        <span className="control-label">Preview</span>
-        <select
-          value={view.preview}
-          onChange={(event) => onViewChange('preview', event.target.value)}
-        >
-          <option value="off">Off</option>
-          <option value="height">Height</option>
-          <option value="slope">Slope</option>
-          <option value="moisture">Moisture</option>
-          <option value="tiles">Tile borders</option>
-        </select>
-      </label>
+      {tab === 'paths' && (
+        <p className="section-note">
+          No path controls yet. Ant trails are drawn from the ant hill (Habitat); rivers and roads
+          will get their settings here.
+        </p>
+      )}
 
-      <p className="section-note">
-        Position {status.focus[0].toFixed(2)}, {status.focus[1].toFixed(2)} m · ground{' '}
-        {(status.ground * 100).toFixed(1)} cm
-        <br />
-        Tiles {status.near ?? status.loaded} near
-        {status.middle > 0 ? ` · ${status.middle} middle` : ''}
-        {status.pending > 0 ? ` · ${status.pending} building` : ''}
-      </p>
+      {tab === 'debug' && (
+        <>
+          <ControlCard title="Rendering">
+            <SelectMenu
+              label="Preview"
+              value={view.preview}
+              options={PREVIEW_OPTIONS}
+              onChange={setView('preview')}
+            />
+            <LabeledSlider
+              label="Detail distance"
+              value={view.distance}
+              min={3}
+              max={5}
+              step={1}
+              format={(value) => `${value} tiles`}
+              onChange={setView('distance')}
+            />
+          </ControlCard>
+          <p className="section-note">
+            Position {status.focus[0].toFixed(2)}, {status.focus[1].toFixed(2)} m · ground{' '}
+            {(status.ground * 100).toFixed(1)} cm
+            <br />
+            Tiles {status.near ?? status.loaded} near
+            {status.middle > 0 ? ` · ${status.middle} middle` : ''}
+            {status.pending > 0 ? ` · ${status.pending} building` : ''}
+          </p>
+        </>
+      )}
     </aside>
   )
 }
