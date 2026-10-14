@@ -9,23 +9,23 @@
 }
 
 .concept {
-  max-width: 920px;
+  /* The reading column and its type grow with the window. */
+  max-width: clamp(720px, 72vw, 1180px);
   margin: 0 auto;
   padding: 24px 24px 96px;
   color: var(--text);
-  font-size: 15px;
+  font-size: clamp(15px, 0.5vw + 9px, 19px);
   line-height: 1.65;
 }
 
 .concept p {
   margin: 0 0 14px;
-  max-width: 680px;
 }
 
 .concept h3 {
   margin: 40px 0 10px;
   font-family: var(--font-serif);
-  font-size: 28px;
+  font-size: clamp(26px, 1.6vw + 8px, 38px);
   font-weight: 500;
   line-height: 1.15;
   color: var(--text-strong);
@@ -33,7 +33,7 @@
 
 .concept h4 {
   margin: 0;
-  font-size: 15px;
+  font-size: 1.05em;
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -117,9 +117,9 @@
 }
 
 .concept-hero .concept-pitch {
-  max-width: 420px;
+  max-width: 28em;
   margin: 0 0 28px;
-  font-size: 16px;
+  font-size: clamp(15px, 0.6vw + 8px, 20px);
   line-height: 1.6;
   color: rgba(240, 236, 228, 0.82);
 }
@@ -202,7 +202,7 @@
 
 .concept-scale-object {
   grid-area: object;
-  font-size: 12px;
+  font-size: 0.8em;
   color: var(--muted);
 }
 
@@ -240,7 +240,7 @@
 
 .concept-mode p {
   margin: 6px 0 0;
-  font-size: 13px;
+  font-size: 0.87em;
   line-height: 1.5;
   color: var(--muted);
 }
@@ -270,13 +270,13 @@
 .concept-quote p {
   margin: 0 0 8px;
   font-family: var(--font-serif);
-  font-size: 26px;
+  font-size: clamp(24px, 1.4vw + 8px, 34px);
   line-height: 1.4;
   color: var(--text-strong);
 }
 
 .concept-quote footer {
-  font-size: 13px;
+  font-size: 0.87em;
   color: var(--muted);
 }
 
@@ -300,7 +300,7 @@
 
 .concept .concept-meta {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: 0.8em;
   color: var(--muted);
 }
 
@@ -326,7 +326,7 @@
 
 .concept-gallery figcaption {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 0.8em;
   line-height: 1.45;
   color: var(--muted);
 }
