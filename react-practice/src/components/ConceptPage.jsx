@@ -100,6 +100,46 @@ const SYSTEM_STEPS = [
   ],
 ]
 
+// Features: the questions behind the project, what the World page does
+// today, and where it could go next (docs/planning/backlog.md).
+const FEATURES = [
+  {
+    id: 'explore',
+    kicker: '01 · Explore',
+    title: 'What I want to explore',
+    items: [
+      'Whether a patch of ground 20 cm across can feel like a landscape when seen from 5 mm up.',
+      'How the senses shape a world: the same ground, read differently by a person, a butterfly and an ant.',
+      'How small local rules, like where moss likes to grow or which way a scent trail leads, add up to a forest floor that feels alive.',
+      'An endless world that never repeats, yet is exactly the same each time you come back.',
+    ],
+  },
+  {
+    id: 'current',
+    kicker: '02 · Now',
+    title: 'Current scope',
+    items: [
+      'An endless forest floor, streamed in 20 cm tiles from one seed.',
+      'Habitat fields (slope, hollows, sunlight, shade, wind, moisture) that decide where six kinds of ground cover settle.',
+      'A fly agaric landmark and an ant hill, with an ant trail that follows its own pheromone around obstacles.',
+      'Three bodies to see it through: a free camera, a butterfly, and an ant with compound eyes and a sense of scent.',
+      'A simulation of day and night, weather and the seasons.',
+    ],
+  },
+  {
+    id: 'future',
+    kicker: '03 · Next',
+    title: 'Possible future directions',
+    items: [
+      'The hidden world below: a glowing mycelium network and ant tunnels, shown in a cutaway view.',
+      'Smell made visible: a mode where the world dims and pheromone trails glow.',
+      'A living colony: many ants whose trails form and fade on their own.',
+      'A macro-photography look: dew drops as lenses, light through thin leaves, shallow depth of field.',
+      'The sound of the soil, and saving and sharing a favourite world.',
+    ],
+  },
+]
+
 export default function ConceptPage({ onExplore }) {
   return (
     <div className="concept-page">
@@ -278,6 +318,26 @@ export default function ConceptPage({ onExplore }) {
                 </li>
               ))}
             </ol>
+          </div>
+        </section>
+
+        <section className="concept-section" aria-labelledby="concept-features">
+          <h2 id="concept-features">
+            <span className="concept-label">Features</span>
+          </h2>
+
+          <div className="concept-features">
+            {FEATURES.map((group) => (
+              <div key={group.id} className={`concept-feature concept-feature-${group.id}`}>
+                <p className="concept-feature-kicker">{group.kicker}</p>
+                <h3>{group.title}</h3>
+                <ul>
+                  {group.items.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
         </section>
       </article>
