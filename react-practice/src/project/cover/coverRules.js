@@ -10,8 +10,12 @@
  *   twigs      uniform random                     more under trees
  *   leaves     uniform random + rotation,         more under trees, in litter
  *              density from a litter noise        patches and hollows
- * Placement order: mushrooms → moss → twigs → leaves (earlier claim space;
- * the sparse mushrooms go first so dense moss can't crowd them out).
+ *   flowers    noise-clustered drifts,            moist but not wet, gentle
+ *   (wood      one per jittered world cell        slopes, out in the open
+ *   anemones)                                     (off the hill, away from bark)
+ * Placement order: mushrooms → moss → twigs → leaves → flowers (earlier
+ * claim space; the sparse mushrooms go first so dense moss can't crowd them
+ * out; flowers come last so adding them moved nothing that was there).
  */
 
 export const DEFAULT_COVER = {
@@ -21,6 +25,7 @@ export const DEFAULT_COVER = {
   twigs: { on: true, amount: 50 },
   moss: { on: true, amount: 50 },
   mushrooms: { on: true, amount: 50 },
+  flowers: { on: true, amount: 50 },
   flyAgaric: true,
 }
 
@@ -66,6 +71,15 @@ export const COVER_RULES = {
     maxSlope: 30,
     variants: 3,
   },
+  flowers: {
+    cell: 0.05,
+    height: [0.05, 0.11],
+    patchWavelength: 0.35,
+    moisture: [0.3, 0.8],
+    maxSlope: 28,
+    // Keep this far from bark (m).
+    trunkGap: 0.12,
+  },
 }
 
 /** Leaf colours (sRGB hex) by season. */
@@ -76,3 +90,6 @@ export const LEAF_COLORS = {
 export const MUSHROOM_COLORS = ['#8a5a32', '#a87a4a', '#c9a77a', '#6b4528', '#d8c3a0']
 export const MOSS_COLORS = ['#4f6b26', '#5f7d2c', '#3f5a22', '#6f8a34']
 export const TWIG_COLORS = ['#5a4636', '#6b5848', '#4a3a2c', '#7a6a58']
+/** Wood anemone petals (white, blush, lilac) and stem. */
+export const FLOWER_COLORS = ['#f3f0e8', '#f1e2e6', '#e7e2f2', '#f6f3ea']
+export const FLOWER_STEM_COLOR = '#5d7a33'

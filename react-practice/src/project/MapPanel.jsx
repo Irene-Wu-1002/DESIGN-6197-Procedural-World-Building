@@ -16,6 +16,7 @@ const COVER_GROUPS = [
   ['twigs', 'Twigs & branches'],
   ['moss', 'Moss'],
   ['mushrooms', 'Mushrooms'],
+  ['flowers', 'Wood anemones'],
 ]
 
 /**
@@ -41,8 +42,8 @@ export default function MapPanel({
         <h2>Forest Floor</h2>
       </div>
       <p className="section-note">
-        Real scale: one tile is 20 × 20 cm. Walk with <strong>W A S D</strong>{' '}
-        (Shift to run); drag to look around, scroll to zoom.
+        Real scale: one tile is 20 × 20 cm. Choose a body under <strong>View as</strong>; the
+        world stays the same, only the eyes and the way you move change.
       </p>
 
       <div className="panel-actions">

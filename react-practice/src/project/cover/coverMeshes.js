@@ -117,6 +117,70 @@ export function createMushroomGeometries() {
   return { stem, cap }
 }
 
+// --- Wood anemone (unit height): a slender stem with a whorl of three
+// leaves, and a cupped six-petal flower on top. aPetal runs 0 → 1 from a
+// petal's base to its tip (-1 on the stamens), for the nectar-guide shader.
+const FLOWER_TOP = 0.87
+
+export function createFlowerGeometries() {
+  const stalk = stick([[0, 0, 0], [0.01, 0.45, 0.005], [0, FLOWER_TOP, 0]], 0.012)
+  stalk.deleteAttribute('uv')
+  const leaves = [0, 1, 2].map((k) => {
+    const leaf = leafGeometry(LEAF_OUTLINES[1])
+    leaf.scale(0.24, 0.24, 0.3)
+    leaf.translate(0.12, 0.5, 0)
+    leaf.rotateY((k / 3) * Math.PI * 2 + 0.4)
+    return leaf
+  })
+  const stem = mergeGeometries([stalk, ...leaves])
+  stalk.dispose()
+  for (const leaf of leaves) leaf.dispose()
+
+  const positions = []
+  const petal = []
+  const indices = []
+  const PETALS = 6
+  const ALONG = 6
+  const ACROSS = [-1, -0.5, 0, 0.5, 1]
+  for (let k = 0; k < PETALS; k += 1) {
+    const angle = (k / PETALS) * Math.PI * 2
+    const rx = Math.cos(angle)
+    const rz = Math.sin(angle)
+    const base = positions.length / 3
+    for (let i = 0; i <= ALONG; i += 1) {
+      const t = i / ALONG
+      // Cupped: steeper toward the tip.
+      const rise = 0.3 + 0.45 * t
+      const out = 0.012 + 0.16 * t * Math.cos(rise)
+      const up = FLOWER_TOP + 0.16 * t * Math.sin(rise)
+      const width = 0.075 * Math.sin(Math.PI * Math.min(t * 0.95 + 0.05, 1)) ** 0.6
+      for (const side of ACROSS) {
+        positions.push(rx * out - rz * side * width, up, rz * out + rx * side * width)
+        petal.push(t)
+      }
+    }
+    for (let i = 0; i < ALONG; i += 1) {
+      for (let j = 0; j < ACROSS.length - 1; j += 1) {
+        const a = base + i * ACROSS.length + j
+        indices.push(a, a + 1, a + ACROSS.length, a + 1, a + ACROSS.length + 1, a + ACROSS.length)
+      }
+    }
+  }
+  const petals = new THREE.BufferGeometry()
+  petals.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  petals.setAttribute('aPetal', new THREE.Float32BufferAttribute(petal, 1))
+  petals.setIndex(indices)
+  petals.computeVertexNormals()
+  const stamens = new THREE.SphereGeometry(0.03, 10, 6)
+  stamens.deleteAttribute('uv')
+  stamens.translate(0, FLOWER_TOP + 0.012, 0)
+  stamens.setAttribute('aPetal', new THREE.Float32BufferAttribute(new Array(stamens.attributes.position.count).fill(-1), 1))
+  const head = mergeGeometries([petals, stamens])
+  petals.dispose()
+  stamens.dispose()
+  return { stem, head }
+}
+
 // --- Trunk (unit radius, 10 m tall): bark ridges, tapered, flared roots.
 export const TRUNK_HEIGHT = 10
 const TRUNK_BURY = 0.15

@@ -1,8 +1,9 @@
 import * as THREE from 'three'
 import { TILE_SIZE } from '../terrain/heightField'
-import { LEAF_COLORS, MOSS_COLORS, MUSHROOM_COLORS, TWIG_COLORS } from './coverRules'
+import { FLOWER_COLORS, FLOWER_STEM_COLOR, LEAF_COLORS, MOSS_COLORS, MUSHROOM_COLORS, TWIG_COLORS } from './coverRules'
 import {
   createBranchGeometry,
+  createFlowerGeometries,
   createLeafGeometries,
   createMossGeometry,
   createMushroomGeometries,
@@ -32,6 +33,8 @@ const palettes = {
   mushroom: MUSHROOM_COLORS.map(toLinear),
   twig: TWIG_COLORS.map(toLinear),
   stem: toLinear(STEM_COLOR),
+  flower: FLOWER_COLORS.map(toLinear),
+  flowerStem: toLinear(FLOWER_STEM_COLOR),
 }
 
 const FADE_DECLARATIONS = /* glsl */ `
@@ -70,7 +73,29 @@ const MOSS_COLOR = /* glsl */ `
 }
 `
 
-function applyFade(material, uniforms, key, { moss = false } = {}) {
+// Flowers only: yellow stamens, and the nectar guides that only
+// ultraviolet vision sees (uUV, 0–1): a dark violet bullseye at the base of
+// the petals around bright, UV-reflecting tips.
+const FLOWER_VERTEX = /* glsl */ `
+#include <begin_vertex>
+vPetal = aPetal;
+`
+const FLOWER_FRAGMENT_DECLARATIONS = /* glsl */ `
+uniform float uUV;
+varying float vPetal;
+`
+const FLOWER_COLOR = /* glsl */ `
+#include <color_fragment>
+if (vPetal < 0.0) {
+  diffuseColor.rgb = mix(vec3(0.95, 0.74, 0.16), vec3(0.32, 0.16, 0.5), uUV * 0.6);
+} else {
+  float guide = 1.0 - smoothstep(0.25, 0.6, vPetal);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.24, 0.1, 0.52), guide * uUV * 0.85);
+  diffuseColor.rgb *= 1.0 + 0.4 * uUV * smoothstep(0.5, 0.95, vPetal);
+}
+`
+
+function applyFade(material, uniforms, key, { moss = false, flower = false } = {}) {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms)
     let vertex = shader.vertexShader
@@ -83,6 +108,14 @@ function applyFade(material, uniforms, key, { moss = false } = {}) {
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${MOSS_FRAGMENT_DECLARATIONS}`)
         .replace('#include <color_fragment>', MOSS_COLOR)
+    }
+    if (flower) {
+      vertex = vertex
+        .replace('#include <common>', '#include <common>\nattribute float aPetal;\nvarying float vPetal;')
+        .replace('#include <begin_vertex>', FLOWER_VERTEX)
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${FLOWER_FRAGMENT_DECLARATIONS}`)
+        .replace('#include <color_fragment>', FLOWER_COLOR)
     }
     shader.vertexShader = vertex
   }
@@ -97,15 +130,17 @@ const smoothstep = (edge0, edge1, value) => {
 
 /**
  * morphUniforms: the ground's morph uniforms (uMorphCenter is shared).
- * Returns { setTile, removeTile, sync, setFadeRange, dispose }.
+ * Returns { setTile, removeTile, sync, setFadeRange, setUV, dispose }.
  */
 export function createCoverRenderer(scene, morphUniforms) {
   const uniforms = {
     uMorphCenter: morphUniforms.uMorphCenter,
     uCoverFade: { value: new THREE.Vector2(1, 2) },
+    uUV: { value: 0 },
   }
   const leafGeometries = createLeafGeometries()
   const mushroom = createMushroomGeometries()
+  const flower = createFlowerGeometries()
   const depthMaterial = applyFade(
     new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }),
     uniforms,
@@ -173,6 +208,24 @@ export function createCoverRenderer(scene, morphUniforms) {
       items: (tile) => tile.mushrooms,
       color: (item, out) => out.copy(palettes.mushroom[item.palette]).multiplyScalar(0.85 + 0.3 * item.shade),
     },
+    {
+      id: 'flowerStem',
+      geometry: flower.stem,
+      material: standard({ roughness: 0.8, side: THREE.DoubleSide }, 'cover-flower-stem'),
+      capacity: 3000,
+      castShadow: true,
+      items: (tile) => tile.flowers ?? [],
+      color: (item, out) => out.copy(palettes.flowerStem).multiplyScalar(0.85 + 0.3 * item.shade),
+    },
+    {
+      id: 'flowerHead',
+      geometry: flower.head,
+      material: standard({ roughness: 0.55, side: THREE.DoubleSide }, 'cover-flower-head', { flower: true }),
+      capacity: 3000,
+      castShadow: true,
+      items: (tile) => tile.flowers ?? [],
+      color: (item, out) => out.copy(palettes.flower[item.palette]).multiplyScalar(0.92 + 0.08 * item.shade),
+    },
   ]
 
   for (const part of parts) {
@@ -236,6 +289,10 @@ export function createCoverRenderer(scene, morphUniforms) {
     clear() {
       tiles.clear()
       dirty = true
+    },
+    /** How much the viewer sees in ultraviolet (0–1): flower nectar guides. */
+    setUV(value) {
+      uniforms.uUV.value = value
     },
     /** Fade small items out between these distances (m) from the viewer. */
     setFadeRange(start, end) {

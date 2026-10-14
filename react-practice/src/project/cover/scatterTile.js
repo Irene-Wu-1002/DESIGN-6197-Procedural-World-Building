@@ -18,7 +18,7 @@ import { COVER_RULES } from './coverRules'
  * Plain data only, no Three.js.
  */
 
-const SALT = { moss: 101, mushrooms: 211, damp: 307, twigs: 401, leaves: 503 }
+const SALT = { moss: 101, mushrooms: 211, damp: 307, twigs: 401, leaves: 503, flowers: 601 }
 const smoothstep = (edge0, edge1, value) => {
   const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1)
   return t * t * (3 - 2 * t)
@@ -79,13 +79,13 @@ function tilt(normal, amount) {
 
 /**
  * data: tile data; options: { cover, seed, trunks }.
- * Returns { moss, mushrooms, twigs, branches, leaves: [variant0, 1, 2] }.
+ * Returns { moss, mushrooms, twigs, branches, leaves: [variant0, 1, 2], flowers }.
  */
 export function scatterTile(data, { cover, seed, trunks }) {
   const look = createLookup(data)
   const { x0, z0 } = look
   const occupancy = createOccupancy()
-  const result = { moss: [], mushrooms: [], twigs: [], branches: [], leaves: [[], [], []] }
+  const result = { moss: [], mushrooms: [], twigs: [], branches: [], leaves: [[], [], []], flowers: [] }
   const field = (name, x, z) => look.at(data[name], x, z)
   const ground = (x, z) => ({
     y: field('height', x, z),
@@ -305,6 +305,55 @@ export function scatterTile(data, { cover, seed, trunks }) {
         // Wetter leaves look darker (decaying).
         damp: g.moisture,
       })
+    }
+  }
+
+  // --- Flowers (wood anemones): one possible flower per world cell, kept
+  // in noise-clustered drifts. Placed last, so they never move anything else.
+  if (cover.flowers?.on && cover.flowers.amount > 0) {
+    const rule = COVER_RULES.flowers
+    const amount = cover.flowers.amount / 100
+    const patchNoise = {
+      type: 'perlin',
+      scale: 1 / rule.patchWavelength,
+      octaves: 2,
+      persistence: 0.5,
+      lacunarity: 2,
+      seed: seed * 37 + SALT.flowers,
+    }
+    const firstX = Math.floor(x0 / rule.cell)
+    const firstZ = Math.floor(z0 / rule.cell)
+    const lastX = Math.floor((x0 + TILE_SIZE) / rule.cell)
+    const lastZ = Math.floor((z0 + TILE_SIZE) / rule.cell)
+    for (let iz = firstZ; iz <= lastZ; iz += 1) {
+      for (let ix = firstX; ix <= lastX; ix += 1) {
+        const h = (k) => hash(ix, iz, seed + SALT.flowers + k)
+        const x = (ix + 0.1 + 0.8 * h(0)) * rule.cell
+        const z = (iz + 0.1 + 0.8 * h(1)) * rule.cell
+        if (!look.inside(x, z)) continue
+        const g = ground(x, z)
+        if (g.slope > rule.maxSlope || g.hill > 0.1 || g.pebble > 0.2 || g.trunk < rule.trunkGap) continue
+        const [dry, wet] = rule.moisture
+        const suited = smoothstep(dry, dry + 0.15, g.moisture) * (1 - smoothstep(wet - 0.1, wet, g.moisture))
+        const patch = 0.5 + 0.5 * getNoise(x, z, patchNoise)
+        if (h(2) >= amount * suited * smoothstep(0.45, 0.75, patch) * 1.6) continue
+        if (!occupancy.free(x, z, 0.006)) continue
+        occupancy.add(x, z, 0.006)
+        const height = rule.height[0] + h(3) * (rule.height[1] - rule.height[0])
+        // Mostly upright, nodding a little.
+        const lean = (h(4) - 0.5) * 0.3
+        result.flowers.push({
+          x,
+          y: g.y - 0.002,
+          z,
+          yaw: h(5) * Math.PI * 2,
+          normal: [lean, 1, (h(6) - 0.5) * 0.3],
+          scale: [height, height, height],
+          palette: Math.floor(h(7) * 4),
+          shade: h(8),
+          variant: 0,
+        })
+      }
     }
   }
 
