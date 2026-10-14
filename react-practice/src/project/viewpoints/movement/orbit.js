@@ -1,11 +1,12 @@
 import * as THREE from 'three'
 
 /**
- * Orbit (Free): no body. The camera circles a focus point on the ground:
- * drag or the arrow keys turn and tilt it (the controller's look input is
- * the orbit angle), the wheel or + / − zoom, W A S D slide the focus across
- * the ground (faster when zoomed out), and setFocus glides it to a spot
- * (double-click). The camera never dips under the ground.
+ * Orbit (Free view): no body. The camera circles a focus point on the
+ * ground: drag or the arrow keys turn and tilt it (the controller's look
+ * input is the orbit angle), the wheel or + / − zoom, right-drag / Shift+drag
+ * or W A S D pan the focus across the ground (faster when zoomed out), and
+ * setFocus glides it to a spot (double-click). The camera never dips under
+ * the ground.
  *
  * Every movement strategy has the same shape:
  *   place(state, from, ctx)      put the viewer at from.x/z (new viewpoint)
@@ -69,14 +70,23 @@ export function createOrbitMovement() {
       targetDistance = clamp(targetDistance * Math.exp(input.takeZoom(dt, m.zoomRate)), m.distance[0], m.distance[1])
       distance += (targetDistance - distance) * smooth(12, dt)
 
+      const sin = Math.sin(state.yaw)
+      const cos = Math.cos(state.yaw)
       const { x: strafe, y: ahead } = input.move
       if (strafe || ahead) {
         gliding = false
         const speed = m.speed * distance * (input.run ? m.runFactor : 1)
-        const sin = Math.sin(state.yaw)
-        const cos = Math.cos(state.yaw)
         focus.x += (-sin * ahead + cos * strafe) * speed * dt
         focus.z += (-cos * ahead - sin * strafe) * speed * dt
+      }
+      // Pan drag grabs the ground: drag right and it slides right (the focus
+      // goes left); drag down and it comes toward you (the focus goes ahead).
+      const pan = input.takePan()
+      if (pan.x || pan.y) {
+        gliding = false
+        const scale = m.panPerPixel * distance
+        focus.x += (-cos * pan.x - sin * pan.y) * scale
+        focus.z += (sin * pan.x - cos * pan.y) * scale
       }
       if (gliding) {
         const k = smooth(6, dt)

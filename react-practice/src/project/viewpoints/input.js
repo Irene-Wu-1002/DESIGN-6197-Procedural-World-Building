@@ -17,6 +17,7 @@ export function createViewInput() {
   const zoomKeys = new Set()
   const held = new Set()
   const look = { x: 0, y: 0 }
+  const panned = { x: 0, y: 0 }
   let wheel = 0
   let presses = []
   let run = false
@@ -82,6 +83,18 @@ export function createViewInput() {
       look.x += dx
       look.y += dy
     },
+    /** Pan drag (pixels): grabs the ground and slides it (free camera). */
+    pan(dx, dy) {
+      panned.x += dx
+      panned.y += dy
+    },
+    /** Pan drag this frame, in pixels; drained on read. */
+    takePan() {
+      const amount = { x: panned.x, y: panned.y }
+      panned.x = 0
+      panned.y = 0
+      return amount
+    },
     /** Mouse wheel (deltaY in pixels; positive zooms out). */
     zoom(deltaY) {
       wheel += deltaY
@@ -120,6 +133,8 @@ export function createViewInput() {
       presses = []
       run = false
       wheel = 0
+      panned.x = 0
+      panned.y = 0
       look.x = 0
       look.y = 0
     },

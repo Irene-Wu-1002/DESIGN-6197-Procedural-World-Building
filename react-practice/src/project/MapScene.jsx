@@ -233,21 +233,28 @@ export default function MapScene() {
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('blur', onBlur)
 
-    // Drag to look.
+    // Drag to look / orbit; right-drag or Shift+drag pans (free view).
     const canvas = renderer.domElement
     let dragPointer = null
+    let dragPan = false
     let dragLast = { x: 0, y: 0 }
     const onPointerDown = (event) => {
-      if (dragPointer !== null || event.button !== 0) return
+      if (dragPointer !== null || (event.button !== 0 && event.button !== 2)) return
       dragPointer = event.pointerId
+      dragPan = event.button === 2 || event.shiftKey
       dragLast = { x: event.clientX, y: event.clientY }
       canvas.setPointerCapture(event.pointerId)
     }
     const onPointerMove = (event) => {
       if (event.pointerId !== dragPointer) return
-      controller.input.drag(event.clientX - dragLast.x, event.clientY - dragLast.y)
+      const dx = event.clientX - dragLast.x
+      const dy = event.clientY - dragLast.y
+      if (dragPan) controller.input.pan(dx, dy)
+      else controller.input.drag(dx, dy)
       dragLast = { x: event.clientX, y: event.clientY }
     }
+    const onContextMenu = (event) => event.preventDefault()
+    canvas.addEventListener('contextmenu', onContextMenu)
     const onPointerUp = (event) => {
       if (event.pointerId === dragPointer) dragPointer = null
     }
@@ -398,6 +405,7 @@ export default function MapScene() {
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerUp)
       canvas.removeEventListener('wheel', onWheel)
+      canvas.removeEventListener('contextmenu', onContextMenu)
       canvas.removeEventListener('dblclick', onDoubleClick)
       if (import.meta.env.DEV) delete window.__umwelt
       controllerRef.current = null
@@ -495,7 +503,7 @@ export default function MapScene() {
         aria-label={
           viewpoint.body
             ? `Forest floor seen as a ${viewpoint.label.toLowerCase()}, ${summaryOf(viewpoint).toLowerCase()}`
-            : `Forest floor, free camera: drag to rotate, scroll to zoom`
+            : `Forest floor, free view: drag to orbit, right-drag to pan, scroll to zoom`
         }
       />
       <div className="scene map-overlays" style={{ pointerEvents: 'none' }}>

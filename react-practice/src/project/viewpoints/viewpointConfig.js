@@ -35,13 +35,13 @@ export const VIEWPOINTS = {
   // No body: a camera you steer yourself around a point on the ground.
   free: {
     id: 'free',
-    label: 'Free',
+    label: 'Free view',
     shortcut: '1',
     eyeHeight: null,
-    summary: 'Zoom: 5 cm – 3 m',
-    switchLabel: 'Free view · zoom 5 cm – 3 m',
+    summary: 'Free camera',
+    switchLabel: 'Free view · orbit, pan, zoom',
     description:
-      'No body: steer the camera yourself. Circle any spot, zoom from a single pebble out to the whole patch, and glide across the floor.',
+      'A free camera: inspect the forest floor from any angle. Orbit, pan, and zoom to study its procedural structure.',
     camera: { fov: 50, near: 0.002, far: 30, startPitch: -0.7, pitchLimits: [-1.45, -0.05] },
     haze: { scale: 1, min: 0 },
     streamAhead: 3.5,
@@ -54,6 +54,9 @@ export const VIEWPOINTS = {
       speed: 0.6,
       runFactor: 3,
       zoomRate: 1.4,
+      // Ground moved per pixel of pan drag, per metre of zoom (about what
+      // stays under the cursor at a 50° field of view).
+      panPerPixel: 0.0012,
     },
     collision: { radius: 0, trunks: false, flyAgaric: false, mushrooms: false },
     effects: 'natural',
@@ -64,9 +67,9 @@ export const VIEWPOINTS = {
     framing: { distance: 0.6, elevation: 0, lookUp: 0, orbit: 0 },
     actions: {},
     controls: [
-      ['Rotate', 'Drag or arrow keys'],
-      ['Zoom', 'Scroll or + / −'],
-      ['Move', 'W A S D (Shift faster)'],
+      ['Orbit', 'Drag or arrow keys'],
+      ['Pan', 'Right-drag, Shift+drag, or W A S D'],
+      ['Zoom', 'Scroll or + / − (5 cm – 3 m)'],
       ['Re-centre', 'Double-click the ground'],
     ],
   },

@@ -527,6 +527,8 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       } else {
         input.takePresses()
       }
+      // Pan drags only move the free camera; drop them anywhere else.
+      if (action || !movement.setFocus) input.takePan()
       if (!action) {
         info = movement.update(dt, input, state, ctxFor(config))
         applyIdlePose()
