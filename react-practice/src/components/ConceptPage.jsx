@@ -77,6 +77,29 @@ const REFERENCES = [
   },
 ]
 
+// How the world is made: three inputs feed the placement rules, then the
+// floor grows and changes. Mirrors src/project (habitat, cover, terrain).
+const SYSTEM_INPUTS = [
+  ['Ground shape', 'layered noise: slopes, bumps and hollows, fine grain, the ant hill and tree trunks'],
+  ['Light and shade', 'which ground faces the sun, and where canopy gaps and trunks cast shadow'],
+  ['Moisture and wind', 'damp hollows, dry steep slopes, and the calm spots where leaves gather'],
+]
+
+const SYSTEM_STEPS = [
+  [
+    'Placement rules',
+    'six kinds of ground cover (moss, mushrooms, flowers, leaves, twigs, pebbles), each scoring the ground by its own needs',
+  ],
+  [
+    'The floor grows around you',
+    'tiles are built as you move, all from one seed, so a spot looks the same each time you return',
+  ],
+  [
+    'The forest floor comes alive',
+    'ant trails form, day turns to night, weather and seasons pass, seen through a person’s, a butterfly’s or an ant’s eyes',
+  ],
+]
+
 export default function ConceptPage({ onExplore }) {
   return (
     <div className="concept-page">
@@ -231,6 +254,31 @@ export default function ConceptPage({ onExplore }) {
               </ul>
             </div>
           ))}
+        </section>
+
+        <section className="concept-section" aria-labelledby="concept-system">
+          <h2 id="concept-system">
+            <span className="concept-label">The system</span>
+          </h2>
+
+          <div className="concept-system">
+            <ul className="concept-system-inputs">
+              {SYSTEM_INPUTS.map(([title, line]) => (
+                <li key={title}>
+                  <h4>{title}</h4>
+                  <p>{line}</p>
+                </li>
+              ))}
+            </ul>
+            <ol className="concept-system-steps">
+              {SYSTEM_STEPS.map(([title, line]) => (
+                <li key={title}>
+                  <h4>{title}</h4>
+                  <p>{line}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
         </section>
       </article>
     </div>

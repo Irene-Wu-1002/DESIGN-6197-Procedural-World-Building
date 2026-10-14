@@ -353,6 +353,105 @@
   color: var(--accent);
 }
 
+/* The system: three inputs joined by "+", then steps joined by arrows. */
+
+.concept-system {
+  margin-top: 22px;
+}
+
+.concept-system-inputs,
+.concept-system-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.concept-system-inputs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 44px;
+}
+
+.concept-system li {
+  position: relative;
+  padding: 18px 22px;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.concept-system .concept-system-inputs li {
+  border-color: rgba(255, 138, 61, 0.35);
+  background: rgba(255, 138, 61, 0.05);
+}
+
+.concept-system h4 {
+  margin-bottom: 6px;
+  font-family: var(--font-serif);
+  font-size: 1.35em;
+  font-weight: 500;
+}
+
+.concept-system p {
+  margin: 0;
+  font-size: 0.92em;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.concept-system-inputs li + li::before {
+  content: '+';
+  position: absolute;
+  top: 50%;
+  left: -29px;
+  transform: translateY(-50%);
+  font-size: 24px;
+  font-weight: 300;
+  color: var(--accent);
+}
+
+.concept-system-steps {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.concept-system-steps li {
+  width: min(100%, 640px);
+  margin-top: 46px;
+  text-align: center;
+}
+
+/* The arrow into each step. */
+.concept-system-steps li::before,
+.concept-system-steps li::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+}
+
+.concept-system-steps li::before {
+  top: -46px;
+  height: 40px;
+  border-left: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.concept-system-steps li::after {
+  top: -10px;
+  margin-left: -4px;
+  border: 5px solid transparent;
+  border-top: 6px solid rgba(255, 255, 255, 0.5);
+  border-bottom: 0;
+}
+
+.concept-system-steps li:last-child {
+  border-color: rgba(255, 138, 61, 0.55);
+}
+
+.concept-system-steps li:last-child h4 {
+  color: var(--accent);
+}
+
 /* Phones */
 
 @media (max-width: 640px) {
@@ -371,6 +470,17 @@
 
   .concept-gallery {
     grid-template-columns: 1fr;
+  }
+
+  .concept-system-inputs {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+
+  .concept-system-inputs li + li::before {
+    top: -29px;
+    left: 50%;
+    transform: translateX(-50%);
   }
 
   .concept-scale,
