@@ -6,6 +6,7 @@ import { createCoverRenderer, createTrunkRenderer } from './cover/coverRenderer'
 import { createFlyAgaric } from './cover/flyAgaric'
 import { scatterTile } from './cover/scatterTile'
 import { FOREST_COLORS, createForestSky } from './forest/sky'
+import { DEFAULT_HABITAT, sunDirectionOf } from './habitat/habitatFields'
 import { createFarGround, morphRange } from './terrain/farGround'
 import { DEFAULT_GROUND } from './terrain/heightField'
 import { createGroundMaterial } from './terrain/groundMaterial'
@@ -44,9 +45,12 @@ const hazeDensity = (haze) => HAZE_DENSITY[0] + (HAZE_DENSITY[1] - HAZE_DENSITY[
 // and the fly agaric from 65 cm away.
 const START_VIEW = 'free'
 const START = { distance: 0.65, yaw: 0, pitch: -0.7 }
-// Sun direction relative to the area you see; shadows only cover the area
-// near it (the half-size comes from the viewpoint; the sun moves back to match).
-const SUN_OFFSET = new THREE.Vector3(0.9, 1.1, 0.5)
+// The sun sits this far (m) from the area you see, toward the habitat's sun
+// direction; shadows only cover the area near it (the half-size comes from
+// the viewpoint; the sun moves back to match).
+const SUN_DISTANCE = 1.5
+// Habitat changes wait until the controls have been still this long (ms).
+const HABITAT_DEBOUNCE_MS = 300
 const SHADOW_BASE = { reach: 0.6, far: 4 }
 const BUILD_BUDGET_MS = 6
 const STATUS_REFRESH_MS = 250
@@ -65,6 +69,18 @@ const withDefaults = (current, defaults, keys) => ({
   ...current,
   ...Object.fromEntries(keys.map((key) => [key, defaults[key]])),
 })
+const sunOffsetOf = (habitat, out = new THREE.Vector3()) =>
+  out.fromArray(sunDirectionOf(habitat)).multiplyScalar(SUN_DISTANCE)
+
+/** `value`, but only once it has stopped changing for `delay` ms. */
+function useDebounced(value, delay) {
+  const [settled, setSettled] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), delay)
+    return () => clearTimeout(timer)
+  }, [value, delay])
+  return settled
+}
 
 export default function MapScene() {
   const mountRef = useRef(null)
@@ -77,6 +93,9 @@ export default function MapScene() {
   const worldRef = useRef(null)
   const antWorldRef = useRef(null)
   const farGroundRef = useRef(null)
+  const skyRef = useRef(null)
+  // Where the sun light sits relative to the area you see.
+  const sunOffsetRef = useRef(sunOffsetOf(DEFAULT_HABITAT))
   const controllerRef = useRef(null)
   const overlayRef = useRef(null)
   // What the tile listener needs to scatter a new tile.
@@ -84,6 +103,9 @@ export default function MapScene() {
   const [ground, setGround] = useState(DEFAULT_GROUND)
   const [view, setView] = useState(DEFAULT_VIEW)
   const [cover, setCover] = useState(DEFAULT_COVER)
+  // Habitat controls update instantly; the world follows once they settle.
+  const [habitat, setHabitat] = useState(DEFAULT_HABITAT)
+  const settledHabitat = useDebounced(habitat, HABITAT_DEBOUNCE_MS)
   const [status, setStatus] = useState({
     loaded: 0,
     pending: 0,
@@ -114,7 +136,8 @@ export default function MapScene() {
     // Haze in the sky's horizon colour, so the far ground melts into the sky.
     scene.background = new THREE.Color(FOREST_COLORS.horizon)
     scene.fog = new THREE.FogExp2(FOREST_COLORS.horizon, hazeDensity(DEFAULT_VIEW.haze))
-    const sky = createForestSky(SUN_OFFSET)
+    const sky = createForestSky(sunOffsetRef.current)
+    skyRef.current = sky
     scene.add(sky.mesh)
 
     // Millimetres to metres in one view: a logarithmic depth buffer keeps
@@ -138,7 +161,7 @@ export default function MapScene() {
     effects.setSize(mount.clientWidth, mount.clientHeight, renderer.getPixelRatio())
 
     const { material, depthMaterial, farMaterial, uniforms, morphUniforms, holeUniforms } =
-      createGroundMaterial(SUN_OFFSET)
+      createGroundMaterial(sunOffsetRef.current)
     groundUniformsRef.current = uniforms
 
     // Ground cover follows the tiles: scattered when a tile is built,
@@ -337,7 +360,7 @@ export default function MapScene() {
       const rings = { near: detail + frame.lod.near, outer: detail + frame.lod.middle }
       const distance = rings.outer
       tiles.update(anchor.x, anchor.z, rings, BUILD_BUDGET_MS)
-      if (farGround.update(tiles.sampler, anchor.x, anchor.z, distance, tiles.version)) {
+      if (farGround.update(tiles.sampler, tiles.habitat, anchor.x, anchor.z, distance, tiles.habitatKey)) {
         holeRadius = holeUniforms.uHoleRadius.value
       }
       // While tiles are still building (e.g. right after switching body),
@@ -375,7 +398,7 @@ export default function MapScene() {
 
       setShadowReach(params.shadowReach)
       sun.target.position.set(frame.shadowCenter.x, anchor.y, frame.shadowCenter.y)
-      sun.position.copy(sun.target.position).addScaledVector(SUN_OFFSET, sunScaleFor(params.shadowReach))
+      sun.position.copy(sun.target.position).addScaledVector(sunOffsetRef.current, sunScaleFor(params.shadowReach))
 
       if (!warmed && tiles.stats().loaded > 0) warmUp()
       effects.render(scene, camera, frame.effects, { prevMix: frame.prevMix, dark: frame.dark })
@@ -404,7 +427,7 @@ export default function MapScene() {
     // For checks during development: the controller and how many tiles
     // have been built (switching viewpoints must not build any).
     if (import.meta.env.DEV) {
-      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies }
+      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms }
     }
 
     return () => {
@@ -438,6 +461,7 @@ export default function MapScene() {
       flyAgaricRef.current = null
       farGround.dispose()
       sky.dispose()
+      skyRef.current = null
       material.dispose()
       farMaterial.dispose()
       depthMaterial.dispose()
@@ -489,6 +513,21 @@ export default function MapScene() {
   useEffect(() => {
     if (groundUniformsRef.current) groundUniformsRef.current.uGrain.value = grain / 100
   }, [grain])
+
+  // Habitat fields follow the settled controls (loaded tiles refresh over a
+  // few frames, nearest first).
+  useEffect(() => {
+    tilesRef.current?.setHabitat(settledHabitat)
+  }, [settledHabitat])
+
+  // The sun itself (light, shadows, sky glow, dappled light) moves at once.
+  const { sunDirection, sunElevation } = habitat
+  useEffect(() => {
+    const offset = sunOffsetOf({ sunDirection, sunElevation }, sunOffsetRef.current)
+    const direction = offset.clone().normalize()
+    groundUniformsRef.current?.uSunDirection.value.copy(direction)
+    skyRef.current?.setSunDirection(direction)
+  }, [sunDirection, sunElevation])
 
   // Haze is applied every frame (each body scales it), from viewRef.
   useEffect(() => {
@@ -551,19 +590,24 @@ export default function MapScene() {
         ground={ground}
         view={view}
         cover={cover}
+        habitat={habitat}
+        habitatSettling={habitat !== settledHabitat || status.refreshing > 0}
         status={status}
         onGroundChange={(key, value) => setGround((current) => ({ ...current, [key]: value }))}
         onViewChange={(key, value) => setView((current) => ({ ...current, [key]: value }))}
         onCoverChange={(key, value) => setCover((current) => ({ ...current, [key]: value }))}
-        onResetKeys={({ ground: groundKeys, view: viewKeys, cover: coverKeys }) => {
+        onHabitatChange={(key, value) => setHabitat((current) => ({ ...current, [key]: value }))}
+        onResetKeys={({ ground: groundKeys, view: viewKeys, cover: coverKeys, habitat: habitatKeys }) => {
           if (groundKeys) setGround((current) => withDefaults(current, DEFAULT_GROUND, groundKeys))
           if (viewKeys) setView((current) => withDefaults(current, DEFAULT_VIEW, viewKeys))
           if (coverKeys) setCover((current) => withDefaults(current, DEFAULT_COVER, coverKeys))
+          if (habitatKeys) setHabitat((current) => withDefaults(current, DEFAULT_HABITAT, habitatKeys))
         }}
         onReset={() => {
           setGround(DEFAULT_GROUND)
           setView(DEFAULT_VIEW)
           setCover(DEFAULT_COVER)
+          setHabitat(DEFAULT_HABITAT)
         }}
       />
     </div>

@@ -159,6 +159,10 @@ export function createGroundSampler(settings) {
   }
 
   return {
+    seed,
+    // The broad-slope noise settings: the habitat's wet/dry patches reuse
+    // them, so at their default size they follow the low ground.
+    broadNoise,
     sample(x, z, out) {
       const wx = getNoise(x, z, warpX) * WARP.distance * warp
       const wz = getNoise(x, z, warpZ) * WARP.distance * warp

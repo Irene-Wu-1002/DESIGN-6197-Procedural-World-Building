@@ -13,6 +13,10 @@
  *   flowers    noise-clustered drifts,            moist but not wet, gentle
  *   (wood      one per jittered world cell        slopes, out in the open
  *   anemones)                                     (off the hill, away from bark)
+ * Habitat (habitat/habitatFields.js) adds gentle preferences: moss likes
+ * shade, mushrooms shun full sun, flowers like sunlight, and leaves and
+ * twigs gather where the wind is calm. Each is 1 at average conditions,
+ * so the habitat reshapes where things are more than how many.
  * Placement order: mushrooms → moss → twigs → leaves → flowers (earlier
  * claim space; the sparse mushrooms go first so dense moss can't crowd them
  * out; flowers come last so adding them moved nothing that was there).
@@ -29,6 +33,10 @@ export const DEFAULT_COVER = {
   flyAgaric: true,
 }
 
+// Typical habitat values at the default settings: preferences are 1 here,
+// so the default habitat keeps the usual amount of each kind.
+export const HABITAT_NORMAL = { shade: 0.37, sunlight: 0.45, wind: 0.4 }
+
 export const COVER_RULES = {
   moss: {
     // Jittered grid of possible cushions inside a tile.
@@ -41,6 +49,8 @@ export const COVER_RULES = {
     patchWavelength: 0.1,
     // Strong pull toward trunk bases (m) and pebbles.
     trunkReach: 0.3,
+    // More in shade: × (1 ± this) from open to deep shade.
+    shadePreference: 0.4,
   },
   mushrooms: {
     // Clusters around each trunk, and a chance of one per damp tile.
@@ -52,6 +62,9 @@ export const COVER_RULES = {
     height: [0.01, 0.04],
     minMoisture: 0.45,
     maxSlope: 30,
+    // Share of mushrooms that won't grow in full sunlight (fewer as the
+    // light drops to typical, none below it).
+    sunAvoidance: 0.6,
   },
   twigs: {
     // Candidates per tile at 100%.
@@ -62,6 +75,8 @@ export const COVER_RULES = {
     branchChance: 0.25,
     branchLength: [0.1, 0.25],
     maxSlope: 35,
+    // Fewer where the wind is stronger than the default breeze.
+    windShelter: 0.2,
   },
   leaves: {
     perTile: 70,
@@ -70,6 +85,7 @@ export const COVER_RULES = {
     length: [0.03, 0.08],
     maxSlope: 30,
     variants: 3,
+    windShelter: 0.4,
   },
   flowers: {
     cell: 0.05,
@@ -79,6 +95,8 @@ export const COVER_RULES = {
     maxSlope: 28,
     // Keep this far from bark (m).
     trunkGap: 0.12,
+    // More in sunlight: × (1 ± this) from shade to full sun.
+    sunPreference: 0.4,
   },
 }
 

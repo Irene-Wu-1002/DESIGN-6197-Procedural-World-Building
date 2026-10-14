@@ -69,6 +69,10 @@ export function createForestSky(sunDirection) {
 
   return {
     mesh,
+    /** Point the sun glow toward this direction (a THREE.Vector3). */
+    setSunDirection(direction) {
+      material.uniforms.uSunDirection.value.copy(direction).normalize()
+    },
     /** Keep the dome centred on the camera. */
     follow(camera) {
       mesh.position.copy(camera.position)

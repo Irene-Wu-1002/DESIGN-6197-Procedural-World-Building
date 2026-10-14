@@ -1,3 +1,4 @@
+import { applyHabitat } from '../habitat/habitatFields'
 import { TILE_SIZE } from './heightField'
 
 /**
@@ -8,16 +9,13 @@ import { TILE_SIZE } from './heightField'
  * tile, so normals and slope at the edges use the neighbours'
  * real ground and the shading is seamless across tiles.
  *
+ * Moisture, sunlight, shade, wind and the other habitat fields come from
+ * habitat/habitatFields.js (applyHabitat), so they can be redone without
+ * rebuilding the tile's shape.
+ *
  * Plain data only, no Three.js.
  */
 
-// Moisture: lower broad ground and hollows are wetter. Hollows come from
-// the bump noise (smooth over ~3 cm), not from grid curvature, which picks
-// up millimetre detail and would flip between wet and dry every few mm.
-const MOISTURE = { base: 0.5, low: 0.35, hollow: 0.3 }
-// Ground is damper close to a trunk (shade, roots): extra moisture at the
-// bark, fading over TRUNK_DAMP.reach metres.
-const TRUNK_DAMP = { amount: 0.3, reach: 0.25 }
 // How far around a tile to look for trunks (beyond this they don't matter).
 const TRUNK_REACH = 3
 
@@ -34,19 +32,15 @@ export function smoothHeightOf(sample) {
   return sample.broadLowHeight + sample.hillHeight
 }
 
-/** Moisture (0 dry – 1 wet) from the broad and bump noise values. */
-export function moistureOf(broad, bump) {
-  return Math.min(Math.max(MOISTURE.base - MOISTURE.low * broad - MOISTURE.hollow * bump, 0), 1)
-}
-
 /**
  * trunks: the trunk field (cover/trunks.js) or null. Adds per point
  * trunkDistance (m to the nearest bark) and litter (0–1) for ground cover.
+ * habitat: the habitat field (habitat/habitatFields.js) for moisture etc.
  * pebbles: false leaves the pebble domes out of the height (middle-ring
  * tiles, whose coarse grid can't draw them); their coverage and shade are
  * kept, so pebble colour and the cover rules stay the same.
  */
-export function buildTileData(sampler, tileX, tileZ, segments, trunks = null, { pebbles = true } = {}) {
+export function buildTileData(sampler, tileX, tileZ, segments, trunks, habitat, { pebbles = true } = {}) {
   const n = segments + 1
   const step = TILE_SIZE / segments
   const wide = n + 2
@@ -69,10 +63,8 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks = null, { 
   const smoothApron = new Float32Array(wide * wide)
   const count = n * n
   const height = new Float32Array(count)
-  const broad = new Float32Array(count)
-  const bump = new Float32Array(count)
   const pebble = new Float32Array(count)
-  const shade = new Float32Array(count)
+  const pebbleShade = new Float32Array(count)
   const hill = new Float32Array(count)
   const litter = new Float32Array(count)
   const trunkDistance = new Float32Array(count)
@@ -89,10 +81,8 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks = null, { 
       if (!inside) continue
       const index = (row - 1) * n + (column - 1)
       height[index] = apron[row * wide + column]
-      broad[index] = out.broad
-      bump[index] = out.bump
       pebble[index] = out.pebble
-      shade[index] = out.shade
+      pebbleShade[index] = out.shade
       hill[index] = out.hill
       litter[index] = out.litter
       trunkDistance[index] = trunkDistanceAt(x, z)
@@ -103,7 +93,6 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks = null, { 
   const smoothHeight = new Float32Array(count)
   const smoothNormal = new Float32Array(count * 3)
   const slope = new Float32Array(count)
-  const moisture = new Float32Array(count)
   // Normal from the apron neighbours; returns the slope gradient length.
   const writeNormal = (field, a, target, index) => {
     const dx = (field[a + 1] - field[a - 1]) / (2 * step)
@@ -122,15 +111,10 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks = null, { 
       writeNormal(smoothApron, a, smoothNormal, index)
       smoothHeight[index] = smoothApron[a]
       slope[index] = (Math.atan(gradient) * 180) / Math.PI
-      const nearBark = Math.exp(-trunkDistance[index] / TRUNK_DAMP.reach)
-      moisture[index] = Math.min(
-        moistureOf(broad[index], bump[index]) + TRUNK_DAMP.amount * nearBark,
-        1
-      )
     }
   }
 
-  return {
+  const data = {
     tileX,
     tileZ,
     segments,
@@ -143,13 +127,13 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks = null, { 
     smoothHeight,
     smoothNormal,
     slope,
-    moisture,
     pebble,
-    shade,
+    pebbleShade,
     hill,
     litter,
     trunkDistance,
   }
+  return applyHabitat(data, habitat)
 }
 
 /**
@@ -180,13 +164,20 @@ export function decimateTileData(data, factor) {
     smoothHeight: pick(data.smoothHeight),
     smoothNormal: pick(data.smoothNormal, 3),
     slope: pick(data.slope),
-    moisture: pick(data.moisture),
     pebble: pick(data.pebble),
-    shade: pick(data.shade),
+    pebbleShade: pick(data.pebbleShade),
     hill: pick(data.hill),
     litter: pick(data.litter),
     trunkDistance: pick(data.trunkDistance),
+    ...pickHabitat(data, pick),
   }
+}
+
+const HABITAT_ARRAYS = ['moisture', 'sunlight', 'shade', 'habitatSlope', 'concavity', 'wind', 'windX', 'windZ']
+
+/** The habitat arrays of a tile, each passed through pick (e.g. decimated). */
+function pickHabitat(data, pick) {
+  return Object.fromEntries(HABITAT_ARRAYS.map((name) => [name, pick(data[name])]))
 }
 
 // Colours as linear RGB (0–1), matching three.js's working colour space.
@@ -212,6 +203,11 @@ const PREVIEW = {
   height: [hex('#13202c'), hex('#f2efe8')],
   slope: [hex('#2f6b3a'), hex('#d9483b')],
   moisture: [hex('#c9a35f'), hex('#1f63b8')],
+  sunlight: [hex('#1d2433'), hex('#f5d36b')],
+  shade: [hex('#e8e2c8'), hex('#14261a')],
+  // Ridges warm, flat grey, hollows blue.
+  concavity: [hex('#d9853b'), hex('#6f6a64'), hex('#2f6fb8')],
+  windCalm: hex('#151a22'),
 }
 const HEIGHT_RANGE = [-0.03, 0.05]
 const SLOPE_RANGE = 60
@@ -242,7 +238,8 @@ export function soilColor(moisture, hill, out, litter = 0) {
 
 /**
  * Write a colour per grid point into `colors` (n² × 3, linear RGB).
- * mode: off | height | slope | moisture | tiles
+ * mode: off | height | tiles, or a habitat field: moisture | sunlight |
+ * shade | slope | concavity | wind (hue = direction, brightness = speed)
  */
 export function colorTile(data, mode, colors) {
   const { n } = data
@@ -254,14 +251,23 @@ export function colorTile(data, mode, colors) {
       const t = (data.height[index] - HEIGHT_RANGE[0]) / (HEIGHT_RANGE[1] - HEIGHT_RANGE[0])
       mix(PREVIEW.height[0], PREVIEW.height[1], Math.min(Math.max(t, 0), 1), c)
     } else if (mode === 'slope') {
-      mix(PREVIEW.slope[0], PREVIEW.slope[1], Math.min(data.slope[index] / SLOPE_RANGE, 1), c)
-    } else if (mode === 'moisture') {
-      mix(PREVIEW.moisture[0], PREVIEW.moisture[1], data.moisture[index], c)
+      mix(PREVIEW.slope[0], PREVIEW.slope[1], Math.min(data.habitatSlope[index] / SLOPE_RANGE, 1), c)
+    } else if (mode === 'moisture' || mode === 'sunlight' || mode === 'shade') {
+      mix(PREVIEW[mode][0], PREVIEW[mode][1], data[mode][index], c)
+    } else if (mode === 'concavity') {
+      const value = data.concavity[index]
+      const [ridge, flat, hollow] = PREVIEW.concavity
+      mix(flat, value < 0 ? ridge : hollow, Math.min(Math.abs(value), 1), c)
+    } else if (mode === 'wind') {
+      // A colour wheel for the direction the wind blows toward.
+      const angle = Math.atan2(data.windX[index], data.windZ[index])
+      for (let k = 0; k < 3; k += 1) c[k] = 0.15 + 0.85 * (0.5 + 0.5 * Math.cos(angle - (k * 2 * Math.PI) / 3))
+      mix(PREVIEW.windCalm, c, Math.min(data.wind[index] * 1.5, 1), c)
     } else {
       // Natural ground, with pebbles on top.
       soilColor(data.moisture[index], data.hill[index], c, data.litter[index])
       if (data.pebble[index] > 0) {
-        mix(GROUND_COLORS.pebbleDark, GROUND_COLORS.pebbleLight, data.shade[index], pebbleColor)
+        mix(GROUND_COLORS.pebbleDark, GROUND_COLORS.pebbleLight, data.pebbleShade[index], pebbleColor)
         mix(c, pebbleColor, data.pebble[index], c)
       }
       if (mode === 'tiles') {

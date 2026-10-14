@@ -615,7 +615,12 @@ input[type='checkbox'] {
   grid-template-columns: repeat(3, 1fr);
 }
 
-/* A non-collapsing control section: title (and an action) in the header. */
+/* A non-collapsing control section: title (and an action) in the header.
+   It keeps its height; the panel scrolls instead of squashing it. */
+.control-card {
+  flex-shrink: 0;
+}
+
 .control-card-header {
   display: flex;
   align-items: center;

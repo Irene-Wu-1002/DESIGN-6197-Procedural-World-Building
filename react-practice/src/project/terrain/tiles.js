@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createTrunkField } from '../cover/trunks'
+import { DEFAULT_HABITAT, applyHabitat, createHabitatField } from '../habitat/habitatFields'
 import { TILE_SIZE, createGroundSampler } from './heightField'
 import { buildTileData, decimateTileData, tileKey } from './tileData'
 import { createTileMesh, recolorTileMesh } from './tileMesh'
@@ -17,6 +18,10 @@ import { createTileMesh, recolorTileMesh } from './tileMesh'
  *                larger-featured cover (scatterTile `lite`); receives
  *                shadows but doesn't cast them
  * Beyond the rings the far ground (farGround.js) takes over.
+ *
+ * Habitat changes (moisture, sunlight, wind…) don't rebuild shapes: loaded
+ * tiles get their fields redone, recoloured, and re-scattered, nearest
+ * first, a few per frame.
  */
 
 // Detail: the 3 × 3 tiles around the focus are finest.
@@ -43,7 +48,11 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
   const tiles = new Map()
   let sampler = null
   let trunks = null
+  let habitatSettings = DEFAULT_HABITAT
+  let habitat = null
   let version = 0
+  let habitatVersion = 0
+  let refreshing = 0
   let mode = 'off'
   let pending = 0
 
@@ -61,7 +70,28 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
     setGround(next) {
       sampler = createGroundSampler(next)
       trunks = createTrunkField(next.seed, next.trunkSpacing, next.trunks)
+      habitat = createHabitatField(sampler, trunks, habitatSettings)
       version += 1
+    },
+
+    /** New habitat settings; loaded tiles refresh their fields over a few frames. */
+    setHabitat(next) {
+      habitatSettings = next
+      if (!sampler) return
+      habitat = createHabitatField(sampler, trunks, habitatSettings)
+      habitatVersion += 1
+      // Every loaded tile is now out of date (counted properly next update).
+      refreshing = tiles.size
+    },
+
+    /** The current habitat field (shared with the far ground). */
+    get habitat() {
+      return habitat
+    },
+
+    /** Changes whenever the ground or the habitat changes. */
+    get habitatKey() {
+      return `${version}:${habitatVersion}`
     },
 
     /** The tree trunks of the current ground (cover/trunks.js). */
@@ -136,16 +166,37 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
         if (performance.now() - start > budgetMs && pending < todo.length) break
         // Cover always scatters from 64-segment data (so near and middle rings
         // agree on placement); middle tiles draw a decimated copy.
-        const data = buildTileData(sampler, want.x, want.z, Math.max(want.segments, NEAR_SEGMENTS), trunks, { pebbles: want.pebbles })
+        const data = buildTileData(sampler, want.x, want.z, Math.max(want.segments, NEAR_SEGMENTS), trunks, habitat, { pebbles: want.pebbles })
         const drawn = want.segments < NEAR_SEGMENTS ? decimateTileData(data, NEAR_SEGMENTS / want.segments) : data
         const mesh = createTileMesh(drawn, material, mode, depthMaterial)
         // Middle-ring tiles only receive shadows (fewer draws in the shadow pass).
         if (!want.pebbles) mesh.castShadow = false
         removeTile(key)
         group.add(mesh)
-        tiles.set(key, { mesh, data, version, segments: want.segments, pebbles: want.pebbles })
+        tiles.set(key, { mesh, data, version, habitatVersion, segments: want.segments, pebbles: want.pebbles })
         listeners.onTileReady?.(key, data)
         pending -= 1
+      }
+
+      // Habitat refresh: redo the fields of tiles that are otherwise current.
+      const stale = [...wanted.entries()]
+        .filter(([key]) => {
+          const tile = tiles.get(key)
+          return tile && tile.version === version && tile.habitatVersion !== habitatVersion
+        })
+        .sort((a, b) => a[1].ring - b[1].ring)
+      refreshing = stale.length
+      for (const [key] of stale) {
+        if (performance.now() - start > budgetMs) break
+        const tile = tiles.get(key)
+        applyHabitat(tile.data, habitat)
+        if (tile.mesh.userData.data !== tile.data) {
+          tile.mesh.userData.data = decimateTileData(tile.data, NEAR_SEGMENTS / tile.segments)
+        }
+        recolorTileMesh(tile.mesh, mode)
+        tile.habitatVersion = habitatVersion
+        listeners.onTileReady?.(key, tile.data)
+        refreshing -= 1
       }
     },
 
@@ -154,7 +205,7 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
       tiles.forEach((tile) => {
         if (!tile.pebbles) middle += 1
       })
-      return { loaded: tiles.size, near: tiles.size - middle, middle, pending }
+      return { loaded: tiles.size, near: tiles.size - middle, middle, pending, refreshing }
     },
 
     dispose() {

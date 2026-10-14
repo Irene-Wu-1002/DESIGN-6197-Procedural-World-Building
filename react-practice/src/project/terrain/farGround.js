@@ -1,8 +1,8 @@
 import * as THREE from 'three'
-import { FLOWER_COLORS, MOSS_COLORS } from '../cover/coverRules'
-import { flowerMoisture, flowerPatchAt } from '../cover/scatterTile'
+import { COVER_RULES, FLOWER_COLORS, HABITAT_NORMAL, MOSS_COLORS } from '../cover/coverRules'
+import { flowerMoisture, flowerPatchAt, preference } from '../cover/scatterTile'
 import { TILE_SIZE } from './heightField'
-import { GROUND_COLORS, moistureOf, smoothHeightOf, soilColor } from './tileData'
+import { GROUND_COLORS, smoothHeightOf, soilColor } from './tileData'
 
 // Ground cover read from afar: moss areas (damp ground) and flower drifts
 // tint the far ground, so they don't stop where the tiles end.
@@ -108,6 +108,7 @@ export function createFarGround(material, holeUniforms) {
   mesh.frustumCulled = false
 
   const out = {}
+  const fields = {}
   const color = [0, 0, 0]
   let lastKey = null
   // { cover, seed } for the moss / flower tints, or null.
@@ -122,15 +123,16 @@ export function createFarGround(material, holeUniforms) {
       coverVersion += 1
     },
     /**
-     * Rebuild around the focus tile when it, the ground, the cover, or the
-     * view distance (the outer ring, in tiles) changed. Returns true if it
-     * rebuilt.
+     * Rebuild around the focus tile when it, the ground or habitat (key),
+     * the cover, or the view distance (the outer ring, in tiles) changed.
+     * habitat: the habitat field (habitat/habitatFields.js). Returns true
+     * if it rebuilt.
      */
-    update(sampler, focusX, focusZ, viewDistance, version) {
+    update(sampler, habitat, focusX, focusZ, viewDistance, version) {
       const tileX = Math.floor(focusX / TILE_SIZE)
       const tileZ = Math.floor(focusZ / TILE_SIZE)
       const key = `${tileX},${tileZ},${viewDistance},${version},${coverVersion}`
-      if (key === lastKey || !sampler) return false
+      if (key === lastKey || !sampler || !habitat) return false
       lastKey = key
 
       // Centre on the middle of the focus tile.
@@ -157,22 +159,28 @@ export function createFarGround(material, holeUniforms) {
         // Colour keeps the bumps' damp/dry pattern near the tiles, then
         // fades to the broad pattern (sampling it coarsely would only alias).
         const bumps = 1 - smoothstep(outerEdge, outerEdge + BUMP_COLOR_FADE, distance)
-        soilColor(moistureOf(out.broad, out.bump * bumps), out.hill, color, out.litter)
+        habitat.farPoint(centerX + localX, centerZ + localZ, out, bumps, fields)
+        const { moisture } = fields
+        soilColor(moisture, out.hill, color, out.litter)
         // No pebble shapes out here, but keep their average tone so the
         // speckled ground doesn't stop at the tile edge.
         const cover = out.pebbleChance * PEBBLE_AREA
         for (let k = 0; k < 3; k += 1) color[k] += (PEBBLE_TONE[k] - color[k]) * cover
         if (coverSettings) {
           const { cover: c, seed } = coverSettings
-          const moisture = moistureOf(out.broad, out.bump * bumps)
           const offHill = 1 - out.hill
           const moss = c.moss.on
-            ? (c.moss.amount / 100) * FAR_COVER.moss * smoothstep(...FAR_COVER.mossWet, moisture) * offHill
+            ? (c.moss.amount / 100) *
+              FAR_COVER.moss *
+              smoothstep(...FAR_COVER.mossWet, moisture) *
+              preference(fields.shade, COVER_RULES.moss.shadePreference, HABITAT_NORMAL.shade) *
+              offHill
             : 0
           const flowers = c.flowers?.on
             ? (c.flowers.amount / 100) *
               FAR_COVER.flowers *
               flowerMoisture(moisture) *
+              preference(fields.sunlight, COVER_RULES.flowers.sunPreference, HABITAT_NORMAL.sunlight) *
               smoothstep(...FAR_COVER.flowerPatch, flowerPatchAt(centerX + localX, centerZ + localZ, seed)) *
               offHill
             : 0

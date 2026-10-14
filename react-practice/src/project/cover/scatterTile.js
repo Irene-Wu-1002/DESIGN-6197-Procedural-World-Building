@@ -1,7 +1,7 @@
 import { createRandom } from '../../utils/distributions'
 import { getNoise } from '../../utils/noise'
 import { TILE_SIZE, hash } from '../terrain/heightField'
-import { COVER_RULES } from './coverRules'
+import { COVER_RULES, HABITAT_NORMAL } from './coverRules'
 
 /**
  * Scatter one tile's ground cover from its data maps (terrain/tileData.js).
@@ -13,7 +13,8 @@ import { COVER_RULES } from './coverRules'
  * Each item: { x, y, z, yaw, normal: [x, y, z], scale: [x, y, z],
  *              palette, shade, variant }  (world metres; palette is an
  * index into the element's colour list in coverRules.js; leaves also carry
- * autumn: true/false and damp: 0–1)
+ * autumn: true/false and damp: 0–1). Habitat fields (moisture, sunlight,
+ * shade, wind) come with the tile data.
  *
  * Plain data only, no Three.js.
  */
@@ -95,6 +96,9 @@ export function scatterTile(data, { cover, seed, trunks }) {
     hill: field('hill', x, z),
     litter: field('litter', x, z),
     trunk: field('trunkDistance', x, z),
+    sunlight: field('sunlight', x, z),
+    shade: field('shade', x, z),
+    wind: field('wind', x, z),
   })
 
   // --- Mushrooms: clusters seeded by trunks (roots) and by damp tiles.
@@ -141,6 +145,8 @@ export function scatterTile(data, { cover, seed, trunks }) {
         const g = ground(x, z)
         if (g.moisture < cluster.minMoisture || g.slope > rule.maxSlope) continue
         if (g.hill > 0.2 || g.pebble > 0.3 || g.trunk < 0.005) continue
+        const sunny = Math.max(g.sunlight - HABITAT_NORMAL.sunlight, 0) / (1 - HABITAT_NORMAL.sunlight)
+        if (hash(a, b * 31 + m, seed + SALT.mushrooms + 10) < rule.sunAvoidance * sunny) continue
         const height = rule.height[0] + hash(a, b * 31 + m, seed + SALT.mushrooms + 6) ** 2 * (rule.height[1] - rule.height[0])
         if (!occupancy.free(x, z, height * 0.35)) continue
         occupancy.add(x, z, height * 0.35)
@@ -200,7 +206,9 @@ export function scatterTile(data, { cover, seed, trunks }) {
             field('pebble', x, z - step)
           ) > 0.5
         const chance =
-          amount * (1.4 * patch ** 1.5 * wet + 0.9 * nearTrunk + (besidePebble ? 0.35 * wet : 0))
+          amount *
+          (1.4 * patch ** 1.5 * wet + 0.9 * nearTrunk + (besidePebble ? 0.35 * wet : 0)) *
+          preference(g.shade, rule.shadePreference, HABITAT_NORMAL.shade)
         if (hash(ix, iz, seed + SALT.moss + 3) >= chance) continue
         if (!occupancy.free(x, z, radius * 0.7)) continue
         occupancy.add(x, z, radius * 0.7)
@@ -239,7 +247,8 @@ export function scatterTile(data, { cover, seed, trunks }) {
       const shade = random()
       const g = ground(x, z)
       const underTree = Math.exp(-g.trunk / rule.underTreeReach)
-      const chance = (amount * (1 + rule.underTreeBoost * underTree)) / (1 + rule.underTreeBoost)
+      const sheltered = preference(1 - g.wind, rule.windShelter, 1 - HABITAT_NORMAL.wind)
+      const chance = (amount * sheltered * (1 + rule.underTreeBoost * underTree)) / (1 + rule.underTreeBoost)
       if (keep >= chance) continue
       if (g.slope > rule.maxSlope || g.hill > 0.3 || g.trunk < 0.02) continue
       const range = isBranch ? rule.branchLength : rule.length
@@ -286,8 +295,9 @@ export function scatterTile(data, { cover, seed, trunks }) {
       const underTree = Math.exp(-g.trunk / rule.underTreeReach)
       const litter = 0.3 + 0.7 * smoothstep(0.3, 0.8, g.litter)
       const hollow = 0.8 + 0.4 * smoothstep(0.45, 0.7, g.moisture)
+      const sheltered = preference(1 - g.wind, rule.windShelter, 1 - HABITAT_NORMAL.wind)
       const chance =
-        (amount * litter * hollow * (1 + rule.underTreeBoost * underTree)) / (1 + rule.underTreeBoost)
+        (amount * litter * hollow * sheltered * (1 + rule.underTreeBoost * underTree)) / (1 + rule.underTreeBoost)
       if (keep >= chance) continue
       if (g.slope > rule.maxSlope || g.hill > 0.35 || g.pebble > 0.5 || g.trunk < 0.01) continue
       const length = rule.length[0] + size * (rule.length[1] - rule.length[0])
@@ -328,7 +338,7 @@ export function scatterTile(data, { cover, seed, trunks }) {
         if (!look.inside(x, z)) continue
         const g = ground(x, z)
         if (g.slope > rule.maxSlope || g.hill > 0.1 || g.pebble > 0.2 || g.trunk < rule.trunkGap) continue
-        const suited = flowerMoisture(g.moisture)
+        const suited = flowerMoisture(g.moisture) * preference(g.sunlight, rule.sunPreference, HABITAT_NORMAL.sunlight)
         const patch = flowerPatchAt(x, z, seed)
         if (h(2) >= amount * suited * smoothstep(0.45, 0.75, patch) * 1.6) continue
         if (!occupancy.free(x, z, 0.006)) continue
@@ -401,6 +411,15 @@ export function flowerPatchAt(x, z, seed) {
         seed: seed * 37 + SALT.flowers,
       })
   )
+}
+
+/**
+ * A habitat preference multiplier, 1 + 2 · weight · (value − middle): 1 at
+ * `middle`, and with the default middle from 1 − weight (value 0) to
+ * 1 + weight (value 1). Never negative.
+ */
+export function preference(value, weight, middle = 0.5) {
+  return Math.max(1 + 2 * weight * (value - middle), 0)
 }
 
 /** How well flowers like this moisture: 0–1 (moist, not wet). */

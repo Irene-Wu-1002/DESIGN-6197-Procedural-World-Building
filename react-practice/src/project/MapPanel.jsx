@@ -10,6 +10,7 @@ import {
   SelectMenu,
 } from './panel/PanelControls'
 import { ELEMENT_KEYS, MAP_TABS, SCATTER_ELEMENTS, TAB_KEYS } from './panel/mapPanelLayout'
+import { HABITAT_FIELDS } from './habitat/habitatFields'
 
 const formatPercent = (value) => `${value}%`
 
@@ -23,29 +24,30 @@ const ELEMENT_TITLES = {
   mushrooms: 'Mushrooms',
 }
 
-const PREVIEW_OPTIONS = [
-  ['off', 'Off'],
-  ['height', 'Height'],
-  ['slope', 'Slope'],
-  ['moisture', 'Moisture'],
-  ['tiles', 'Tile borders'],
-]
+const FIELD_OPTIONS = [['off', 'Off'], ...HABITAT_FIELDS]
+const PREVIEW_OPTIONS = [['off', 'Off'], ['height', 'Height'], ...HABITAT_FIELDS, ['tiles', 'Tile borders']]
+const isField = (preview) => HABITAT_FIELDS.some(([id]) => id === preview)
+const formatDegrees = (value) => `${value}°`
 
 /**
  * Map tab controls, in tabs: the ground's shape, habitat, ground cover,
  * paths, and debug previews.
- * status: { loaded, pending, focus: [x, z], ground } from the scene.
- * onResetKeys({ ground: [...], cover: [...], view: [...] }) restores just
- * those settings to their defaults; onReset restores everything.
+ * status: { loaded, pending, refreshing, focus: [x, z], ground } from the
+ * scene. habitatSettling: habitat changes are still on their way to the
+ * world. onResetKeys({ ground, cover, view, habitat: [...keys] }) restores
+ * just those settings to their defaults; onReset restores everything.
  */
 export default function MapPanel({
   ground,
   view,
   cover,
+  habitat,
+  habitatSettling,
   status,
   onGroundChange,
   onViewChange,
   onCoverChange,
+  onHabitatChange,
   onResetKeys,
   onReset,
 }) {
@@ -55,6 +57,17 @@ export default function MapPanel({
   const setGround = (key) => (value) => onGroundChange(key, value)
   const setView = (key) => (value) => onViewChange(key, value)
   const setGroup = (group, key) => (value) => onCoverChange(group, { ...cover[group], [key]: value })
+  const habitatSlider = (label, key, min, max, step, format = formatPercent) => (
+    <LabeledSlider
+      label={label}
+      value={habitat[key]}
+      min={min}
+      max={max}
+      step={step}
+      format={format}
+      onChange={(value) => onHabitatChange(key, value)}
+    />
+  )
 
   const percentSlider = (label, value, onChange, max = 200) => (
     <LabeledSlider
@@ -150,8 +163,40 @@ export default function MapPanel({
       {tab === 'habitat' && (
         <>
           <p className="section-note">
-            Tree trunks change the soil's moisture and colour around them. The ant hill brings ant
-            trails, and the fly agaric grows beside it.
+            Moisture, sunlight, shade and wind decide where moss, mushrooms, flowers and leaves
+            settle. The world updates a moment after you stop adjusting.
+          </p>
+          <SelectMenu
+            label="Show field"
+            value={isField(view.preview) ? view.preview : 'off'}
+            options={FIELD_OPTIONS}
+            onChange={setView('preview')}
+          />
+          <p className="section-note" aria-live="polite">
+            {habitatSettling ? 'Updating habitat…' : '\u00a0'}
+          </p>
+          <ControlCard title="Moisture">
+            {habitatSlider('Scale', 'moistureScale', 8, 120, 2, (value) => `${value} cm`)}
+            {habitatSlider('Contrast', 'moistureContrast', 0, 200, 5)}
+            {habitatSlider('Overall wetness', 'wetness', 0, 100, 5)}
+          </ControlCard>
+          <ControlCard title="Sunlight">
+            {habitatSlider('Sun direction', 'sunDirection', 0, 359, 1, formatDegrees)}
+            {habitatSlider('Sun elevation', 'sunElevation', 5, 90, 1, formatDegrees)}
+            {habitatSlider('Light threshold', 'lightThreshold', 0, 100, 5)}
+          </ControlCard>
+          <ControlCard title="Wind">
+            {habitatSlider('Direction', 'windDirection', 0, 355, 5, formatDegrees)}
+            {habitatSlider('Strength', 'windStrength', 0, 100, 5)}
+            {habitatSlider('Variation', 'windVariation', 0, 100, 5)}
+          </ControlCard>
+          <ControlCard title="Terrain influence">
+            {habitatSlider('Slope influence', 'slopeInfluence', 0, 200, 10)}
+            {habitatSlider('Concavity influence', 'concavityInfluence', 0, 200, 10)}
+          </ControlCard>
+          <p className="section-note">
+            Tree trunks shade and dampen the ground around them. The ant hill brings ant trails,
+            and the fly agaric grows beside it.
           </p>
           <ControlCard title="Trees & creatures">
             <EnableToggle label="Tree trunks" checked={ground.trunks} onChange={setGround('trunks')} />
@@ -168,7 +213,7 @@ export default function MapPanel({
             )}
             <EnableToggle label="Ant hill" checked={ground.antHill} onChange={setGround('antHill')} />
           </ControlCard>
-          <ControlCard title="Light">
+          <ControlCard title="Atmosphere">
             {percentSlider('Haze', view.haze, setView('haze'), 100)}
             {percentSlider('Dappled light', view.dapple, setView('dapple'), 100)}
           </ControlCard>
@@ -228,6 +273,7 @@ export default function MapPanel({
             Tiles {status.near ?? status.loaded} near
             {status.middle > 0 ? ` · ${status.middle} middle` : ''}
             {status.pending > 0 ? ` · ${status.pending} building` : ''}
+            {status.refreshing > 0 ? ` · ${status.refreshing} refreshing habitat` : ''}
           </p>
         </>
       )}

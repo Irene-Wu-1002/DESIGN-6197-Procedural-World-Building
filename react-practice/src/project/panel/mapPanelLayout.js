@@ -1,3 +1,5 @@
+import { DEFAULT_HABITAT } from '../habitat/habitatFields'
+
 // Which settings each tab and scatter element owns, so the panel can reset
 // just those. Keys are grouped by the scene state they live in.
 
@@ -29,7 +31,11 @@ export const ELEMENT_KEYS = {
 
 export const TAB_KEYS = {
   terrain: { ground: ['seed', 'slopes', 'bumps', 'warp', 'grain'] },
-  habitat: { ground: ['trunks', 'trunkSpacing', 'antHill'], view: ['haze', 'dapple'] },
+  habitat: {
+    ground: ['trunks', 'trunkSpacing', 'antHill'],
+    view: ['haze', 'dapple'],
+    habitat: Object.keys(DEFAULT_HABITAT),
+  },
   scatter: mergeKeys(Object.values(ELEMENT_KEYS)),
   paths: {},
   debug: { view: ['preview', 'distance'] },
