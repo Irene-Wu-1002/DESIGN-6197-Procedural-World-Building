@@ -1,7 +1,7 @@
 import { createRandom } from '../../utils/distributions'
-import { getNoise } from '../../utils/noise'
 import { TILE_SIZE, hash } from '../terrain/heightField'
-import { COVER_RULES, HABITAT_NORMAL, MOSS_COLORS } from './coverRules'
+import { COVER_RULES, FLOWER_COLORS, HABITAT_NORMAL, MOSS_COLORS } from './coverRules'
+import { FULL_DENSITY } from './flowerField'
 
 /**
  * Scatter one tile's ground cover from its data maps (terrain/tileData.js).
@@ -52,19 +52,21 @@ function createLookup(data) {
   return { at, normalAt, inside, x0, z0 }
 }
 
-// Circles already claimed in this tile, so items don't overlap.
+// Circles already claimed in this tile, so items don't overlap. Moss
+// circles are marked, so flowers can grow up through a moss carpet.
 function createOccupancy() {
   const taken = []
   return {
-    free(x, z, radius) {
+    free(x, z, radius, { throughMoss = false } = {}) {
       for (const other of taken) {
+        if (throughMoss && other.moss) continue
         const limit = radius + other.radius
         if ((other.x - x) ** 2 + (other.z - z) ** 2 < limit * limit) return false
       }
       return true
     },
-    add(x, z, radius) {
-      taken.push({ x, z, radius })
+    add(x, z, radius, moss = false) {
+      taken.push({ x, z, radius, moss })
     },
   }
 }
@@ -79,11 +81,12 @@ function tilt(normal, amount) {
 }
 
 /**
- * data: tile data; options: { cover, seed, trunks, moss } (moss: the moss
- * patch field, cover/mossField.js).
+ * data: tile data; options: { cover, seed, trunks, moss, flowers } (moss
+ * and flowers: the patch and colony fields, cover/mossField.js and
+ * cover/flowerField.js).
  * Returns { moss, mushrooms, twigs, branches, leaves: [variant0, 1, 2], flowers }.
  */
-export function scatterTile(data, { cover, seed, trunks, moss }) {
+export function scatterTile(data, { cover, seed, trunks, moss, flowers }) {
   const look = createLookup(data)
   const { x0, z0 } = look
   const occupancy = createOccupancy()
@@ -230,7 +233,7 @@ export function scatterTile(data, { cover, seed, trunks, moss }) {
         })
       }
     }
-    for (const [x, z, radius] of placed) occupancy.add(x, z, radius)
+    for (const [x, z, radius] of placed) occupancy.add(x, z, radius, true)
   }
 
   const tileRandom = (salt) => createRandom(Math.floor(hash(data.tileX, data.tileZ, seed + salt) * 4294967295))
@@ -326,42 +329,76 @@ export function scatterTile(data, { cover, seed, trunks, moss }) {
     }
   }
 
-  // --- Flowers (wood anemones): one possible flower per world cell, kept
-  // in noise-clustered drifts. Placed last, so they never move anything else.
-  if (cover.flowers?.on && cover.flowers.amount > 0) {
+  // --- Flowers (wood anemones): colonies (flowerField.js), or evenly
+  // spaced / fully random where the ground suits them. Placed last, so
+  // they never move anything else.
+  if (cover.flowers.on && cover.flowers.amount > 0 && flowers) {
     const rule = COVER_RULES.flowers
-    const amount = cover.flowers.amount / 100
-    const firstX = Math.floor(x0 / rule.cell)
-    const firstZ = Math.floor(z0 / rule.cell)
-    const lastX = Math.floor((x0 + TILE_SIZE) / rule.cell)
-    const lastZ = Math.floor((z0 + TILE_SIZE) / rule.cell)
-    for (let iz = firstZ; iz <= lastZ; iz += 1) {
-      for (let ix = firstX; ix <= lastX; ix += 1) {
-        const h = (k) => hash(ix, iz, seed + SALT.flowers + k)
-        const x = (ix + 0.1 + 0.8 * h(0)) * rule.cell
-        const z = (iz + 0.1 + 0.8 * h(1)) * rule.cell
-        if (!look.inside(x, z)) continue
+    const settings = cover.flowers
+    const colorVariation = settings.colorVariation / 100
+    const suits = (g) =>
+      g.hill <= 0.1 && g.pebble <= 0.2 && g.trunk >= rule.trunkGap
+        ? flowers.suitability({ sunlight: g.sunlight, moisture: g.moisture, slope: g.habitatSlope })
+        : 0
+    // h: seven 0–1 numbers fixed for this flower (size, height, look).
+    const addFlower = (x, z, tone, h) => {
+      if (!occupancy.free(x, z, 0.006, { throughMoss: true })) return
+      occupancy.add(x, z, 0.006)
+      const g = ground(x, z)
+      const middle = (rule.height[0] + rule.height[1]) / 2
+      const halfRange = (rule.height[1] - rule.height[0]) / 2
+      const height = middle + (h[0] * 2 - 1) * halfRange * (settings.heightVariation / 100)
+      const size = 1 + (h[1] * 2 - 1) * rule.scaleSpread * (settings.scaleVariation / 100)
+      // Mostly upright, nodding a little.
+      const lean = (h[2] - 0.5) * 0.3
+      result.flowers.push({
+        x,
+        y: g.y - 0.002,
+        z,
+        yaw: h[3] * Math.PI * 2,
+        normal: [lean, 1, (h[4] - 0.5) * 0.3],
+        scale: [middle * size, height * size, middle * size],
+        // Each colony (or area) has a tone; colour variation mixes in others.
+        palette: h[5] < colorVariation * 0.7 ? Math.floor(h[6] * FLOWER_COLORS.length) : tone,
+        shade: 0.5 + (h[6] - 0.5) * colorVariation,
+        variant: 0,
+      })
+    }
+
+    if (settings.distribution === 'colonies') {
+      for (const colony of flowers.coloniesIn(x0, z0, x0 + TILE_SIZE, z0 + TILE_SIZE)) {
+        for (const flower of colony.flowers) {
+          if (look.inside(flower.x, flower.z)) addFlower(flower.x, flower.z, colony.tone, flower.h)
+        }
+      }
+    } else if (settings.distribution === 'even') {
+      // One candidate per jittered cell, the cell set by the density (never
+      // closer than the minimum spacing).
+      const amount = settings.amount / 100
+      const cell = Math.max(settings.minSpacing / 100 / 0.6, 1 / Math.sqrt(amount * FULL_DENSITY))
+      for (let iz = Math.floor(z0 / cell); iz <= Math.floor((z0 + TILE_SIZE) / cell); iz += 1) {
+        for (let ix = Math.floor(x0 / cell); ix <= Math.floor((x0 + TILE_SIZE) / cell); ix += 1) {
+          const h = (k) => hash(ix, iz, seed + settings.seedOffset * 7919 + SALT.flowers + k)
+          const x = (ix + 0.5 + 0.4 * (h(0) - 0.5)) * cell
+          const z = (iz + 0.5 + 0.4 * (h(1) - 0.5)) * cell
+          if (!look.inside(x, z)) continue
+          const g = ground(x, z)
+          if (h(2) >= suits(g) * flowers.regionAt(x, z)) continue
+          addFlower(x, z, flowers.toneAt(x, z), [h(3), h(4), h(5), h(6), h(7), h(8), h(9)])
+        }
+      }
+    } else {
+      // Fully random: the same average density, no spacing rule.
+      const random = tileRandom(SALT.flowers + settings.seedOffset * 7919)
+      const tries = Math.round((settings.amount / 100) * FULL_DENSITY * TILE_SIZE * TILE_SIZE)
+      for (let k = 0; k < tries; k += 1) {
+        const x = x0 + random() * TILE_SIZE
+        const z = z0 + random() * TILE_SIZE
+        const keep = random()
+        const h = [random(), random(), random(), random(), random(), random(), random()]
         const g = ground(x, z)
-        if (g.slope > rule.maxSlope || g.hill > 0.1 || g.pebble > 0.2 || g.trunk < rule.trunkGap) continue
-        const suited = flowerMoisture(g.moisture) * preference(g.sunlight, rule.sunPreference, HABITAT_NORMAL.sunlight)
-        const patch = flowerPatchAt(x, z, seed)
-        if (h(2) >= amount * suited * smoothstep(0.45, 0.75, patch) * 1.6) continue
-        if (!occupancy.free(x, z, 0.006)) continue
-        occupancy.add(x, z, 0.006)
-        const height = rule.height[0] + h(3) * (rule.height[1] - rule.height[0])
-        // Mostly upright, nodding a little.
-        const lean = (h(4) - 0.5) * 0.3
-        result.flowers.push({
-          x,
-          y: g.y - 0.002,
-          z,
-          yaw: h(5) * Math.PI * 2,
-          normal: [lean, 1, (h(6) - 0.5) * 0.3],
-          scale: [height, height, height],
-          palette: Math.floor(h(7) * 4),
-          shade: h(8),
-          variant: 0,
-        })
+        if (keep >= suits(g) * flowers.regionAt(x, z)) continue
+        addFlower(x, z, flowers.toneAt(x, z), h)
       }
     }
   }
@@ -401,23 +438,6 @@ function thinForDistance(result, seed) {
   result.leaves = result.leaves.map((list) => list.filter((item) => keep(item, k.leaves)))
 }
 
-/** Flower drift strength at (x, z): 0–1 (flowers grow above ~0.5). */
-export function flowerPatchAt(x, z, seed) {
-  const rule = COVER_RULES.flowers
-  return (
-    0.5 +
-    0.5 *
-      getNoise(x, z, {
-        type: 'perlin',
-        scale: 1 / rule.patchWavelength,
-        octaves: 2,
-        persistence: 0.5,
-        lacunarity: 2,
-        seed: seed * 37 + SALT.flowers,
-      })
-  )
-}
-
 /**
  * A habitat preference multiplier, 1 + 2 · weight · (value − middle): 1 at
  * `middle`, and with the default middle from 1 − weight (value 0) to
@@ -425,10 +445,4 @@ export function flowerPatchAt(x, z, seed) {
  */
 export function preference(value, weight, middle = 0.5) {
   return Math.max(1 + 2 * weight * (value - middle), 0)
-}
-
-/** How well flowers like this moisture: 0–1 (moist, not wet). */
-export function flowerMoisture(moisture) {
-  const [dry, wet] = COVER_RULES.flowers.moisture
-  return smoothstep(dry, dry + 0.15, moisture) * (1 - smoothstep(wet - 0.1, wet, moisture))
 }

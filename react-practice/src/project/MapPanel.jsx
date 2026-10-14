@@ -29,6 +29,12 @@ const PREVIEW_OPTIONS = [['off', 'Off'], ['height', 'Height'], ...HABITAT_FIELDS
 const isField = (preview) => HABITAT_FIELDS.some(([id]) => id === preview)
 const formatDegrees = (value) => `${value}°`
 const formatCm = (value) => `${value} cm`
+const formatTenthCm = (value) => `${value.toFixed(1)} cm`
+const FLOWER_DISTRIBUTIONS = [
+  ['colonies', 'Colonies'],
+  ['even', 'Even spacing'],
+  ['random', 'Fully random'],
+]
 
 /**
  * Map tab controls, in tabs: the ground's shape, habitat, ground cover,
@@ -83,18 +89,21 @@ export default function MapPanel({
     />
   )
 
-  // One moss setting as a slider.
-  const mossSlider = (label, key, min, max, step, format = formatPercent) => (
+  // A slider for one setting of a ground-cover group (moss, flowers).
+  const groupSlider = (group) => (label, key, min, max, step, format = formatPercent) => (
     <LabeledSlider
       label={label}
-      value={cover.moss[key]}
+      value={cover[group][key]}
       min={min}
       max={max}
       step={step}
       format={format}
-      onChange={setGroup('moss', key)}
+      onChange={setGroup(group, key)}
     />
   )
+  const mossSlider = groupSlider('moss')
+  const flowerSlider = groupSlider('flowers')
+  const colonies = cover.flowers.distribution === 'colonies'
 
   // Enable + Amount for one ground-cover group.
   const coverAmount = (id) => (
@@ -113,7 +122,7 @@ export default function MapPanel({
             {mossSlider('Amount', 'amount', 0, 100, 1)}
             {mossSlider('Patch size', 'patchSize', 5, 80, 1, formatCm)}
             {mossSlider('Patch contrast', 'patchContrast', 0, 100, 5)}
-            {mossSlider('Minimum spacing', 'minSpacing', 0.5, 3, 0.1, (value) => `${value.toFixed(1)} cm`)}
+            {mossSlider('Minimum spacing', 'minSpacing', 0.5, 3, 0.1, formatTenthCm)}
             {mossSlider('Moisture preference', 'moisturePreference', 0, 100, 5)}
             {mossSlider('Shade preference', 'shadePreference', 0, 100, 5)}
             {mossSlider('Concavity preference', 'concavityPreference', 0, 100, 5)}
@@ -133,7 +142,41 @@ export default function MapPanel({
         )}
       </>
     ),
-    flowers: coverAmount('flowers'),
+    flowers: (
+      <>
+        <EnableToggle label="Enabled" checked={cover.flowers.on} onChange={setGroup('flowers', 'on')} />
+        {cover.flowers.on && (
+          <>
+            <SelectMenu
+              label="Distribution"
+              value={cover.flowers.distribution}
+              options={FLOWER_DISTRIBUTIONS}
+              onChange={setGroup('flowers', 'distribution')}
+            />
+            {flowerSlider('Amount', 'amount', 0, 100, 1)}
+            {colonies && flowerSlider('Colony count', 'colonyCount', 0.5, 15, 0.5, (value) => `${value} / m²`)}
+            {colonies && flowerSlider('Colony radius', 'colonyRadius', 2, 30, 1, formatCm)}
+            {colonies && flowerSlider('Flowers per colony', 'flowersPerColony', 1, 40, 1, (value) => value)}
+            {flowerSlider('Minimum flower spacing', 'minSpacing', 0.5, 5, 0.1, formatTenthCm)}
+            {flowerSlider('Sunlight preference', 'sunlightPreference', 0, 100, 5)}
+            {flowerSlider('Moisture preference', 'moisturePreference', 0, 100, 5)}
+            {flowerSlider('Maximum slope', 'maxSlope', 5, 45, 1, formatDegrees)}
+            {flowerSlider('Height variation', 'heightVariation', 0, 100, 5)}
+            {flowerSlider('Scale variation', 'scaleVariation', 0, 100, 5)}
+            {flowerSlider('Color variation', 'colorVariation', 0, 100, 5)}
+            <AdvancedSection>
+              {colonies && flowerSlider('Colony falloff', 'colonyFalloff', 0, 100, 5)}
+              {flowerSlider('Seed offset', 'seedOffset', 0, 999, 1, (value) => value)}
+              {flowerSlider('Noise influence', 'noiseInfluence', 0, 100, 5)}
+            </AdvancedSection>
+            <p className="section-note">
+              Flowers like sunny, moderately moist, fairly flat ground. Noise influence leaves whole
+              regions without flowers.
+            </p>
+          </>
+        )}
+      </>
+    ),
     twigs: coverAmount('twigs'),
     leaves: (
       <>

@@ -11,12 +11,11 @@
  *   twigs      uniform random                     more under trees
  *   leaves     uniform random + rotation,         more under trees, in litter
  *              density from a litter noise        patches and hollows
- *   flowers    noise-clustered drifts,            moist but not wet, gentle
- *   (wood      one per jittered world cell        slopes, out in the open
- *   anemones)                                     (off the hill, away from bark)
+ *   flowers    colonies (flowerField.js), or      sunny, moderately moist,
+ *   (wood      even spacing / fully random;       fairly flat; whole regions
+ *   anemones)  a slow region mask empties areas   bare (off the hill and bark)
  * Habitat (habitat/habitatFields.js) adds gentle preferences: mushrooms
- * shun full sun, flowers like sunlight, and leaves and
- * twigs gather where the wind is calm. Each is 1 at average conditions,
+ * shun full sun, and leaves and twigs gather where the wind is calm. Each is 1 at average conditions,
  * so the habitat reshapes where things are more than how many.
  * Placement order: mushrooms → moss → twigs → leaves → flowers (earlier
  * claim space; the sparse mushrooms go first so dense moss can't crowd them
@@ -48,7 +47,27 @@ export const DEFAULT_COVER = {
     randomOffset: 0,
   },
   mushrooms: { on: true, amount: 50 },
-  flowers: { on: true, amount: 50 },
+  // Flowers: colony sizes in cm, spacing in cm, slope in degrees.
+  flowers: {
+    on: true,
+    distribution: 'colonies',
+    amount: 50,
+    colonyCount: 6,
+    colonyRadius: 8,
+    flowersPerColony: 15,
+    minSpacing: 1.5,
+    sunlightPreference: 60,
+    moisturePreference: 60,
+    maxSlope: 25,
+    heightVariation: 40,
+    scaleVariation: 30,
+    colorVariation: 40,
+    // Advanced: how strongly colonies gather at the centre (%), a different
+    // colony arrangement, and how much ground the region noise empties (%).
+    colonyFalloff: 50,
+    seedOffset: 0,
+    noiseInfluence: 60,
+  },
   flyAgaric: true,
 }
 
@@ -101,15 +120,13 @@ export const COVER_RULES = {
     windShelter: 0.4,
   },
   flowers: {
-    cell: 0.05,
+    // Stem height (m): the middle of this range, ± half of it at 100%
+    // height variation.
     height: [0.05, 0.11],
-    patchWavelength: 0.35,
-    moisture: [0.3, 0.8],
-    maxSlope: 28,
+    // Overall size ± this share at 100% scale variation.
+    scaleSpread: 0.4,
     // Keep this far from bark (m).
     trunkGap: 0.12,
-    // More in sunlight: × (1 ± this) from shade to full sun.
-    sunPreference: 0.4,
   },
 }
 

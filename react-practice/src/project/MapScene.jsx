@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import MapPanel from './MapPanel'
 import { DEFAULT_COVER } from './cover/coverRules'
 import { createCoverRenderer, createTrunkRenderer } from './cover/coverRenderer'
+import { createFlowerField } from './cover/flowerField'
 import { createFlyAgaric } from './cover/flyAgaric'
 import { createMossField } from './cover/mossField'
 import { scatterTile } from './cover/scatterTile'
@@ -98,9 +99,10 @@ export default function MapScene() {
   const sunOffsetRef = useRef(sunOffsetOf(DEFAULT_HABITAT))
   const controllerRef = useRef(null)
   const overlayRef = useRef(null)
-  // What the tile listener needs to scatter a new tile (moss: the moss
-  // patch field, built from the settled settings below).
-  const coverContextRef = useRef({ cover: DEFAULT_COVER, seed: DEFAULT_GROUND.seed, moss: null })
+  // What the tile listener needs to scatter a new tile (moss, flowers: the
+  // moss patch and flower colony fields, built from the settled settings
+  // below).
+  const coverContextRef = useRef({ cover: DEFAULT_COVER, seed: DEFAULT_GROUND.seed, moss: null, flowers: null })
   const [ground, setGround] = useState(DEFAULT_GROUND)
   const [view, setView] = useState(DEFAULT_VIEW)
   // Cover controls update instantly; tiles re-scatter once they settle.
@@ -178,8 +180,8 @@ export default function MapScene() {
     let builds = 0
     const tiles = createTileManager(scene, material, depthMaterial, {
       onTileReady: (key, data) => {
-        const { cover, seed, moss } = coverContextRef.current
-        const items = scatterTile(data, { cover, seed, moss, trunks: tiles.trunks })
+        const { cover, seed, moss, flowers } = coverContextRef.current
+        const items = scatterTile(data, { cover, seed, moss, flowers, trunks: tiles.trunks })
         coverRenderer.setTile(key, items)
         world.setTile(key, items)
         builds += 1
@@ -503,15 +505,16 @@ export default function MapScene() {
   }, [settledHabitat])
 
   // Settled cover settings (and any ground or habitat change) rebuild the
-  // moss patch field, then loaded tiles re-scatter over a few frames
+  // moss patch and flower colony fields, then loaded tiles re-scatter over a few frames
   // (no ground rebuild). Declared after the ground and habitat effects, so
   // it sees their new fields.
   useEffect(() => {
     const tiles = tilesRef.current
     if (!tiles?.habitat) return
     const moss = createMossField(settledCover.moss, { habitat: tiles.habitat, sampler: tiles.sampler, seed })
-    coverContextRef.current = { cover: settledCover, seed, moss }
-    farGroundRef.current?.setCover(settledCover, seed, moss)
+    const flowers = createFlowerField(settledCover.flowers, { habitat: tiles.habitat, seed })
+    coverContextRef.current = { cover: settledCover, seed, moss, flowers }
+    farGroundRef.current?.setCover(settledCover, moss, flowers)
     tiles.refreshCover()
   }, [settledCover, settledHabitat, seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing])
 

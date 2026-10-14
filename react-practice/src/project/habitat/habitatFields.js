@@ -237,6 +237,32 @@ export function createHabitatField(sampler, trunks, habitat) {
     },
 
     /**
+     * Every field at one world point, measured with the same stencil as the
+     * lattice (for things decided in world space, like flower colonies that
+     * cross tile edges). Also fills hill and pebble from the ground there.
+     */
+    at(x, z, out) {
+      const sample = {}
+      const height = (px, pz) => {
+        sampler.sample(px, pz, sample)
+        return sample.height - sample.pebbleHeight
+      }
+      const east = height(x + SPACING, z)
+      const west = height(x - SPACING, z)
+      const north = height(x, z + SPACING)
+      const south = height(x, z - SPACING)
+      const h = height(x, z)
+      const dx = (east - west) / (2 * SPACING)
+      const dz = (north - south) / (2 * SPACING)
+      const laplacian = (east + west + north + south - 4 * h) / (SPACING * SPACING)
+      const slope = (Math.atan(Math.hypot(dx, dz)) * 180) / Math.PI
+      fieldsAt(x, z, dx, dz, slope, Math.tanh(laplacian / CONCAVITY_SCALE), nearTrunks(x, z, trunkReach), out)
+      out.hill = sample.hill
+      out.pebble = sample.pebble
+      return out
+    },
+
+    /**
      * Rough fields for the far ground, from one ground sample there: flat,
      * with concavity guessed from the bump noise (bumps: 0–1, how much of
      * the bumps still shows). Fills { moisture, sunlight, shade }.

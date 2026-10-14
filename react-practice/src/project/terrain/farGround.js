@@ -1,19 +1,18 @@
 import * as THREE from 'three'
-import { COVER_RULES, FLOWER_COLORS, HABITAT_NORMAL, MOSS_COLORS } from '../cover/coverRules'
-import { flowerMoisture, flowerPatchAt, preference } from '../cover/scatterTile'
+import { FLOWER_COLORS, MOSS_COLORS } from '../cover/coverRules'
 import { TILE_SIZE } from './heightField'
 import { GROUND_COLORS, smoothHeightOf, soilColor } from './tileData'
 
-// Ground cover read from afar: moss patches (the same patch field as the
-// tiles) and flower drifts tint the far ground, so they don't stop where
-// the tiles end.
+// Ground cover read from afar: moss patches and flowery regions (the same
+// fields as the tiles) tint the far ground, so they don't stop where the
+// tiles end.
 const averageColor = (list) => {
   const sum = list.map((hex) => new THREE.Color(hex)).reduce((a, c) => a.add(c), new THREE.Color(0, 0, 0))
   return sum.multiplyScalar(1 / list.length).toArray()
 }
 const MOSS_TONE = averageColor(MOSS_COLORS)
 const FLOWER_TONE = averageColor(FLOWER_COLORS)
-const FAR_COVER = { moss: 0.5, flowers: 0.22, flowerPatch: [0.45, 0.75] }
+const FAR_COVER = { moss: 0.5, flowers: 0.22 }
 
 /**
  * Far ground: one coarse ring-shaped mesh around the focus, out to
@@ -112,16 +111,16 @@ export function createFarGround(material, holeUniforms) {
   const fields = {}
   const color = [0, 0, 0]
   let lastKey = null
-  // { cover, seed, moss } for the moss / flower tints, or null (moss: the
-  // moss patch field, cover/mossField.js).
+  // { cover, moss, flowers } for the moss / flower tints, or null (moss
+  // and flowers: cover/mossField.js and cover/flowerField.js).
   let coverSettings = null
   let coverVersion = 0
 
   return {
     mesh,
     /** Ground-cover settings for the far tints (rebuilds on the next update). */
-    setCover(cover, seed, moss) {
-      coverSettings = { cover, seed, moss }
+    setCover(cover, moss, flowers) {
+      coverSettings = { cover, moss, flowers }
       coverVersion += 1
     },
     /**
@@ -169,7 +168,7 @@ export function createFarGround(material, holeUniforms) {
         const cover = out.pebbleChance * PEBBLE_AREA
         for (let k = 0; k < 3; k += 1) color[k] += (PEBBLE_TONE[k] - color[k]) * cover
         if (coverSettings) {
-          const { cover: c, seed, moss: mossField } = coverSettings
+          const { cover: c, moss: mossField, flowers: flowerField } = coverSettings
           const offHill = 1 - out.hill
           const moss =
             c.moss.on && mossField
@@ -182,14 +181,14 @@ export function createFarGround(material, holeUniforms) {
                 }) *
                 offHill
               : 0
-          const flowers = c.flowers?.on
-            ? (c.flowers.amount / 100) *
-              FAR_COVER.flowers *
-              flowerMoisture(moisture) *
-              preference(fields.sunlight, COVER_RULES.flowers.sunPreference, HABITAT_NORMAL.sunlight) *
-              smoothstep(...FAR_COVER.flowerPatch, flowerPatchAt(centerX + localX, centerZ + localZ, seed)) *
-              offHill
-            : 0
+          const flowers =
+            c.flowers.on && flowerField
+              ? (c.flowers.amount / 100) *
+                FAR_COVER.flowers *
+                flowerField.suitability({ sunlight: fields.sunlight, moisture, slope: 0 }) *
+                flowerField.regionAt(centerX + localX, centerZ + localZ) *
+                offHill
+              : 0
           for (let k = 0; k < 3; k += 1) {
             color[k] += (MOSS_TONE[k] - color[k]) * moss
             color[k] += (FLOWER_TONE[k] - color[k]) * flowers
