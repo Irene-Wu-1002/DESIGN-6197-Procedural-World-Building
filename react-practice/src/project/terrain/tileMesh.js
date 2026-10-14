@@ -23,7 +23,7 @@ function borderLoop(n) {
 }
 
 /** depthMaterial: shadow-pass material that morphs like `material`. */
-export function createTileMesh(data, material, mode, depthMaterial) {
+export function createTileMesh(data, material, mode, depthMaterial, exclusions = null) {
   const { n, step, height, normal, smoothHeight, smoothNormal } = data
   const loop = borderLoop(n)
   const gridCount = n * n
@@ -95,15 +95,18 @@ export function createTileMesh(data, material, mode, depthMaterial) {
   mesh.castShadow = true
   mesh.receiveShadow = true
   mesh.userData = { data, loop }
-  recolorTileMesh(mesh, mode)
+  recolorTileMesh(mesh, mode, exclusions)
   return mesh
 }
 
-/** Repaint a tile for a preview mode without rebuilding its shape. */
-export function recolorTileMesh(mesh, mode) {
+/**
+ * Repaint a tile for a preview mode without rebuilding its shape
+ * (exclusions: for the exclusion-zone preview).
+ */
+export function recolorTileMesh(mesh, mode, exclusions = null) {
   const { data, loop } = mesh.userData
   const colors = mesh.geometry.attributes.color.array
-  colorTile(data, mode, colors)
+  colorTile(data, mode, colors, exclusions)
   const gridCount = data.n * data.n
   loop.forEach((source, k) => {
     const target = gridCount + k

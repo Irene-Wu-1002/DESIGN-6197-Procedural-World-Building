@@ -14,6 +14,12 @@ const DISTANCE = 0.24
 // smooths out with distance.
 const BURY = 0.02
 
+/** Where the fly agaric stands for this seed (world x, z). */
+export function agaricSpot(seed) {
+  const angle = hash(seed, 17, 9001) * Math.PI * 2
+  return { x: ANT_HILL.x + Math.cos(angle) * DISTANCE, z: ANT_HILL.z + Math.sin(angle) * DISTANCE }
+}
+
 const lathe = (points, segments = 40) =>
   new THREE.LatheGeometry(points.map(([r, y]) => new THREE.Vector2(r, y)), segments)
 
@@ -123,16 +129,12 @@ export function createFlyAgaric(scene) {
       group.visible = Boolean(visible && sampler)
       if (!group.visible) return
       const angle = hash(seed, 17, 9001) * Math.PI * 2
-      const x = ANT_HILL.x + Math.cos(angle) * DISTANCE
-      const z = ANT_HILL.z + Math.sin(angle) * DISTANCE
+      const { x, z } = agaricSpot(seed)
       group.position.set(x, sampler.height(x, z) - 0.002, z)
       group.rotation.set(0, angle, (hash(seed, 18, 9001) - 0.5) * 0.12)
     },
     /** Where it stands (for keeping other cover away), or null. */
-    spot(seed) {
-      const angle = hash(seed, 17, 9001) * Math.PI * 2
-      return { x: ANT_HILL.x + Math.cos(angle) * DISTANCE, z: ANT_HILL.z + Math.sin(angle) * DISTANCE }
-    },
+    spot: agaricSpot,
     dispose() {
       scene.remove(group)
       for (const geometry of [stem, ring, cap, gills]) geometry.dispose()

@@ -67,6 +67,7 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks, habitat, 
   const pebbleShade = new Float32Array(count)
   const hill = new Float32Array(count)
   const litter = new Float32Array(count)
+  const trailTone = new Float32Array(count)
   const trunkDistance = new Float32Array(count)
   const out = {}
 
@@ -85,6 +86,7 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks, habitat, 
       pebbleShade[index] = out.shade
       hill[index] = out.hill
       litter[index] = out.litter
+      trailTone[index] = out.trailTone
       trunkDistance[index] = trunkDistanceAt(x, z)
     }
   }
@@ -131,6 +133,7 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks, habitat, 
     pebbleShade,
     hill,
     litter,
+    trailTone,
     trunkDistance,
   }
   return applyHabitat(data, habitat)
@@ -168,6 +171,7 @@ export function decimateTileData(data, factor) {
     pebbleShade: pick(data.pebbleShade),
     hill: pick(data.hill),
     litter: pick(data.litter),
+    trailTone: pick(data.trailTone),
     trunkDistance: pick(data.trunkDistance),
     ...pickHabitat(data, pick),
   }
@@ -197,6 +201,8 @@ export const GROUND_COLORS = {
   pebbleDark: hex('#5f5a53'),
   // Rotting leaf litter: the soil tint where fallen leaves gather.
   litter: hex('#5e3d1f'),
+  // Ant trail: packed, darker soil.
+  trail: hex('#2e2219'),
 }
 
 const PREVIEW = {
@@ -208,6 +214,9 @@ const PREVIEW = {
   // Ridges warm, flat grey, hollows blue.
   concavity: [hex('#d9853b'), hex('#6f6a64'), hex('#2f6fb8')],
   windCalm: hex('#151a22'),
+  // Exclusion zones: inside (no cover), and the soft edge (small cover fades).
+  zone: hex('#b3261e'),
+  softEdge: hex('#f0a020'),
 }
 const HEIGHT_RANGE = [-0.03, 0.05]
 const SLOPE_RANGE = 60
@@ -225,23 +234,27 @@ const smoothstep = (edge0, edge1, value) => {
 
 /**
  * Soil colour (linear RGB into `out`): damp soil in hollows, dry sand where
- * it's driest, reddish fine soil on the ant hill.
+ * it's driest, reddish fine soil on the ant hill, packed dark soil on the
+ * ant trail (trailTone 0–1).
  */
-export function soilColor(moisture, hill, out, litter = 0) {
+export function soilColor(moisture, hill, out, litter = 0, trailTone = 0) {
   mix(GROUND_COLORS.soil, GROUND_COLORS.damp, smoothstep(0.55, 0.75, moisture), out)
   mix(out, GROUND_COLORS.sand, 0.6 * smoothstep(0.42, 0.28, moisture), out)
   // Leaf litter darkens and warms the soil where leaves gather.
   mix(out, GROUND_COLORS.litter, 0.45 * smoothstep(0.45, 0.8, litter), out)
   mix(out, GROUND_COLORS.hill, 0.85 * hill, out)
+  mix(out, GROUND_COLORS.trail, Math.min(trailTone, 1), out)
   return out
 }
 
 /**
  * Write a colour per grid point into `colors` (n² × 3, linear RGB).
  * mode: off | height | tiles, or a habitat field: moisture | sunlight |
- * shade | slope | concavity | wind (hue = direction, brightness = speed)
+ * shade | slope | concavity | wind (hue = direction, brightness = speed),
+ * or exclusion (zones over the natural ground; needs `exclusions`, see
+ * paths/exclusionZones.js)
  */
-export function colorTile(data, mode, colors) {
+export function colorTile(data, mode, colors, exclusions = null) {
   const { n } = data
   const c = [0, 0, 0]
   const pebbleColor = [0, 0, 0]
@@ -265,10 +278,17 @@ export function colorTile(data, mode, colors) {
       mix(PREVIEW.windCalm, c, Math.min(data.wind[index] * 1.5, 1), c)
     } else {
       // Natural ground, with pebbles on top.
-      soilColor(data.moisture[index], data.hill[index], c, data.litter[index])
+      soilColor(data.moisture[index], data.hill[index], c, data.litter[index], data.trailTone[index])
       if (data.pebble[index] > 0) {
         mix(GROUND_COLORS.pebbleDark, GROUND_COLORS.pebbleLight, data.pebbleShade[index], pebbleColor)
         mix(c, pebbleColor, data.pebble[index], c)
+      }
+      if (mode === 'exclusion' && exclusions) {
+        const x = data.tileX * TILE_SIZE + (index % n) * data.step
+        const z = data.tileZ * TILE_SIZE + Math.floor(index / n) * data.step
+        const d = exclusions.distance(x, z)
+        if (d < 0) mix(c, PREVIEW.zone, 0.75, c)
+        else mix(c, PREVIEW.softEdge, 0.7 * (1 - exclusions.fade(d)), c)
       }
       if (mode === 'tiles') {
         const row = Math.floor(index / n)

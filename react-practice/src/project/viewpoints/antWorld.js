@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { antHillEntrances, entranceFacing } from '../paths/antTrail'
 import { ANT_HILL, hash } from '../terrain/heightField'
 
 /**
@@ -6,12 +7,13 @@ import { ANT_HILL, hash } from '../terrain/heightField'
  * pheromone trails that lead from them to food (the fly agaric, the nearest
  * trunk bases, and a few seeded foraging spots). Both are decided by the
  * seed and the ground alone, like everything else, so every viewpoint shares
- * them; the trails are chemical, so only the ant perceives them (uScent).
+ * them; the trails are chemical, so only the ant perceives them (uScent),
+ * unless Paths > Show pheromones draws them for every view. The trail to
+ * the fly agaric follows the visible ant trail (paths/antTrail.js).
  *
  * Queries for the ant: nearestTrail, nearestEntrance, exitFrom.
  */
 
-const ENTRANCE = { main: 0.006, side: 0.0035, sideCount: 3, distance: [0.035, 0.06] }
 // Trail sampling step, ribbon half-width, and lift above the ground (m).
 const STEP = 0.004
 const HALF_WIDTH = 0.0018
@@ -47,6 +49,8 @@ const TRAIL_FRAGMENT = /* glsl */ `
 #include <logdepthbuf_pars_fragment>
 uniform float uScent;
 uniform float uTime;
+uniform float uIntensity;
+uniform float uHalfWidth;
 uniform vec2 uMorphCenter;
 uniform vec2 uFade;
 varying float vAlong;
@@ -55,13 +59,13 @@ varying vec3 vWorld;
 void main() {
   #include <logdepthbuf_fragment>
   // Droplets laid every ~6 mm, over a faint continuous wash.
-  vec2 cell = vec2((fract(vAlong / 0.006) - 0.5) * 0.006, vSide * ${HALF_WIDTH.toFixed(4)});
+  vec2 cell = vec2((fract(vAlong / 0.006) - 0.5) * 0.006, vSide * uHalfWidth);
   float drop = 1.0 - smoothstep(0.0006, 0.0013, length(cell));
   float wash = 0.3 * (1.0 - vSide * vSide);
   // A slow pulse running outward from the nest.
   float pulse = 0.65 + 0.35 * sin(vAlong * 90.0 - uTime * 2.5);
   float fade = 1.0 - smoothstep(uFade.x, uFade.y, distance(vWorld.xz, uMorphCenter));
-  float alpha = (drop + wash) * pulse * fade * uScent;
+  float alpha = min((drop + wash) * pulse * fade * uScent * uIntensity, 1.0);
   vec3 color = mix(vec3(0.35, 0.95, 0.78), vec3(0.7, 0.5, 1.0), 0.5 + 0.5 * sin(vAlong * 6.0));
   gl_FragColor = vec4(color * alpha, alpha);
 }
@@ -167,6 +171,10 @@ export function createAntWorld(scene, morphUniforms) {
   const uniforms = {
     uScent: { value: 0 },
     uTime: { value: 0 },
+    // Paths > Pheromones: strength (0–1, 0.7 is the old look) and ribbon
+    // half-width (m).
+    uIntensity: { value: 1 },
+    uHalfWidth: { value: HALF_WIDTH },
     uNear: { value: -1 },
     uMorphCenter: morphUniforms.uMorphCenter,
     uFade: { value: new THREE.Vector2(1, 2) },
@@ -204,6 +212,8 @@ export function createAntWorld(scene, morphUniforms) {
 
   let trails = []
   let entrances = []
+  let lastSampler = null
+  const pheromones = { show: false, intensity: 0.7, width: 1 }
 
   const buildTrailGeometry = (sampler) => {
     const positions = []
@@ -221,8 +231,8 @@ export function createAntWorld(scene, morphUniforms) {
         tx /= length
         tz /= length
         for (const s of [-1, 1]) {
-          const x = trail.points[i * 2] - tz * HALF_WIDTH * s
-          const z = trail.points[i * 2 + 1] + tx * HALF_WIDTH * s
+          const x = trail.points[i * 2] - tz * uniforms.uHalfWidth.value * s
+          const z = trail.points[i * 2 + 1] + tx * uniforms.uHalfWidth.value * s
           positions.push(x, sampler.height(x, z) + LIFT, z)
           along.push(trail.lengths[i])
           side.push(s)
@@ -279,23 +289,22 @@ export function createAntWorld(scene, morphUniforms) {
   return {
     /**
      * Rebuild for the current ground: sampler, trunks (field), seed,
-     * antHill (on/off), agaric ({ x, z } or null).
+     * antHill (on/off), agaric ({ x, z } or null), antTrail (the visible
+     * trail, paths/antTrail.js, or null).
      */
-    place({ sampler, trunks, seed, antHill, agaric }) {
+    place({ sampler, trunks, seed, antHill, agaric, antTrail = null }) {
       trails = []
       entrances = []
+      lastSampler = sampler
       if (sampler && antHill) {
-        entrances.push({ x: ANT_HILL.x, z: ANT_HILL.z, radius: ENTRANCE.main })
-        const turn = hash(seed, 1, SALT) * Math.PI * 2
-        for (let k = 0; k < ENTRANCE.sideCount; k += 1) {
-          const angle = turn + (k / ENTRANCE.sideCount) * Math.PI * 2 + (hash(seed, 10 + k, SALT) - 0.5) * 0.8
-          const d = ENTRANCE.distance[0] + hash(seed, 20 + k, SALT) * (ENTRANCE.distance[1] - ENTRANCE.distance[0])
-          entrances.push({ x: ANT_HILL.x + Math.cos(angle) * d, z: ANT_HILL.z + Math.sin(angle) * d, radius: ENTRANCE.side })
-        }
+        entrances.push(...antHillEntrances(seed))
 
         // Food: the fly agaric, the nearest trunk bases, and foraging spots.
         const targets = []
-        if (agaric) {
+        // With a visible trail, the scent to the agaric follows it.
+        if (agaric && antTrail) {
+          trails.push(createTrail(Float32Array.from(antTrail.points)))
+        } else if (agaric) {
           const d = Math.hypot(agaric.x - ANT_HILL.x, agaric.z - ANT_HILL.z) || 1
           const back = 0.03 / d
           targets.push({ x: agaric.x - (agaric.x - ANT_HILL.x) * back, z: agaric.z - (agaric.z - ANT_HILL.z) * back })
@@ -322,18 +331,10 @@ export function createAntWorld(scene, morphUniforms) {
 
         targets.forEach((target, index) => {
           // Leave by the entrance facing the food (the side ones first).
-          const heading = Math.atan2(target.z - ANT_HILL.z, target.x - ANT_HILL.x)
-          let start = entrances[0]
-          let best = Infinity
-          for (const entrance of entrances.slice(1)) {
-            const angle = Math.atan2(entrance.z - ANT_HILL.z, entrance.x - ANT_HILL.x)
-            const gap = Math.abs(Math.atan2(Math.sin(angle - heading), Math.cos(angle - heading)))
-            if (gap < best) {
-              best = gap
-              start = entrance
-            }
-          }
-          trails.push(createTrail(wander(start, target, seed, index)))
+          const start = entranceFacing(entrances, target.x, target.z)
+          // Keep each foraging trail's wander the same whether or not the
+          // agaric's scent trail comes from the visible trail.
+          trails.push(createTrail(wander(start, target, seed, index + (agaric && antTrail ? 1 : 0))))
         })
       }
       trailMesh.geometry.dispose()
@@ -383,8 +384,26 @@ export function createAntWorld(scene, morphUniforms) {
       return { x: exit.x + ox * step, z: exit.z + oz * step, yaw: Math.atan2(-ox, -oz) }
     },
 
+    /**
+     * Paths > Pheromones: show (in every view), intensity (0–1), width
+     * (ribbon width as a share of the default).
+     */
+    setPheromones({ show, intensity, width }) {
+      Object.assign(pheromones, { show, intensity, width })
+      uniforms.uIntensity.value = intensity / 0.7
+      const halfWidth = HALF_WIDTH * width
+      if (Math.abs(halfWidth - uniforms.uHalfWidth.value) > 1e-7 && lastSampler) {
+        uniforms.uHalfWidth.value = halfWidth
+        trailMesh.geometry.dispose()
+        trailMesh.geometry = buildTrailGeometry(lastSampler)
+      }
+      uniforms.uHalfWidth.value = halfWidth
+    },
+
     /** scent: 0–1 how much the viewer perceives; near: entrance index or -1. */
     update({ scent, time, near, fadeStart, fadeEnd }) {
+      // Shown pheromones are seen by everyone; the ant smells them anyway.
+      scent = pheromones.show ? Math.max(scent, 1) : scent
       uniforms.uScent.value = scent
       uniforms.uTime.value = time
       uniforms.uNear.value = near

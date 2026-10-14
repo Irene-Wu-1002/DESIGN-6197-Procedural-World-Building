@@ -56,6 +56,8 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
   let coverVersion = 0
   let refreshing = 0
   let mode = 'off'
+  // Exclusion zones, for their preview colours (paths/exclusionZones.js).
+  let exclusions = null
   let pending = 0
 
   const removeTile = (key) => {
@@ -130,7 +132,13 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
     setPreview(nextMode) {
       if (nextMode === mode) return
       mode = nextMode
-      tiles.forEach((tile) => recolorTileMesh(tile.mesh, mode))
+      tiles.forEach((tile) => recolorTileMesh(tile.mesh, mode, exclusions))
+    },
+
+    /** New exclusion zones (repaints tiles if they're being previewed). */
+    setExclusions(next) {
+      exclusions = next
+      if (mode === 'exclusion') tiles.forEach((tile) => recolorTileMesh(tile.mesh, mode, exclusions))
     },
 
     /**
@@ -176,7 +184,7 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
         // agree on placement); middle tiles draw a decimated copy.
         const data = buildTileData(sampler, want.x, want.z, Math.max(want.segments, NEAR_SEGMENTS), trunks, habitat, { pebbles: want.pebbles })
         const drawn = want.segments < NEAR_SEGMENTS ? decimateTileData(data, NEAR_SEGMENTS / want.segments) : data
-        const mesh = createTileMesh(drawn, material, mode, depthMaterial)
+        const mesh = createTileMesh(drawn, material, mode, depthMaterial, exclusions)
         // Middle-ring tiles only receive shadows (fewer draws in the shadow pass).
         if (!want.pebbles) mesh.castShadow = false
         removeTile(key)
@@ -207,7 +215,7 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
           if (tile.mesh.userData.data !== tile.data) {
             tile.mesh.userData.data = decimateTileData(tile.data, NEAR_SEGMENTS / tile.segments)
           }
-          recolorTileMesh(tile.mesh, mode)
+          recolorTileMesh(tile.mesh, mode, exclusions)
           tile.habitatVersion = habitatVersion
         }
         tile.coverVersion = coverVersion

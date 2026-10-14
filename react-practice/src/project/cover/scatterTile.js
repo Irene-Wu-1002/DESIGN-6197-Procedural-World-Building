@@ -19,7 +19,7 @@ import { FULL_DENSITY } from './flowerField'
  * Plain data only, no Three.js.
  */
 
-const SALT = { moss: 101, mushrooms: 211, damp: 307, twigs: 401, leaves: 503, flowers: 601, thin: 709 }
+const SALT = { moss: 101, mushrooms: 211, damp: 307, twigs: 401, leaves: 503, flowers: 601, thin: 709, zone: 811 }
 const smoothstep = (edge0, edge1, value) => {
   const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1)
   return t * t * (3 - 2 * t)
@@ -81,12 +81,15 @@ function tilt(normal, amount) {
 }
 
 /**
- * data: tile data; options: { cover, seed, trunks, moss, flowers } (moss
- * and flowers: the patch and colony fields, cover/mossField.js and
- * cover/flowerField.js).
+ * data: tile data; options: { cover, seed, trunks, moss, flowers,
+ * exclusions } (moss and flowers: the patch and colony fields,
+ * cover/mossField.js and cover/flowerField.js; exclusions: the exclusion
+ * zones, paths/exclusionZones.js, or null). Large things (mushrooms,
+ * branches) stay wholly out of the zones; small things fade back in across
+ * the soft edge and thin out on the ant trail.
  * Returns { moss, mushrooms, twigs, branches, leaves: [variant0, 1, 2], flowers }.
  */
-export function scatterTile(data, { cover, seed, trunks, moss, flowers }) {
+export function scatterTile(data, { cover, seed, trunks, moss, flowers, exclusions = null }) {
   const look = createLookup(data)
   const { x0, z0 } = look
   const occupancy = createOccupancy()
@@ -106,6 +109,12 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers }) {
     concavity: field('concavity', x, z),
     habitatSlope: field('habitatSlope', x, z),
   })
+  // Exclusion zones: large things are blocked; small things survive with
+  // this share (0–1; on the trail, as far as ants clear it).
+  const blocked = (x, z, radius) => (exclusions ? exclusions.blocks(x, z, radius) : false)
+  const smallKeep = (x, z) => (exclusions ? exclusions.keep(x, z) : 1)
+  // Small things shrink a little where they fade out.
+  const fadeScale = (keep) => 0.6 + 0.4 * keep
 
   // --- Mushrooms: clusters seeded by trunks (roots) and by damp tiles.
   if (cover.mushrooms.on && cover.mushrooms.amount > 0) {
@@ -154,6 +163,8 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers }) {
         const sunny = Math.max(g.sunlight - HABITAT_NORMAL.sunlight, 0) / (1 - HABITAT_NORMAL.sunlight)
         if (hash(a, b * 31 + m, seed + SALT.mushrooms + 10) < rule.sunAvoidance * sunny) continue
         const height = rule.height[0] + hash(a, b * 31 + m, seed + SALT.mushrooms + 6) ** 2 * (rule.height[1] - rule.height[0])
+        // Large: the whole cap must stay out of the zones.
+        if (blocked(x, z, height * 0.35)) continue
         if (!occupancy.free(x, z, height * 0.35)) continue
         occupancy.add(x, z, height * 0.35)
         // A slight random lean, partly following the ground.
@@ -209,11 +220,12 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers }) {
         if (!look.inside(x, z)) continue
         const g = ground(x, z)
         if (g.habitatSlope > settings.maxSlope || g.hill > 0.2 || g.pebble > 0.3) continue
-        const density = moss.density(x, z, mossGround(x, z, g))
+        const keep = smallKeep(x, z)
+        const density = moss.density(x, z, mossGround(x, z, g)) * keep
         // Inside a patch every cell grows; at a soft edge, fewer do.
         if (density < 0.02 || h(2) >= density) continue
         const variation = 1 + (settings.scaleVariation / 100) * (h(3) * 2 - 1) * 0.6
-        const radius = cell * rule.radius * (1 - rule.edgeShrink * (1 - density)) * variation
+        const radius = cell * rule.radius * (1 - rule.edgeShrink * (1 - density)) * variation * fadeScale(keep)
         if (g.trunk < radius * 0.5 || !occupancy.free(x, z, radius * 0.7)) continue
         placed.push([x, z, radius * 0.7])
         const tall = rule.height[0] + h(4) * (rule.height[1] - rule.height[0])
@@ -256,11 +268,15 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers }) {
       const g = ground(x, z)
       const underTree = Math.exp(-g.trunk / rule.underTreeReach)
       const sheltered = preference(1 - g.wind, rule.windShelter, 1 - HABITAT_NORMAL.wind)
-      const chance = (amount * sheltered * (1 + rule.underTreeBoost * underTree)) / (1 + rule.underTreeBoost)
+      // Branches are large (blocked by the zones); twigs are small (fade).
+      const zoneKeep = isBranch ? 1 : smallKeep(x, z)
+      const chance =
+        (amount * sheltered * zoneKeep * (1 + rule.underTreeBoost * underTree)) / (1 + rule.underTreeBoost)
       if (keep >= chance) continue
       if (g.slope > rule.maxSlope || g.hill > 0.3 || g.trunk < 0.02) continue
       const range = isBranch ? rule.branchLength : rule.length
-      const length = range[0] + size * (range[1] - range[0])
+      const length = (range[0] + size * (range[1] - range[0])) * fadeScale(zoneKeep)
+      if (isBranch && blocked(x, z, length / 2)) continue
       if (!occupancy.free(x, z, length * 0.15)) continue
       occupancy.add(x, z, length * 0.15)
       const item = {
@@ -304,11 +320,13 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers }) {
       const litter = 0.3 + 0.7 * smoothstep(0.3, 0.8, g.litter)
       const hollow = 0.8 + 0.4 * smoothstep(0.45, 0.7, g.moisture)
       const sheltered = preference(1 - g.wind, rule.windShelter, 1 - HABITAT_NORMAL.wind)
+      const zoneKeep = smallKeep(x, z)
       const chance =
-        (amount * litter * hollow * sheltered * (1 + rule.underTreeBoost * underTree)) / (1 + rule.underTreeBoost)
+        (amount * litter * hollow * sheltered * zoneKeep * (1 + rule.underTreeBoost * underTree)) /
+        (1 + rule.underTreeBoost)
       if (keep >= chance) continue
       if (g.slope > rule.maxSlope || g.hill > 0.35 || g.pebble > 0.5 || g.trunk < 0.01) continue
-      const length = rule.length[0] + size * (rule.length[1] - rule.length[0])
+      const length = (rule.length[0] + size * (rule.length[1] - rule.length[0])) * fadeScale(zoneKeep)
       // Leaves may overlap each other and twigs, but not moss or mushrooms.
       if (!occupancy.free(x, z, length * 0.2)) continue
       result.leaves[variant].push({
@@ -342,13 +360,17 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers }) {
         : 0
     // h: seven 0–1 numbers fixed for this flower (size, height, look).
     const addFlower = (x, z, tone, h) => {
+      const g = ground(x, z)
+      // Fade near the zones and on the trail, decided by position (the same
+      // whichever tile places it).
+      const zoneKeep = smallKeep(x, z)
+      if (hash(Math.round(x * 1e5), Math.round(z * 1e5), seed + SALT.zone) >= zoneKeep) return
       if (!occupancy.free(x, z, 0.006, { throughMoss: true })) return
       occupancy.add(x, z, 0.006)
-      const g = ground(x, z)
       const middle = (rule.height[0] + rule.height[1]) / 2
       const halfRange = (rule.height[1] - rule.height[0]) / 2
       const height = middle + (h[0] * 2 - 1) * halfRange * (settings.heightVariation / 100)
-      const size = 1 + (h[1] * 2 - 1) * rule.scaleSpread * (settings.scaleVariation / 100)
+      const size = (1 + (h[1] * 2 - 1) * rule.scaleSpread * (settings.scaleVariation / 100)) * fadeScale(zoneKeep)
       // Mostly upright, nodding a little.
       const lean = (h[2] - 0.5) * 0.3
       result.flowers.push({

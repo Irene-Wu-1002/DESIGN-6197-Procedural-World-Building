@@ -12,6 +12,8 @@ import { getNoise } from '../../utils/noise'
  *   bumps/hollows  ~3 cm wavelength, a few mm high, sharper hollows
  *   pebbles        rounded domes, one per 1.6 cm cell at most, in patches
  *   ant hill       a mound with a crater at the world origin
+ *   ant trail      a worn strip to the fly agaric (paths/antTrail.js):
+ *                  pressed down, with fine crumbs, cleared of pebbles
  * The ~2 mm grain is added in the ground shader (groundMaterial.js).
  *
  * Plain data only, no Three.js.
@@ -81,6 +83,10 @@ const smoothstep = (edge0, edge1, value) => {
  *   pebbleChance  0–1, how likely this cell holds a pebble (for far ground)
  *   hill     0–1, how far onto the ant hill this point is
  *   litter   0–1, how much leaf litter gathers here (slow, ~25 cm patches)
+ *   trail    0–1, how much this point is on the ant trail
+ *   trailTone  0–1, how much darker the trail makes the soil here
+ *
+ * settings.trail: the ant trail (paths/antTrail.js) or null.
  */
 export function createGroundSampler(settings) {
   const seed = settings.seed
@@ -111,6 +117,10 @@ export function createGroundSampler(settings) {
   const litterNoise = noise(LITTER.wavelength, 1, 7)
   // Pebble patchiness is the same for every point in a cell, so cache it.
   const patchCache = new Map()
+  const trail = settings.trail ?? null
+  const clearedCache = new Map()
+  // Crumbs on the trail: ~4 mm soil grains.
+  const crumbNoise = noise(0.004, 1, 8)
 
   const hillAt = (x, z) => {
     if (!settings.antHill) return { lift: 0, mask: 0 }
@@ -140,8 +150,18 @@ export function createGroundSampler(settings) {
       if (patchCache.size > 50000) patchCache.clear()
       patchCache.set(key, patch)
     }
-    // Pebbles gather in patches and stay off the ant hill.
-    const chance = pebbleDensity * (0.15 + 1.2 * patch * patch) * (1 - hillMask)
+    // Pebbles gather in patches and stay off the ant hill; ants clear them
+    // from their trail (decided at the cell's centre, so no half pebbles).
+    let cleared = 0
+    if (trail) {
+      cleared = clearedCache.get(key)
+      if (cleared === undefined) {
+        cleared = trail.clearing * trail.maskAt((cx + 0.5) * PEBBLE.cell, (cz + 0.5) * PEBBLE.cell)
+        if (clearedCache.size > 50000) clearedCache.clear()
+        clearedCache.set(key, cleared)
+      }
+    }
+    const chance = pebbleDensity * (0.15 + 1.2 * patch * patch) * (1 - hillMask) * (1 - cleared)
     out.pebbleChance = Math.min(chance, 1)
     if (hash(cx, cz, seed) >= chance) return 0
     const radius =
@@ -181,6 +201,18 @@ export function createGroundSampler(settings) {
       out.hillHeight = hill.lift
       out.pebbleHeight = pebbleAt(x, z, hill.mask, out)
       out.height = out.broadHeight + out.bumpHeight + out.hillHeight + out.pebbleHeight
+      out.trail = 0
+      out.trailTone = 0
+      if (trail) {
+        const onTrail = trail.maskAt(x, z)
+        if (onTrail > 0) {
+          const crumb = getNoise(x, z, crumbNoise)
+          // Pressed down, with fine crumbs (up to ~0.3 mm) on top.
+          out.height += onTrail * (-trail.compression + trail.detail * 0.0003 * crumb)
+          out.trail = onTrail
+          out.trailTone = onTrail * trail.darkness * (1 + 0.5 * trail.detail * crumb)
+        }
+      }
       out.broad = broad
       out.bump = shaped
       out.hill = hill.mask

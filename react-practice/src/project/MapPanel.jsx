@@ -25,7 +25,14 @@ const ELEMENT_TITLES = {
 }
 
 const FIELD_OPTIONS = [['off', 'Off'], ...HABITAT_FIELDS]
-const PREVIEW_OPTIONS = [['off', 'Off'], ['height', 'Height'], ...HABITAT_FIELDS, ['tiles', 'Tile borders']]
+const PREVIEW_OPTIONS = [
+  ['off', 'Off'],
+  ['height', 'Height'],
+  ...HABITAT_FIELDS,
+  ['exclusion', 'Exclusion zones'],
+  ['tiles', 'Tile borders'],
+]
+const formatMm = (value) => `${value.toFixed(1)} mm`
 const isField = (preview) => HABITAT_FIELDS.some(([id]) => id === preview)
 const formatDegrees = (value) => `${value}°`
 const formatCm = (value) => `${value} cm`
@@ -51,11 +58,16 @@ export default function MapPanel({
   habitat,
   habitatSettling,
   coverSettling,
+  paths,
+  pathsSettling,
+  zonesShowing,
   status,
   onGroundChange,
   onViewChange,
   onCoverChange,
   onHabitatChange,
+  onPathsChange,
+  onShowZones,
   onResetKeys,
   onReset,
 }) {
@@ -101,6 +113,18 @@ export default function MapPanel({
       onChange={setGroup(group, key)}
     />
   )
+  const pathSlider = (label, key, min, max, step, format = formatPercent) => (
+    <LabeledSlider
+      label={label}
+      value={paths[key]}
+      min={min}
+      max={max}
+      step={step}
+      format={format}
+      onChange={(value) => onPathsChange(key, value)}
+    />
+  )
+  const setPath = (key) => (value) => onPathsChange(key, value)
   const mossSlider = groupSlider('moss')
   const flowerSlider = groupSlider('flowers')
   const colonies = cover.flowers.distribution === 'colonies'
@@ -329,10 +353,56 @@ export default function MapPanel({
       )}
 
       {tab === 'paths' && (
-        <p className="section-note">
-          No path controls yet. Ant trails are drawn from the ant hill (Habitat); rivers and roads
-          will get their settings here.
-        </p>
+        <>
+          <p className="section-note">
+            The ant trail runs from the ant hill to the fly agaric. Exclusion zones keep the trail,
+            the landmarks and the start view clear: large things stay out, small things fade back
+            in across the soft edge.
+          </p>
+          <p className="section-note" aria-live="polite">
+            {pathsSettling ? 'Updating paths…' : '\u00a0'}
+          </p>
+          <ControlCard title="Ant trail">
+            <EnableToggle label="Show ant trail" checked={paths.showTrail} onChange={setPath('showTrail')} />
+            {paths.showTrail && (
+              <>
+                {pathSlider('Trail width', 'trailWidth', 0.4, 3, 0.1, formatTenthCm)}
+                {pathSlider('Trail curvature', 'trailCurvature', 0, 100, 5)}
+                {pathSlider('Trail darkness', 'trailDarkness', 0, 100, 5)}
+                {pathSlider('Ground compression', 'compression', 0, 4, 0.1, formatMm)}
+                {pathSlider('Clearing strength', 'clearing', 0, 100, 5)}
+                {pathSlider('Small-detail amount', 'detail', 0, 100, 5)}
+              </>
+            )}
+          </ControlCard>
+          <ControlCard title="Pheromones">
+            <EnableToggle
+              label="Show pheromones"
+              checked={paths.showPheromones}
+              onChange={setPath('showPheromones')}
+            />
+            {pathSlider('Pheromone intensity', 'pheromoneIntensity', 0, 100, 5)}
+            {pathSlider('Pheromone width', 'pheromoneWidth', 25, 300, 5)}
+            <p className="section-note">
+              Off: only the ant smells the trails. On: every view sees them.
+            </p>
+          </ControlCard>
+          <ControlCard title="Exclusion zones">
+            {pathSlider('Ant-hill clearance', 'antHillClearance', 0, 10, 0.5, formatTenthCm)}
+            {pathSlider('Fly-agaric clearance', 'agaricClearance', 0, 15, 0.5, formatTenthCm)}
+            {pathSlider('Camera-spawn clearance', 'spawnClearance', 0, 15, 0.5, formatTenthCm)}
+            {pathSlider('Trail clearance', 'trailClearance', 0, 5, 0.5, formatTenthCm)}
+            {pathSlider('Interaction-point clearance', 'interactionClearance', 0, 5, 0.5, formatTenthCm)}
+            {pathSlider('Soft-edge distance', 'softEdge', 0, 10, 0.5, formatTenthCm)}
+            <button type="button" className="layer-add" onClick={onShowZones} aria-pressed={zonesShowing}>
+              {zonesShowing ? 'Showing exclusion zones…' : 'Show exclusion zones'}
+            </button>
+            <p className="section-note">
+              Red: nothing large or small. Orange: small things fade back in. Interaction points
+              are the tunnel entrances.
+            </p>
+          </ControlCard>
+        </>
       )}
 
       {tab === 'debug' && (

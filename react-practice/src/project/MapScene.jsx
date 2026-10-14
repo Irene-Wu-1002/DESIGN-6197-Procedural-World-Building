@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import MapPanel from './MapPanel'
 import { DEFAULT_COVER } from './cover/coverRules'
@@ -9,6 +9,8 @@ import { createMossField } from './cover/mossField'
 import { scatterTile } from './cover/scatterTile'
 import { FOREST_COLORS, createForestSky } from './forest/sky'
 import { DEFAULT_HABITAT, sunDirectionOf } from './habitat/habitatFields'
+import { DEFAULT_PATHS, createAntTrail } from './paths/antTrail'
+import { createExclusions } from './paths/exclusionZones'
 import { createFarGround, morphRange } from './terrain/farGround'
 import { DEFAULT_GROUND } from './terrain/heightField'
 import { createGroundMaterial } from './terrain/groundMaterial'
@@ -51,9 +53,11 @@ const START = { distance: 0.65, yaw: 0, pitch: -0.7 }
 // direction; shadows only cover the area near it (the half-size comes from
 // the viewpoint; the sun moves back to match).
 const SUN_DISTANCE = 1.5
-// Habitat and ground-cover changes wait until the controls have been still
-// this long (ms).
+// Habitat, ground-cover and path changes wait until the controls have been
+// still this long (ms).
 const SETTLE_MS = 300
+// How long Paths > Show exclusion zones paints them (ms).
+const ZONE_FLASH_MS = 5000
 const SHADOW_BASE = { reach: 0.6, far: 4 }
 const BUILD_BUDGET_MS = 6
 const STATUS_REFRESH_MS = 250
@@ -102,7 +106,13 @@ export default function MapScene() {
   // What the tile listener needs to scatter a new tile (moss, flowers: the
   // moss patch and flower colony fields, built from the settled settings
   // below).
-  const coverContextRef = useRef({ cover: DEFAULT_COVER, seed: DEFAULT_GROUND.seed, moss: null, flowers: null })
+  const coverContextRef = useRef({
+    cover: DEFAULT_COVER,
+    seed: DEFAULT_GROUND.seed,
+    moss: null,
+    flowers: null,
+    exclusions: null,
+  })
   const [ground, setGround] = useState(DEFAULT_GROUND)
   const [view, setView] = useState(DEFAULT_VIEW)
   // Cover controls update instantly; tiles re-scatter once they settle.
@@ -111,6 +121,13 @@ export default function MapScene() {
   // Habitat controls update instantly; the world follows once they settle.
   const [habitat, setHabitat] = useState(DEFAULT_HABITAT)
   const settledHabitat = useDebounced(habitat, SETTLE_MS)
+  // Paths: the trail and exclusion zones follow once the controls settle;
+  // pheromones change at once.
+  const [paths, setPaths] = useState(DEFAULT_PATHS)
+  const settledPaths = useDebounced(paths, SETTLE_MS)
+  // Show exclusion zones: paints them for a few seconds (a counter, so a
+  // second press restarts the timer).
+  const [zoneFlash, setZoneFlash] = useState(0)
   const [status, setStatus] = useState({
     loaded: 0,
     pending: 0,
@@ -180,8 +197,8 @@ export default function MapScene() {
     let builds = 0
     const tiles = createTileManager(scene, material, depthMaterial, {
       onTileReady: (key, data) => {
-        const { cover, seed, moss, flowers } = coverContextRef.current
-        const items = scatterTile(data, { cover, seed, moss, flowers, trunks: tiles.trunks })
+        const { cover, seed, moss, flowers, exclusions } = coverContextRef.current
+        const items = scatterTile(data, { cover, seed, moss, flowers, exclusions, trunks: tiles.trunks })
         coverRenderer.setTile(key, items)
         world.setTile(key, items)
         builds += 1
@@ -475,9 +492,36 @@ export default function MapScene() {
   // Shape settings (and trunks) rebuild the tiles, which re-scatter their
   // cover as they finish; grain is only a shader uniform.
   const { seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, grain } = ground
+  // The ant trail (part of the ground: it presses the soil down) and the
+  // exclusion zones, from the settled Paths settings.
+  const agaricShown = cover.flyAgaric && antHill
+  const { showTrail, trailWidth, trailCurvature, trailDarkness, compression, clearing, detail } = settledPaths
+  const antTrail = useMemo(
+    () =>
+      createAntTrail({
+        seed,
+        paths: { showTrail, trailWidth, trailCurvature, trailDarkness, compression, clearing, detail },
+        antHill,
+        agaric: agaricShown,
+      }),
+    [seed, antHill, agaricShown, showTrail, trailWidth, trailCurvature, trailDarkness, compression, clearing, detail]
+  )
+  const { antHillClearance, agaricClearance, spawnClearance, trailClearance, interactionClearance, softEdge } =
+    settledPaths
+  const exclusions = useMemo(
+    () =>
+      createExclusions({
+        paths: { antHillClearance, agaricClearance, spawnClearance, trailClearance, interactionClearance, softEdge },
+        seed,
+        antHill,
+        agaric: agaricShown,
+        trail: antTrail,
+      }),
+    [antHillClearance, agaricClearance, spawnClearance, trailClearance, interactionClearance, softEdge, seed, antHill, agaricShown, antTrail]
+  )
   useEffect(() => {
-    tilesRef.current?.setGround({ seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing })
-  }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing])
+    tilesRef.current?.setGround({ seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, trail: antTrail })
+  }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, antTrail])
 
   // The fly agaric stands by the ant hill (only while there is one), and
   // the ants' tunnels and trails lead out from the hill to it and to food.
@@ -491,8 +535,19 @@ export default function MapScene() {
       seed,
       antHill,
       agaric: flyAgaric?.group.visible ? flyAgaric.spot(seed) : null,
+      antTrail,
     })
-  }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, cover.flyAgaric])
+  }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, cover.flyAgaric, antTrail])
+
+  // Pheromone settings change at once (no rebuild of the ground).
+  const { showPheromones, pheromoneIntensity, pheromoneWidth } = paths
+  useEffect(() => {
+    antWorldRef.current?.setPheromones({
+      show: showPheromones,
+      intensity: pheromoneIntensity / 100,
+      width: pheromoneWidth / 100,
+    })
+  }, [showPheromones, pheromoneIntensity, pheromoneWidth])
 
   useEffect(() => {
     if (groundUniformsRef.current) groundUniformsRef.current.uGrain.value = grain / 100
@@ -504,19 +559,27 @@ export default function MapScene() {
     tilesRef.current?.setHabitat(settledHabitat)
   }, [settledHabitat])
 
-  // Settled cover settings (and any ground or habitat change) rebuild the
-  // moss patch and flower colony fields, then loaded tiles re-scatter over a few frames
-  // (no ground rebuild). Declared after the ground and habitat effects, so
-  // it sees their new fields.
+  // Settled cover settings (and any ground, habitat or exclusion-zone
+  // change) rebuild the moss patch and flower colony fields, then loaded
+  // tiles re-scatter over a few frames (no ground rebuild). Declared after
+  // the ground and habitat effects, so it sees their new fields.
   useEffect(() => {
     const tiles = tilesRef.current
     if (!tiles?.habitat) return
     const moss = createMossField(settledCover.moss, { habitat: tiles.habitat, sampler: tiles.sampler, seed })
     const flowers = createFlowerField(settledCover.flowers, { habitat: tiles.habitat, seed })
-    coverContextRef.current = { cover: settledCover, seed, moss, flowers }
+    coverContextRef.current = { cover: settledCover, seed, moss, flowers, exclusions }
     farGroundRef.current?.setCover(settledCover, moss, flowers)
+    tiles.setExclusions(exclusions)
     tiles.refreshCover()
-  }, [settledCover, settledHabitat, seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing])
+  }, [settledCover, settledHabitat, seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, exclusions])
+
+  // Show exclusion zones: back to the chosen preview after a few seconds.
+  useEffect(() => {
+    if (!zoneFlash) return undefined
+    const timer = setTimeout(() => setZoneFlash(0), ZONE_FLASH_MS)
+    return () => clearTimeout(timer)
+  }, [zoneFlash])
 
   // The sun itself (light, shadows, sky glow, dappled light) moves at once.
   const { sunDirection, sunElevation } = habitat
@@ -530,9 +593,9 @@ export default function MapScene() {
   // Haze is applied every frame (each body scales it), from viewRef.
   useEffect(() => {
     viewRef.current = view
-    tilesRef.current?.setPreview(view.preview)
+    tilesRef.current?.setPreview(zoneFlash ? 'exclusion' : view.preview)
     if (groundUniformsRef.current) groundUniformsRef.current.uDapple.value = view.dapple / 100
-  }, [view])
+  }, [view, zoneFlash])
 
   useEffect(() => {
     controllerRef.current?.setSettings(perception)
@@ -591,22 +654,29 @@ export default function MapScene() {
         habitat={habitat}
         habitatSettling={habitat !== settledHabitat || status.refreshing > 0}
         coverSettling={cover !== settledCover || status.refreshing > 0}
+        paths={paths}
+        pathsSettling={paths !== settledPaths || status.refreshing > 0 || status.pending > 0}
+        zonesShowing={zoneFlash > 0}
+        onPathsChange={(key, value) => setPaths((current) => ({ ...current, [key]: value }))}
+        onShowZones={() => setZoneFlash((count) => count + 1)}
         status={status}
         onGroundChange={(key, value) => setGround((current) => ({ ...current, [key]: value }))}
         onViewChange={(key, value) => setView((current) => ({ ...current, [key]: value }))}
         onCoverChange={(key, value) => setCover((current) => ({ ...current, [key]: value }))}
         onHabitatChange={(key, value) => setHabitat((current) => ({ ...current, [key]: value }))}
-        onResetKeys={({ ground: groundKeys, view: viewKeys, cover: coverKeys, habitat: habitatKeys }) => {
+        onResetKeys={({ ground: groundKeys, view: viewKeys, cover: coverKeys, habitat: habitatKeys, paths: pathKeys }) => {
           if (groundKeys) setGround((current) => withDefaults(current, DEFAULT_GROUND, groundKeys))
           if (viewKeys) setView((current) => withDefaults(current, DEFAULT_VIEW, viewKeys))
           if (coverKeys) setCover((current) => withDefaults(current, DEFAULT_COVER, coverKeys))
           if (habitatKeys) setHabitat((current) => withDefaults(current, DEFAULT_HABITAT, habitatKeys))
+          if (pathKeys) setPaths((current) => withDefaults(current, DEFAULT_PATHS, pathKeys))
         }}
         onReset={() => {
           setGround(DEFAULT_GROUND)
           setView(DEFAULT_VIEW)
           setCover(DEFAULT_COVER)
           setHabitat(DEFAULT_HABITAT)
+          setPaths(DEFAULT_PATHS)
         }}
       />
     </div>

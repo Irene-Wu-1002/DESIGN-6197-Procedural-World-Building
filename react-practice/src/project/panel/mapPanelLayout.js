@@ -1,4 +1,5 @@
 import { DEFAULT_HABITAT } from '../habitat/habitatFields'
+import { DEFAULT_PATHS } from '../paths/antTrail'
 
 // Which settings each tab and scatter element owns, so the panel can reset
 // just those. Keys are grouped by the scene state they live in.
@@ -37,7 +38,7 @@ export const TAB_KEYS = {
     habitat: Object.keys(DEFAULT_HABITAT),
   },
   scatter: mergeKeys(Object.values(ELEMENT_KEYS)),
-  paths: {},
+  paths: { paths: Object.keys(DEFAULT_PATHS) },
   debug: { view: ['preview', 'distance'] },
 }
 
