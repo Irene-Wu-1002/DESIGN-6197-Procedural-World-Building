@@ -1,3 +1,5 @@
+import Annotation from './Annotation'
+import LeafMark from './LeafMark'
 import './ConceptPage.css'
 import fallenLogs from '../assets/concept/fallen-logs-point-cloud.jpg'
 import flyAgaric from '../assets/concept/fly-agaric-mycelium.jpg'
@@ -75,24 +77,44 @@ const REFERENCES = [
   },
 ]
 
-export default function ConceptPage() {
+export default function ConceptPage({ onExplore }) {
   return (
     <div className="concept-page">
-      <article className="concept">
-        <header className="concept-hero">
-          <img
-            className="concept-hero-image"
-            src={flyAgaric}
-            alt="A fly agaric mushroom in leaf litter, with glowing fungal threads in the soil below"
-          />
-          <div className="concept-hero-text">
-            <p className="concept-kicker">Project concept</p>
-            <h1>Umwelt</h1>
-            <p className="concept-subtitle">A micro world through an ant's eyes</p>
-            <p className="concept-pitch">An endless forest floor, seen from the height of an ant.</p>
+      <header className="concept-hero">
+        <img
+          className="concept-hero-image"
+          src={flyAgaric}
+          alt="A fly agaric mushroom in leaf litter, with glowing fungal threads in the soil below"
+        />
+        <div className="concept-hero-text">
+          <LeafMark className="concept-hero-mark" />
+          <div>
+            <p className="page-kicker">Umwelt &middot; a micro world through an ant's eyes</p>
+            <h1>
+              A World
+              <br />
+              Beneath Your Feet
+            </h1>
+            <p className="concept-pitch">
+              Using procedural generation to create a living forest floor, where tiny creatures,
+              terrain and weather emerge from simple rules.
+            </p>
+            <button type="button" className="outline-button" onClick={onExplore}>
+              Explore the World <span aria-hidden="true">&rarr;</span>
+            </button>
           </div>
-        </header>
+        </div>
+        <Annotation arrow="down" className="concept-hero-note">
+          From simple rules,
+          <br />
+          a living world emerges.
+        </Annotation>
+        <span className="concept-scroll" aria-hidden="true">
+          Scroll for the story
+        </span>
+      </header>
 
+      <article className="concept">
         <section className="concept-section" aria-labelledby="concept-what">
           <h2 id="concept-what">
             <span className="concept-label">What</span>

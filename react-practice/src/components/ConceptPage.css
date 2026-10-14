@@ -11,7 +11,7 @@
 .concept {
   max-width: 920px;
   margin: 0 auto;
-  padding: 32px 24px 96px;
+  padding: 24px 24px 96px;
   color: var(--text);
   font-size: 15px;
   line-height: 1.65;
@@ -23,9 +23,11 @@
 }
 
 .concept h3 {
-  margin: 36px 0 10px;
-  font-size: 18px;
-  font-weight: 600;
+  margin: 40px 0 10px;
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.15;
   color: var(--text-strong);
 }
 
@@ -59,16 +61,15 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
-/* Hero */
+/* Hero: full screen, under the site header. */
 
 .concept-hero {
   position: relative;
-  overflow: hidden;
-  border-radius: 14px;
-  border: 1px solid var(--panel-border);
-  min-height: 340px;
+  min-height: 100%;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  overflow: hidden;
+  padding: calc(var(--nav-h) + 32px) clamp(24px, 6vw, 88px) 72px;
 }
 
 .concept-hero-image {
@@ -77,54 +78,85 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* Keep the mushroom cap in frame. */
-  object-position: center 18%;
+  /* Keep the mushroom cap in frame, to the right of the text. */
+  object-position: 62% 20%;
 }
 
 .concept-hero::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(14, 16, 20, 0) 25%, rgba(14, 16, 20, 0.92) 100%);
+  background:
+    linear-gradient(90deg, rgba(9, 9, 8, 0.88) 0%, rgba(9, 9, 8, 0.55) 42%, rgba(9, 9, 8, 0.1) 75%),
+    linear-gradient(0deg, var(--bg) 0%, rgba(9, 9, 8, 0) 26%);
 }
 
 .concept-hero-text {
   position: relative;
   z-index: 1;
-  padding: 28px;
+  display: flex;
+  gap: 18px;
+  max-width: 600px;
+}
+
+.concept-hero-mark {
+  flex: none;
+  width: 34px;
+  height: 46px;
+  margin-top: 30px;
 }
 
 .concept-hero h1 {
-  margin: 0;
-  font-size: clamp(40px, 7vw, 64px);
-  font-weight: 700;
+  margin: 10px 0 18px;
+  font-family: var(--font-serif);
+  font-size: clamp(42px, 6.4vw, 76px);
+  font-weight: 500;
   line-height: 1;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   color: var(--text-strong);
 }
 
-.concept-kicker,
+.concept-hero .concept-pitch {
+  max-width: 420px;
+  margin: 0 0 28px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: rgba(240, 236, 228, 0.82);
+}
+
+.concept-hero-note {
+  top: calc(var(--nav-h) + 48px);
+  right: clamp(24px, 8vw, 120px);
+  z-index: 1;
+}
+
+.concept-scroll {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  z-index: 1;
+  transform: translateX(-50%);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.concept-scroll::after {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 22px;
+  margin: 8px auto 0;
+  background: linear-gradient(var(--accent), transparent);
+}
+
 .concept-label {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--accent);
-}
-
-.concept .concept-kicker {
-  margin-bottom: 8px;
-}
-
-.concept .concept-subtitle {
-  margin: 8px 0 14px;
-  font-size: 18px;
-  color: var(--text-strong);
-}
-
-.concept .concept-pitch {
-  margin: 0;
-  color: var(--text);
 }
 
 /* Sections */
@@ -237,7 +269,8 @@
 
 .concept-quote p {
   margin: 0 0 8px;
-  font-size: 20px;
+  font-family: var(--font-serif);
+  font-size: 26px;
   line-height: 1.4;
   color: var(--text-strong);
 }
@@ -329,11 +362,11 @@
   }
 
   .concept-hero {
-    min-height: 260px;
+    padding: calc(var(--nav-h) + 24px) 20px 64px;
   }
 
-  .concept-hero-text {
-    padding: 20px;
+  .concept-hero-mark {
+    display: none;
   }
 
   .concept-gallery {

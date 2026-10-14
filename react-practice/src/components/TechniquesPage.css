@@ -1,0 +1,288 @@
+/* Techniques page: an exploded layer diagram and four technique cards. */
+
+.techniques-page {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  background:
+    radial-gradient(ellipse at 62% 38%, rgba(255, 138, 61, 0.07), transparent 55%),
+    radial-gradient(ellipse at 20% 100%, rgba(90, 120, 70, 0.08), transparent 50%),
+    var(--bg);
+}
+
+.techniques {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: calc(var(--nav-h) + 24px) clamp(20px, 4vw, 48px) 48px;
+}
+
+.techniques-hero {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.3fr);
+  align-items: center;
+  gap: 24px;
+}
+
+.techniques-text {
+  position: relative;
+}
+
+.techniques-text .page-intro-mark {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.techniques-text h1 {
+  margin: 8px 0 16px;
+  font-family: var(--font-serif);
+  font-size: clamp(38px, 4.4vw, 56px);
+  font-weight: 500;
+  line-height: 1.02;
+  color: var(--text-strong);
+}
+
+.techniques-text p:not(.page-kicker) {
+  max-width: 400px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: rgba(240, 236, 228, 0.75);
+}
+
+.techniques-note.annotation {
+  position: relative;
+  margin: 40px 0 0 24px;
+}
+
+.techniques-text .techniques-note p {
+  font-size: 23px;
+  line-height: 1.15;
+  color: inherit;
+}
+
+/* --- Layer diagram */
+
+.layer-diagram {
+  width: 100%;
+  height: auto;
+  max-height: calc(100vh - var(--nav-h) - 300px);
+  min-height: 320px;
+  overflow: visible;
+}
+
+.layer {
+  cursor: default;
+  transition: opacity 0.25s ease;
+}
+
+.layer.dim {
+  opacity: 0.35;
+}
+
+.layer-fill {
+  stroke: none;
+}
+
+.layer-fill.atmosphere {
+  fill: rgba(200, 205, 210, 0.06);
+}
+
+.layer-fill.vegetation {
+  fill: #1d2814;
+}
+
+.layer-fill.terrain {
+  fill: #2b2116;
+}
+
+.layer-fill.water {
+  fill: #12242a;
+}
+
+.layer-fill.underground {
+  fill: #17120d;
+}
+
+.layer-cloud {
+  fill: rgba(235, 235, 230, 0.12);
+  stroke: rgba(235, 235, 230, 0.35);
+  stroke-dasharray: 3 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.layer-crown {
+  fill: #3f5a24;
+  stroke: #6f8f3a;
+  vector-effect: non-scaling-stroke;
+}
+
+.layer-line {
+  fill: none;
+  stroke: rgba(255, 138, 61, 0.45);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.water-line {
+  stroke: rgba(120, 190, 210, 0.55);
+}
+
+.layer-edge {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.28);
+  vector-effect: non-scaling-stroke;
+  transition: stroke 0.25s ease;
+}
+
+.layer.active .layer-edge {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+
+.layer-guide {
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-dasharray: 2 5;
+}
+
+.layer-leader {
+  stroke: rgba(255, 255, 255, 0.3);
+}
+
+.layer-node {
+  fill: var(--bg);
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 1.4;
+}
+
+.layer.active .layer-node {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.layer-name {
+  font-size: 16px;
+  fill: var(--text-strong);
+}
+
+.layer-how {
+  font-size: 13px;
+  fill: var(--muted);
+}
+
+/* --- Technique cards */
+
+.technique-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.technique-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  background: rgba(20, 19, 17, 0.7);
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.technique-card:hover {
+  border-color: rgba(255, 138, 61, 0.45);
+  transform: translateY(-2px);
+}
+
+.technique-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.technique-number {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1.3px solid var(--accent);
+  border-radius: 50%;
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.technique-art {
+  height: 84px;
+  padding: 6px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.technique-art svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: rgba(240, 236, 228, 0.6);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.technique-art .cube-top {
+  fill: rgba(255, 255, 255, 0.16);
+}
+
+.technique-art .cube-left {
+  fill: rgba(255, 255, 255, 0.07);
+}
+
+.technique-art .cube-right {
+  fill: rgba(255, 255, 255, 0.03);
+}
+
+.technique-art .dot {
+  fill: var(--accent);
+  stroke: none;
+}
+
+.technique-card p {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* --- Smaller screens */
+
+@media (max-width: 1000px) {
+  .techniques-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .layer-diagram {
+    max-height: none;
+  }
+
+  .technique-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .technique-cards {
+    grid-template-columns: 1fr;
+  }
+}

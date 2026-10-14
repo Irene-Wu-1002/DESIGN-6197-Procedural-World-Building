@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import AccountMenu from './components/AccountMenu'
+import LeafMark from './components/LeafMark'
 import SidePanel from './components/SidePanel'
 import Week1Scene from './components/Week1Scene'
 import Week2Scene from './components/Week2Scene'
@@ -7,42 +8,17 @@ import Week3Scene from './components/Week3Scene'
 import Week4Scene from './components/Week4Scene'
 import Week5Scene from './components/Week5Scene'
 import ConceptPage from './components/ConceptPage'
-import MapScene from './project/MapScene'
+import TechniquesPage from './components/TechniquesPage'
+import ExplorationPage from './components/ExplorationPage'
+import WorldPage from './components/WorldPage'
+import { PAGES, readHash, writeHash } from './siteContent'
 import './App.css'
-
-const SECTIONS = [
-  {
-    id: 'exploration',
-    title: 'Exploration',
-    tabs: [
-      { id: 1, label: 'Week 1', title: 'Three.js exploring' },
-      { id: 2, label: 'Week 2', title: 'Infinite Noise Map' },
-      { id: 3, label: 'Week 3', title: 'Voxel Terrain' },
-      { id: 4, label: 'Week 4', title: 'Shader exploring' },
-      { id: 5, label: 'Week 5', title: 'Distributions' },
-    ],
-  },
-  {
-    id: 'project',
-    title: 'Project',
-    tabs: [
-      { id: 'concept', label: 'Project', title: 'Concept' },
-      { id: 'map', label: 'Project', title: 'Map' },
-    ],
-  },
-]
-
-const ALL_TABS = SECTIONS.flatMap((section) =>
-  section.tabs.map((tab) => ({ ...tab, section: section.id }))
-)
+import './components/site.css'
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('map')
-  // Last sub tab opened in each main tab, so switching back returns to it.
-  const [lastTabBySection, setLastTabBySection] = useState({
-    exploration: 3,
-    project: 'map',
-  })
+  const [page, setPage] = useState(() => readHash().page)
+  const [week, setWeek] = useState(() => readHash().week ?? 1)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [settings, setSettings] = useState({
     size: 1,
     rotationSpeed: 0.6,
@@ -54,74 +30,79 @@ export default function App() {
     shape: 'box',
   })
 
-  const active = ALL_TABS.find((tab) => tab.id === activeTab) ?? ALL_TABS[0]
-  const activeSection =
-    SECTIONS.find((section) => section.id === active.section) ?? SECTIONS[0]
+  useEffect(() => {
+    writeHash(page, week)
+  }, [page, week])
 
-  const openTab = (tabId, sectionId) => {
-    setActiveTab(tabId)
-    setLastTabBySection((current) => ({ ...current, [sectionId]: tabId }))
+  const openPage = (id) => {
+    setPage(id)
+    setMenuOpen(false)
+  }
+
+  const openWeek = (id) => {
+    setWeek(id)
+    openPage('exploration')
   }
 
   return (
-    <div className="app">
+    <div className={`app app-${page}`}>
       <header className="site-header">
-        <div className="site-bar">
-          <span className="site-title">Procedural World Building</span>
+        <button type="button" className="site-brand" onClick={() => openPage('concept')}>
+          <LeafMark />
+          <span>Procedural World Building</span>
+        </button>
 
-          <nav className="main-tabs" role="tablist" aria-label="Sections">
-            {SECTIONS.map((section) => (
-              <button
-                key={section.id}
-                type="button"
-                role="tab"
-                aria-selected={activeSection.id === section.id}
-                className={activeSection.id === section.id ? 'active' : ''}
-                onClick={() =>
-                  openTab(lastTabBySection[section.id], section.id)
-                }
-              >
-                {section.title}
-              </button>
-            ))}
-          </nav>
+        <button
+          type="button"
+          className="site-menu-toggle"
+          aria-expanded={menuOpen}
+          aria-controls="site-nav"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <span className="visually-hidden">Menu</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d={menuOpen ? 'M6 6l12 12M18 6 6 18' : 'M4 7h16M4 12h16M4 17h16'} />
+          </svg>
+        </button>
 
-          <div className="site-meta">
-            <span className="site-author">yw2785 &middot; Cornell AAP</span>
-            <AccountMenu />
-          </div>
-        </div>
-
-        <nav className="sub-tabs" role="tablist" aria-label={activeSection.title}>
-          {activeSection.tabs.map((tab) => (
+        <nav id="site-nav" className={`site-nav${menuOpen ? ' open' : ''}`} aria-label="Pages">
+          {PAGES.map((item) => (
             <button
-              key={tab.id}
+              key={item.id}
               type="button"
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              className={activeTab === tab.id ? 'active' : ''}
-              onClick={() => openTab(tab.id, activeSection.id)}
+              aria-current={page === item.id ? 'page' : undefined}
+              onClick={() => openPage(item.id)}
             >
-              <span className="sub-tabs-label">{tab.label}</span>
-              <span className="sub-tabs-title">{tab.title}</span>
+              {item.title}
             </button>
           ))}
         </nav>
+
+        <div className="site-meta">
+          <span className="site-author">yw2785 &middot; Cornell AAP</span>
+          <AccountMenu />
+        </div>
       </header>
 
-      <div className="stage">
-        {activeTab === 1 && <Week1Scene settings={settings} />}
-        {activeTab === 2 && <Week2Scene />}
-        {activeTab === 3 && <Week3Scene />}
-        {activeTab === 4 && <Week4Scene />}
-        {activeTab === 5 && <Week5Scene />}
-        {activeTab === 'concept' && <ConceptPage />}
-        {activeTab === 'map' && <MapScene />}
-
-        {activeTab === 1 && (
-          <SidePanel settings={settings} onChange={setSettings} />
+      <main className="stage">
+        {page === 'concept' && <ConceptPage onExplore={() => openPage('world')} />}
+        {page === 'world' && <WorldPage />}
+        {page === 'techniques' && <TechniquesPage onOpenWeek={openWeek} />}
+        {page === 'exploration' && (
+          <ExplorationPage week={week} onWeek={setWeek}>
+            {week === 1 && (
+              <>
+                <Week1Scene settings={settings} />
+                <SidePanel settings={settings} onChange={setSettings} />
+              </>
+            )}
+            {week === 2 && <Week2Scene />}
+            {week === 3 && <Week3Scene />}
+            {week === 4 && <Week4Scene />}
+            {week === 5 && <Week5Scene />}
+          </ExplorationPage>
         )}
-      </div>
+      </main>
     </div>
   )
 }

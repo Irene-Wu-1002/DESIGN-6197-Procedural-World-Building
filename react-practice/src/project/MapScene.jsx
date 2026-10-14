@@ -101,7 +101,7 @@ function useDebounced(value, delay) {
   return settled
 }
 
-export default function MapScene() {
+export default function MapScene({ intro }) {
   const mountRef = useRef(null)
   const tilesRef = useRef(null)
   // Ground shader uniforms (grain, dappled light).
@@ -744,6 +744,7 @@ export default function MapScene() {
         {viewUi.hint ? `. ${viewUi.hint}` : ''}
       </p>
       <div className="map-left-column">
+        {intro}
         <ViewAsPanel
           ui={viewUi}
           settings={perception}
