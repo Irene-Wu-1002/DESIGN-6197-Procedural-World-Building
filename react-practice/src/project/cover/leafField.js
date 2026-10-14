@@ -131,16 +131,24 @@ export function createLeafField(settings, { seed, windDirection }) {
     },
 
     /**
-     * Related colours: { autumn, palette, shade } shared by neighbouring
-     * leaves (index into LEAF_COLORS.autumn or .green).
+     * Related colours shared by neighbouring leaves: { autumn, palette,
+     * shade } for the current autumn share, plus autumnRank (the share at
+     * which this spot turns autumn), greenPalette and autumnPalette (indexes
+     * into LEAF_COLORS.green / .autumn).
      */
     colorAt(x, z) {
-      const autumn = rank('autumn', getNoise(x, z, autumnNoise)) < autumnShare
-      const count = (autumn ? LEAF_COLORS.autumn : LEAF_COLORS.green).length
+      const autumnRank = rank('autumn', getNoise(x, z, autumnNoise))
+      const autumn = autumnRank < autumnShare
       const tone = rank('tone', getNoise(x, z, toneNoise))
+      const index = (count) => Math.min(Math.floor(tone * count), count - 1)
+      const greenPalette = index(LEAF_COLORS.green.length)
+      const autumnPalette = index(LEAF_COLORS.autumn.length)
       return {
         autumn,
-        palette: Math.min(Math.floor(tone * count), count - 1),
+        palette: autumn ? autumnPalette : greenPalette,
+        autumnRank,
+        greenPalette,
+        autumnPalette,
         shade: 0.5 + 0.35 * getNoise(x, z, shadeNoise),
       }
     },

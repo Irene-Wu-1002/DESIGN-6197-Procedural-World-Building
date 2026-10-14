@@ -17,6 +17,7 @@ import { createAmbientLife } from './simulation/ambientLife'
 import { HeightFog, installHeightFog } from './simulation/heightFog'
 import { createRain } from './simulation/rain'
 import { DEFAULT_WEATHER } from './simulation/weather'
+import { DEFAULT_SEASON } from './simulation/season'
 import { DEFAULT_DAY } from './simulation/dayCycle'
 import { createSimulation } from './simulation/simulation'
 import { createFarGround, morphRange } from './terrain/farGround'
@@ -143,7 +144,7 @@ export default function MapScene() {
   // Simulation: settings here; the clock and its effects run in the frame
   // loop (simulationRef), and simStatus is its snapshot for the panel.
   const simulationRef = useRef(null)
-  const [simSettings, setSimSettings] = useState({ day: DEFAULT_DAY, weather: DEFAULT_WEATHER })
+  const [simSettings, setSimSettings] = useState({ day: DEFAULT_DAY, weather: DEFAULT_WEATHER, season: DEFAULT_SEASON })
   const [simStatus, setSimStatus] = useState({
     running: false,
     blend: 0,
@@ -159,6 +160,9 @@ export default function MapScene() {
     wetness: 0,
     fog: 0,
     rainEnded: false,
+    season: null,
+    sunrise: DEFAULT_DAY.sunrise,
+    sunset: DEFAULT_DAY.sunset,
   })
   const [status, setStatus] = useState({
     loaded: 0,
@@ -476,6 +480,14 @@ export default function MapScene() {
       scene.fog.set(haze * env.haze, env.mist, env.mistHeight)
       uniforms.uWet.value = env.wetness
       coverRenderer.setWeather({ wind: env.wind, wet: env.wetness, time })
+      // Season: how much of each kind shows, and the leaves' autumn share
+      // (the Scatter setting, blended toward the season's).
+      const baseAutumn = coverContextRef.current.cover.leaves.autumn / 100
+      coverRenderer.setSeason({
+        ...env.levels,
+        autumn: baseAutumn + (env.autumn.value - baseAutumn) * env.autumn.weight,
+      })
+      world.setPresence(env.levels)
       const pixels = canvas.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))
       rain.update({
         time,

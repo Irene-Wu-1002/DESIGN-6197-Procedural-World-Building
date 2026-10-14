@@ -1,6 +1,6 @@
 import { createRandom } from '../../utils/distributions'
 import { TILE_SIZE, hash } from '../terrain/heightField'
-import { COVER_RULES, FLOWER_COLORS, HABITAT_NORMAL, MOSS_COLORS } from './coverRules'
+import { COVER_RULES, FLOWER_COLORS, HABITAT_NORMAL, MOSS_COLORS, SEASON_HEADROOM } from './coverRules'
 import { FULL_DENSITY } from './flowerField'
 import { scatterLeaves } from './scatterLeaves'
 
@@ -12,7 +12,11 @@ import { scatterLeaves } from './scatterLeaves'
  * come from the tile's own seeded random sequence.
  *
  * Each item: { x, y, z, yaw, normal: [x, y, z], scale: [x, y, z],
- *              palette, shade, variant }  (world metres; palette is an
+ *              palette, shade, variant, presence }  (world metres; presence
+ * 0–1 is the season level at which the item appears, see SEASON_HEADROOM
+ * in coverRules.js: leaves, flowers, mushrooms and moss are scattered with
+ * that headroom, and only those with presence ≤ 1 / headroom show by
+ * default; twigs are always present (0); palette is an
  * index into the element's colour list in coverRules.js; leaves also carry
  * autumn: true/false and damp: 0–1). Habitat fields (moisture, sunlight,
  * shade, wind) come with the tile data.
@@ -131,14 +135,16 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
   // --- Mushrooms: clusters seeded by trunks (roots) and by damp tiles.
   if (cover.mushrooms.on && cover.mushrooms.amount > 0) {
     const rule = COVER_RULES.mushrooms
-    const amount = cover.mushrooms.amount / 100
+    // With the seasons' headroom; each cluster's presence is its share of it.
+    const amount = (cover.mushrooms.amount / 100) * SEASON_HEADROOM
     const clusters = []
     const centerX = x0 + TILE_SIZE / 2
     const centerZ = z0 + TILE_SIZE / 2
     const nearby = trunks ? trunks.trunksNear(centerX, centerZ, rule.trunkRing[1] + TILE_SIZE) : []
     for (const trunk of nearby) {
       for (let k = 0; k < rule.perTrunk; k += 1) {
-        if (hash(trunk.seed, k, seed + SALT.mushrooms) >= amount) continue
+        const roll = hash(trunk.seed, k, seed + SALT.mushrooms)
+        if (roll >= amount) continue
         const angle = hash(trunk.seed, k, seed + SALT.mushrooms + 1) * Math.PI * 2
         const distance =
           trunk.radius + rule.trunkRing[0] + hash(trunk.seed, k, seed + SALT.mushrooms + 2) ** 1.5 * (rule.trunkRing[1] - rule.trunkRing[0])
@@ -148,11 +154,14 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
           key: [trunk.seed, k],
           // Roots keep it damp enough near a trunk.
           minMoisture: rule.minMoisture - 0.15,
+          presence: roll / amount,
         })
       }
     }
-    if (hash(data.tileX, data.tileZ, seed + SALT.damp) < rule.dampTileChance * amount) {
+    const dampRoll = hash(data.tileX, data.tileZ, seed + SALT.damp)
+    if (dampRoll < rule.dampTileChance * amount) {
       clusters.push({
+        presence: dampRoll / (rule.dampTileChance * amount),
         x: x0 + hash(data.tileX, data.tileZ, seed + SALT.damp + 1) * TILE_SIZE,
         z: z0 + hash(data.tileX, data.tileZ, seed + SALT.damp + 2) * TILE_SIZE,
         key: [data.tileX * 7 + 3, data.tileZ * 13 + 5],
@@ -192,6 +201,8 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
           palette: Math.floor(hash(a, b * 31 + m, seed + SALT.mushrooms + 8) * 5),
           shade: hash(a, b * 31 + m, seed + SALT.mushrooms + 9),
           variant: 0,
+          // A cluster comes up together, members a moment apart.
+          presence: Math.min(cluster.presence + 0.04 * hash(a, b * 31 + m, seed + SALT.mushrooms + 11), 1),
         })
       }
     }
@@ -233,7 +244,8 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
         const g = ground(x, z)
         if (g.habitatSlope > settings.maxSlope || g.hill > 0.2 || g.pebble > 0.3) continue
         const keep = smallKeep(x, z)
-        const density = moss.density(x, z, mossGround(x, z, g)) * keep
+        const patch = moss.sample(x, z, mossGround(x, z, g))
+        const density = patch.density * keep
         // Inside a patch every cell grows; at a soft edge, fewer do.
         if (density < 0.02 || h(2) >= density) continue
         const variation = 1 + (settings.scaleVariation / 100) * (h(3) * 2 - 1) * 0.6
@@ -254,6 +266,7 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
           palette,
           shade: 0.5 + (h(8) - 0.5) * colorVariation,
           variant: 0,
+          presence: patch.presence,
         })
       }
     }
@@ -336,8 +349,9 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
       g.hill <= 0.1 && g.pebble <= 0.2 && g.trunk >= rule.trunkGap
         ? flowers.suitability({ sunlight: g.sunlight, moisture: g.moisture, slope: g.habitatSlope })
         : 0
-    // h: seven 0–1 numbers fixed for this flower (size, height, look).
-    const addFlower = (x, z, tone, h) => {
+    // h: seven 0–1 numbers fixed for this flower (size, height, look);
+    // presence: the season level at which it appears.
+    const addFlower = (x, z, tone, h, presence) => {
       const g = ground(x, z)
       // Fade near the zones and on the trail, decided by position (the same
       // whichever tile places it).
@@ -362,20 +376,23 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
         palette: h[5] < colorVariation * 0.7 ? Math.floor(h[6] * FLOWER_COLORS.length) : tone,
         shade: 0.5 + (h[6] - 0.5) * colorVariation,
         variant: 0,
+        presence,
       })
     }
 
     if (settings.distribution === 'colonies') {
       for (const colony of flowers.coloniesIn(x0, z0, x0 + TILE_SIZE, z0 + TILE_SIZE)) {
         for (const flower of colony.flowers) {
-          if (look.inside(flower.x, flower.z)) addFlower(flower.x, flower.z, colony.tone, flower.h)
+          if (!look.inside(flower.x, flower.z)) continue
+          // A colony opens together, its flowers a moment apart.
+          addFlower(flower.x, flower.z, colony.tone, flower.h, Math.min(colony.presence + 0.03 * flower.h[4], 1))
         }
       }
     } else if (settings.distribution === 'even') {
       // One candidate per jittered cell, the cell set by the density (never
       // closer than the minimum spacing).
       const amount = settings.amount / 100
-      const cell = Math.max(settings.minSpacing / 100 / 0.6, 1 / Math.sqrt(amount * FULL_DENSITY))
+      const cell = Math.max(settings.minSpacing / 100 / 0.6, 1 / Math.sqrt(amount * SEASON_HEADROOM * FULL_DENSITY))
       for (let iz = Math.floor(z0 / cell); iz <= Math.floor((z0 + TILE_SIZE) / cell); iz += 1) {
         for (let ix = Math.floor(x0 / cell); ix <= Math.floor((x0 + TILE_SIZE) / cell); ix += 1) {
           const h = (k) => hash(ix, iz, seed + settings.seedOffset * 7919 + SALT.flowers + k)
@@ -384,21 +401,22 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
           if (!look.inside(x, z)) continue
           const g = ground(x, z)
           if (h(2) >= suits(g) * flowers.regionAt(x, z)) continue
-          addFlower(x, z, flowers.toneAt(x, z), [h(3), h(4), h(5), h(6), h(7), h(8), h(9)])
+          addFlower(x, z, flowers.toneAt(x, z), [h(3), h(4), h(5), h(6), h(7), h(8), h(9)], h(10))
         }
       }
     } else {
       // Fully random: the same average density, no spacing rule.
       const random = tileRandom(SALT.flowers + settings.seedOffset * 7919)
-      const tries = Math.round((settings.amount / 100) * FULL_DENSITY * TILE_SIZE * TILE_SIZE)
+      const tries = Math.round((settings.amount / 100) * SEASON_HEADROOM * FULL_DENSITY * TILE_SIZE * TILE_SIZE)
       for (let k = 0; k < tries; k += 1) {
         const x = x0 + random() * TILE_SIZE
         const z = z0 + random() * TILE_SIZE
         const keep = random()
         const h = [random(), random(), random(), random(), random(), random(), random()]
+        const presence = random()
         const g = ground(x, z)
         if (keep >= suits(g) * flowers.regionAt(x, z)) continue
-        addFlower(x, z, flowers.toneAt(x, z), h)
+        addFlower(x, z, flowers.toneAt(x, z), h, presence)
       }
     }
   }

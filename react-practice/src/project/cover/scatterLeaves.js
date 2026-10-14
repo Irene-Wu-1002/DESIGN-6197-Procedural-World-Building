@@ -1,5 +1,5 @@
 import { ANT_HILL, TILE_SIZE } from '../terrain/heightField'
-import { COVER_RULES, HABITAT_NORMAL, LEAF_COLORS } from './coverRules'
+import { COVER_RULES, HABITAT_NORMAL, LEAF_COLORS, SEASON_HEADROOM } from './coverRules'
 
 /**
  * Fallen leaves for one tile (called by scatterTile.js after twigs, so
@@ -17,6 +17,10 @@ import { COVER_RULES, HABITAT_NORMAL, LEAF_COLORS } from './coverRules'
  * Leaves keep the minimum spacing, except the overlap share, which pile on
  * top (a little higher for each leaf beneath). Colours come from
  * leafField.colorAt, so neighbours are related; a quarter pick their own.
+ * Each leaf keeps both its green and autumn colour and the autumn share at
+ * which it turns (autumnRank), so seasons can recolour leaves gradually;
+ * leaves are scattered with the seasons' headroom (presence: the share of
+ * it the leaf's roll used).
  */
 
 const smoothstep = (edge0, edge1, value) => {
@@ -142,7 +146,8 @@ export function scatterLeaves(ctx) {
         zoneKeep *
         (1 + rule.underTreeBoost * underTree)) /
       ((1 + rule.underTreeBoost) * rule.candidates * rule.average)
-    if (keep >= chance) continue
+    if (keep >= chance * SEASON_HEADROOM) continue
+    const presence = keep / (chance * SEASON_HEADROOM)
     const length =
       (rule.length[0] + (rule.length[1] - rule.length[0]) * (0.5 + (size - 0.5) * scaleVariation)) * fadeScale(zoneKeep)
     // Not on mushrooms or twigs; on moss they lie on top of the cushion.
@@ -161,8 +166,12 @@ export function scatterLeaves(ctx) {
     // Related colours; a quarter of leaves pick their own.
     const color = leafField.colorAt(x, z)
     if (own < rule.ownColor) {
+      const pick = (ownPick * 7.31) % 1
+      color.autumnRank = ownPick
       color.autumn = ownPick < settings.autumn / 100
-      color.palette = Math.floor(((ownPick * 7.31) % 1) * (color.autumn ? LEAF_COLORS.autumn : LEAF_COLORS.green).length)
+      color.autumnPalette = Math.floor(pick * LEAF_COLORS.autumn.length)
+      color.greenPalette = Math.floor(pick * LEAF_COLORS.green.length)
+      color.palette = color.autumn ? color.autumnPalette : color.greenPalette
     }
     // Aligned with the wind, turned more randomly with rotation variation.
     const windYaw = Math.atan2(-wz, wx)
@@ -176,6 +185,11 @@ export function scatterLeaves(ctx) {
       // Index into LEAF_COLORS.autumn or LEAF_COLORS.green.
       autumn: color.autumn,
       palette: color.palette,
+      // Both colours, and the autumn share at which this leaf has turned.
+      greenPalette: color.greenPalette,
+      autumnPalette: color.autumnPalette,
+      autumnRank: color.autumnRank,
+      presence,
       shade: Math.min(Math.max(color.shade + (shadeJitter - 0.5) * 0.3, 0), 1),
       variant,
       // Wetter leaves look darker (decaying).

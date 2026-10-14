@@ -15,6 +15,8 @@ import {
   PEAK_ELEVATION,
 } from './dayCycle'
 import { DEFAULT_WEATHER, createWeatherState } from './weather'
+import { DEFAULT_SEASON, createSeasonState, dayRoll } from './season'
+import { SEASON_HEADROOM } from '../cover/coverRules'
 import { windVector } from '../../utils/windField'
 
 /**
@@ -31,6 +33,12 @@ import { windVector } from '../../utils/windField'
  * flowerOpen, butterflies, ants (activity 0–1), haze (× the usual haze),
  * mist (ground mist per metre), mistHeight (m), rain, wetness, wind (0–1),
  * windDirection [x, z] }.
+ *
+ * The season (season.js) sets day length and sun warmth, soil wetness,
+ * misty mornings, leaf colours and how much of each kind of cover shows:
+ * levels { leaves, flowers, mushrooms, moss } for the cover renderer (items
+ * with presence ≤ level show; 1 / SEASON_HEADROOM is the Scatter amounts)
+ * and autumn { value, weight } for leaf colours.
  *
  * Weather (weather.js) acts on top of the day: clouds dim and soften the
  * sun and grey the sky, rain closes flowers and sends butterflies and ants
@@ -87,10 +95,21 @@ const makeEnvironment = () => ({
   wetness: 0,
   wind: 0,
   windDirection: windVector(WIND_FROM),
+  levels: { leaves: 1 / SEASON_HEADROOM, flowers: 1 / SEASON_HEADROOM, mushrooms: 1 / SEASON_HEADROOM, moss: 1 / SEASON_HEADROOM },
+  autumn: { value: 0, weight: 0 },
 })
+const COVER_KINDS = ['leaves', 'flowers', 'mushrooms', 'moss']
+// Misty mornings: mist (per metre) and how long it lasts around sunrise (h).
+const MORNING_MIST = { density: 2.8, height: 0.3, before: 1.5, after: [1.5, 3.5] }
 
 export function createSimulation() {
-  let settings = { day: DEFAULT_DAY, weather: DEFAULT_WEATHER }
+  let settings = { day: DEFAULT_DAY, weather: DEFAULT_WEATHER, season: DEFAULT_SEASON }
+  const season = createSeasonState()
+  let seasonNow = { weight: 0, values: season.values }
+  // Simulated days passed (each decides whether its morning is misty).
+  let days = 0
+  let sunrise = DEFAULT_DAY.sunrise
+  let sunset = DEFAULT_DAY.sunset
   const weather = createWeatherState()
   let weatherNow = { ...weather.current, flash: 0, rainEnded: false }
   let running = false
@@ -106,7 +125,16 @@ export function createSimulation() {
   // simulated hours passed this frame).
   const simulate = (dt, hours) => {
     const day = settings.day
-    const sun = day.manualSun ? { azimuth: day.azimuth, elevation: day.elevation } : sunAt(time, day, PEAK_ELEVATION)
+    // The season sets the length of the day (around 13:00) and how high the
+    // sun climbs; its weight fades it in.
+    const sw = seasonNow.weight
+    const sv = seasonNow.values
+    sunrise = day.sunrise + (13 - sv.dayLength / 2 - day.sunrise) * sw
+    sunset = day.sunset + (13 + sv.dayLength / 2 - day.sunset) * sw
+    const peak = PEAK_ELEVATION + (25 + 35 * sv.warmth - PEAK_ELEVATION) * sw
+    const sun = day.manualSun
+      ? { azimuth: day.azimuth, elevation: day.elevation }
+      : sunAt(time, { sunrise, sunset }, peak)
     const daylight = daylightOf(sun.elevation)
     const sunUp = Math.max(Math.sin((sun.elevation * Math.PI) / 180), 0)
     const w = weather.update(settings.weather, dt, hours, sunUp * (1 - 0.8 * weatherNow.cloud), Math.random)
@@ -144,7 +172,10 @@ export function createSimulation() {
       simulated.sky[key].lerp(FLASH, 0.6 * w.flash)
     }
     simulated.dapple = smoothstep(0, 12, sun.elevation) * (1 - cloud)
-    const temperature = temperatureAt(time, sun.elevation, { mean: w.temperature, sunShare: 1 - 0.8 * cloud })
+    const temperature = temperatureAt(time, sun.elevation, {
+      mean: w.temperature + (sv.warmth - 0.5) * 14 * sw,
+      sunShare: 1 - 0.8 * cloud,
+    })
     const air = temperature.air
     const surface = temperature.surface - 3 * w.rain
     const brightness = daylight * sunScale * (1 - 0.55 * cloud)
@@ -154,8 +185,22 @@ export function createSimulation() {
     simulated.haze = 1 + HUMID_HAZE * Math.max(w.humidity - 0.5, 0) * 2
     simulated.mist = MIST * w.fog ** 1.5
     simulated.mistHeight = w.fogHeight
+    // Some mornings start misty (how many: the season's fog frequency).
+    if (dayRoll(days) < sv.fog * sw) {
+      const morning =
+        smoothstep(sunrise - MORNING_MIST.before, sunrise, time) *
+        (1 - smoothstep(sunrise + MORNING_MIST.after[0], sunrise + MORNING_MIST.after[1], time))
+      if (morning > 0) {
+        // Two mists together: densities add, heights average by density.
+        const morningMist = morning * MORNING_MIST.density
+        simulated.mistHeight =
+          (simulated.mist * simulated.mistHeight + morningMist * MORNING_MIST.height) / (simulated.mist + morningMist)
+        simulated.mist += morningMist
+      }
+    }
     simulated.rain = w.rain
-    simulated.wetness = w.wetness
+    // Season soil wetness under the weather's.
+    simulated.wetness = 1 - (1 - w.wetness) * (1 - sw * sv.wetness * 0.85)
     simulated.wind = w.wind
     Object.assign(readout, { sun, air, surface, daylight })
   }
@@ -183,7 +228,10 @@ export function createSimulation() {
       blend = Math.min(Math.max(blend + (running ? 1 : -1) * (dt / START_SECONDS), 0), 1)
       const playing = running && settings.day.playing
       const hours = playing ? hoursPerSecond(settings.day) * dt : 0
+      if (time + hours >= 24) days += 1
       time = (time + hours) % 24
+      // The season fades and follows its settings even while paused.
+      seasonNow = season.update(running ? settings.season : { ...settings.season, apply: false }, dt)
       const k = blend * blend * (3 - 2 * blend)
       // Paused holds everything still, the weather included.
       if (k > 0) simulate(playing ? dt : 0, hours)
@@ -204,6 +252,13 @@ export function createSimulation() {
       out.rain = simulated.rain * k
       out.wetness = simulated.wetness * k
       out.wind = simulated.wind * k
+      // Season levels for the cover and leaf colours, faded with the rest.
+      const weight = seasonNow.weight * k
+      for (const kind of COVER_KINDS) {
+        out.levels[kind] = Math.min((1 + (seasonNow.values[kind] - 1) * weight) / SEASON_HEADROOM, 1)
+      }
+      out.autumn.value = seasonNow.values.autumn
+      out.autumn.weight = weight
       return out
     },
 
@@ -224,6 +279,9 @@ export function createSimulation() {
         wetness: weatherNow.wetness,
         fog: weatherNow.fog,
         rainEnded: weatherNow.rainEnded,
+        season: { weight: seasonNow.weight, ...seasonNow.values },
+        sunrise,
+        sunset,
       }
     },
   }

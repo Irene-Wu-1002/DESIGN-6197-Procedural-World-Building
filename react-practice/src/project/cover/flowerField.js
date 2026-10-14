@@ -1,6 +1,6 @@
 import { getNoise } from '../../utils/noise'
 import { hash } from '../terrain/heightField'
-import { COVER_RULES } from './coverRules'
+import { COVER_RULES, SEASON_HEADROOM } from './coverRules'
 
 /**
  * Flowers (wood anemones): where they grow, as a pure function of world
@@ -13,7 +13,9 @@ import { COVER_RULES } from './coverRules'
  *                flowers; noise influence sets how much ground it empties
  *   colonies     one possible colony per world cell (cell size from the
  *                colony count); a site grows one when a hash beats
- *                amount × suitability × mask at its centre. Its flowers are
+ *                amount × suitability × mask at its centre (with the
+ *                seasons' headroom; the colony's presence is the share
+ *                of that its hash used, see SEASON_HEADROOM). Its flowers are
  *                placed inside the colony radius (falloff pulls them to the
  *                centre), at least the minimum spacing apart, each checked
  *                against the ground where it lands.
@@ -97,7 +99,8 @@ export function createFlowerField(settings, { habitat, seed }) {
     const cz = (iz + 0.5 + 0.8 * (h(1) - 0.5)) * cell
     let colony = null
     const centre = ground(cx, cz)
-    if (h(2) < amount * suitability(centre) * regionAt(cx, cz) && clear(centre)) {
+    const chance = amount * SEASON_HEADROOM * suitability(centre) * regionAt(cx, cz)
+    if (h(2) < chance && clear(centre)) {
       const r = radius * (1 + SIZE_SPREAD * (h(3) * 2 - 1))
       const count = Math.max(1, Math.round(settings.flowersPerColony * (1 + SIZE_SPREAD * (h(4) * 2 - 1))))
       const tone = COLONY_TONES[Math.floor(h(5) * COLONY_TONES.length)]
@@ -113,7 +116,7 @@ export function createFlowerField(settings, { habitat, seed }) {
         if (!clear(g) || f(2) >= Math.sqrt(suitability(g))) continue
         flowers.push({ x, z, h: [f(3), f(4), f(5), f(6), f(7), f(8), f(9)] })
       }
-      colony = { x: cx, z: cz, radius: r, tone, flowers }
+      colony = { x: cx, z: cz, radius: r, tone, flowers, presence: h(2) / chance }
     }
     if (colonies.size > 20000) colonies.clear()
     colonies.set(key, colony)

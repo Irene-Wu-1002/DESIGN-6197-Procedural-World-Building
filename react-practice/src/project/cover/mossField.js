@@ -1,5 +1,6 @@
 import { getNoise } from '../../utils/noise'
 import { hash } from '../terrain/heightField'
+import { SEASON_HEADROOM } from './coverRules'
 
 /**
  * Moss patches: where moss carpets grow, as a pure function of world
@@ -137,9 +138,21 @@ export function createMossField(settings, { habitat, sampler, seed }) {
       return rank < threshold ? -1 : scoreOf(rank, point.g)
     })
     .sort((a, b) => b - a)
-  const target = Math.min(Math.round((settings.amount / 100) * scores.length), scores.length)
   const eligible = scores.filter((score) => score >= 0).length
-  const cut = target === 0 ? Infinity : scores[Math.min(target, eligible) - 1]
+  // The cut for a share of ground (capped by what the threshold leaves).
+  const cutFor = (share) => {
+    const count = Math.min(Math.round(share * scores.length), eligible)
+    return count === 0 ? Infinity : scores[count - 1]
+  }
+  const target = Math.min(Math.round((settings.amount / 100) * scores.length), scores.length)
+  const cut = cutFor(settings.amount / 100)
+  // Seasons: cushions are placed for up to SEASON_HEADROOM × the coverage;
+  // each one's presence is its share of that (by patch score), so a season
+  // grows patches outward from their cores.
+  const headroomCount = Math.min(Math.round((settings.amount / 100) * SEASON_HEADROOM * scores.length), eligible)
+  const headroomCut = cutFor((settings.amount / 100) * SEASON_HEADROOM)
+  const ascending = Float64Array.from(scores).reverse()
+  const stronger = (score) => scores.length - lowerBound(ascending, score)
 
   return {
     /** Grid cell (m) for cushions: no two centres closer than minSpacing. */
@@ -155,6 +168,22 @@ export function createMossField(settings, { habitat, sampler, seed }) {
       const gate = smoothstep(threshold, threshold + 0.03, rank)
       if (gate <= 0) return 0
       return gate * smoothstep(cut - edge, cut + edge, scoreOf(rank, g))
+    },
+
+    /**
+     * For cushions, with the seasons' headroom: { density (0–1, against the
+     * widened patches), presence (0–1, the season level it appears at) }.
+     */
+    sample(x, z, g) {
+      if (!Number.isFinite(headroomCut)) return { density: 0, presence: 1 }
+      const rank = noiseRank(x, z)
+      const gate = smoothstep(threshold, threshold + 0.03, rank)
+      if (gate <= 0) return { density: 0, presence: 1 }
+      const score = scoreOf(rank, g)
+      return {
+        density: gate * smoothstep(headroomCut - edge, headroomCut + edge, score),
+        presence: Math.min(stronger(score) / Math.max(headroomCount, 1), 1),
+      }
     },
 
     /** The patch's base colour (index into MOSS_COLORS), slow across space. */

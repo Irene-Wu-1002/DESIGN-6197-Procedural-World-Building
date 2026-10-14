@@ -8,7 +8,9 @@ import { TILE_SIZE } from '../terrain/heightField'
  * Reads the same data the scene draws: the tile manager's sampler and
  * trunk field, the fly agaric's placement, and each tile's scattered cover
  * (registered with setTile as the cover renderer receives it). Nothing is
- * generated here, so every viewpoint meets the same obstacles.
+ * generated here, so every viewpoint meets the same obstacles. Items a
+ * season has hidden (presence above their kind's level, setPresence) are
+ * ignored, so nothing invisible gets in the way.
  */
 
 // Twig and branch tube radius per metre of length (coverMeshes.js).
@@ -27,12 +29,14 @@ const keyOf = (tx, tz) => `${tx},${tz}`
 
 function indexTile(items) {
   const blockers = items.mushrooms.map((item) => ({
+    presence: item.presence ?? 0,
     x: item.x,
     z: item.z,
     radius: item.scale[1] * MUSHROOM_STEM,
     top: item.y + item.scale[1],
   }))
   const domes = items.moss.map((item) => ({
+    presence: item.presence ?? 0,
     x: item.x,
     z: item.z,
     y: item.y,
@@ -56,6 +60,7 @@ function indexTile(items) {
   const sticks = [...items.twigs.map(stick(TWIG_RADIUS)), ...items.branches.map(stick(BRANCH_RADIUS))]
   // Leaves as thin oval plates (length along local x, ~0.6 × as wide).
   const plates = items.leaves.flat().map((item) => ({
+    presence: item.presence ?? 0,
     x: item.x,
     z: item.z,
     y: item.y,
@@ -80,6 +85,8 @@ function segmentDistance(px, pz, s) {
  */
 export function createWorldQueries(tiles, flyAgaric) {
   const index = new Map()
+  // Season levels per kind (see SEASON_HEADROOM in coverRules.js).
+  const levels = { leaves: 1, mushrooms: 1, moss: 1 }
 
   // Indexed cover in the 3 × 3 tiles around a point (items reach ~12 cm
   // past their owning tile at most, so neighbours are enough).
@@ -101,6 +108,10 @@ export function createWorldQueries(tiles, flyAgaric) {
     removeTile(key) {
       index.delete(key)
     },
+    /** Season levels { leaves, mushrooms, moss }: hide items above them. */
+    setPresence(next) {
+      Object.assign(levels, next)
+    },
 
     heightAt(x, z) {
       return tiles.heightAt(x, z)
@@ -111,6 +122,7 @@ export function createWorldQueries(tiles, flyAgaric) {
       let top = tiles.heightAt(x, z)
       nearby(x, z, (entry) => {
         for (const dome of entry.domes) {
+          if (dome.presence > levels.moss) continue
           const d = Math.hypot(x - dome.x, z - dome.z)
           if (d < dome.radius) top = Math.max(top, dome.y + dome.height * Math.sqrt(1 - (d / dome.radius) ** 2))
         }
@@ -119,6 +131,7 @@ export function createWorldQueries(tiles, flyAgaric) {
           if (d < stick.radius) top = Math.max(top, stick.y + stick.radius + Math.sqrt(stick.radius ** 2 - d * d))
         }
         for (const plate of entry.plates) {
+          if (plate.presence > levels.leaves) continue
           const dx = x - plate.x
           const dz = z - plate.z
           // Into the leaf's frame (yaw about the vertical).
@@ -163,7 +176,9 @@ export function createWorldQueries(tiles, flyAgaric) {
         }
         if (collision.mushrooms) {
           nearby(x, z, (entry) => {
-            for (const blocker of entry.blockers) push(blocker.x, blocker.z, blocker.radius + radius)
+            for (const blocker of entry.blockers) {
+              if (blocker.presence <= levels.mushrooms) push(blocker.x, blocker.z, blocker.radius + radius)
+            }
           })
         }
       }

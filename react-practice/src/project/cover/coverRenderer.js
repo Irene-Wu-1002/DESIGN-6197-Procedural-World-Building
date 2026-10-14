@@ -1,6 +1,14 @@
 import * as THREE from 'three'
 import { TILE_SIZE } from '../terrain/heightField'
-import { FLOWER_COLORS, FLOWER_STEM_COLOR, LEAF_COLORS, MOSS_COLORS, MUSHROOM_COLORS, TWIG_COLORS } from './coverRules'
+import {
+  FLOWER_COLORS,
+  FLOWER_STEM_COLOR,
+  LEAF_COLORS,
+  MOSS_COLORS,
+  MUSHROOM_COLORS,
+  SEASON_HEADROOM,
+  TWIG_COLORS,
+} from './coverRules'
 import {
   createBranchGeometry,
   createFlowerGeometries,
@@ -38,6 +46,8 @@ const palettes = {
 }
 
 const FADE_DECLARATIONS = /* glsl */ `
+attribute float aPresence;
+uniform float uPresenceLevel;
 uniform vec2 uMorphCenter;
 uniform vec2 uCoverFade;
 uniform float uWind;
@@ -66,12 +76,35 @@ const WET_ROUGHNESS = /* glsl */ `
 #include <roughnessmap_fragment>
 roughnessFactor *= 1.0 - 0.45 * uWet;
 `
+// Each item also shows only once its kind's season level reaches its
+// presence (aPresence), growing in over a short band, so a season fades
+// things in and out where they stand.
 const FADE_VERTEX = /* glsl */ `
 #include <begin_vertex>
 #ifdef USE_INSTANCING
   vec3 coverBase = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
   transformed *= 1.0 - smoothstep(uCoverFade.x, uCoverFade.y, distance(coverBase.xz, uMorphCenter));
+  transformed *= smoothstep(aPresence - 0.04, aPresence, uPresenceLevel);
 #endif
+`
+
+// Leaves: green (instance colour) or autumn (aAutumnColor), turned once the
+// autumn share (uAutumn) passes the leaf's rank, so they turn gradually.
+const LEAF_VERTEX_DECLARATIONS = /* glsl */ `
+attribute vec3 aAutumnColor;
+attribute float aAutumnRank;
+uniform float uAutumn;
+varying vec3 vAutumnColor;
+varying float vAutumnMix;
+`
+const LEAF_VERTEX = /* glsl */ `
+#include <begin_vertex>
+vAutumnColor = aAutumnColor;
+vAutumnMix = smoothstep(aAutumnRank - 0.03, aAutumnRank + 0.03, uAutumn);
+`
+const LEAF_COLOR = /* glsl */ `
+#include <color_fragment>
+diffuseColor.rgb = mix(diffuseColor.rgb, vAutumnColor * (1.0 - 0.22 * uWet), vAutumnMix);
 `
 
 // Moss only: fuzzy speckle (bright tips, dark gaps) at ~1–2 mm, so cushions
@@ -128,13 +161,24 @@ if (vPetal < 0.0) {
 }
 `
 
-function applyFade(material, uniforms, key, { moss = false, flower = false, sway = false } = {}) {
+/**
+ * level: this kind's season level ({ value }); leaf: two-colour leaves.
+ */
+function applyFade(material, uniforms, key, { moss = false, flower = false, sway = false, level, leaf = false } = {}) {
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms)
+    Object.assign(shader.uniforms, uniforms, { uPresenceLevel: level })
     let vertex = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${FADE_DECLARATIONS}`)
       .replace('#include <begin_vertex>', FADE_VERTEX)
     if (sway) vertex = vertex.replace('#include <begin_vertex>', SWAY_VERTEX)
+    if (leaf) {
+      vertex = vertex
+        .replace('#include <common>', `#include <common>\n${LEAF_VERTEX_DECLARATIONS}`)
+        .replace('#include <begin_vertex>', LEAF_VERTEX)
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vAutumnColor;\nvarying float vAutumnMix;')
+        .replace('#include <color_fragment>', LEAF_COLOR)
+    }
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform float uWet;')
       .replace('#include <color_fragment>', WET_COLOR)
@@ -181,36 +225,63 @@ export function createCoverRenderer(scene, morphUniforms) {
     uWind: { value: 0 },
     uWet: { value: 0 },
     uTime: { value: 0 },
+    // Leaves: share in autumn colours (the Scatter setting, or the season).
+    uAutumn: { value: 0.5 },
+  }
+  // Season levels per kind (see SEASON_HEADROOM): items show when their
+  // presence ≤ the level; 1 / headroom is the Scatter amounts as set.
+  const base = 1 / SEASON_HEADROOM
+  const levels = {
+    always: { value: 1 },
+    leaves: { value: base },
+    flowers: { value: base },
+    mushrooms: { value: base },
+    moss: { value: base },
   }
   const leafGeometries = createLeafGeometries()
   const mushroom = createMushroomGeometries()
   const flower = createFlowerGeometries()
-  const depthMaterial = applyFade(
-    new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }),
-    uniforms,
-    'cover-depth'
+  // Shadows follow the same fades, so one depth material per kind.
+  const depthMaterials = Object.fromEntries(
+    Object.entries(levels).map(([kind, level]) => [
+      kind,
+      applyFade(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), uniforms, `cover-depth-${kind}`, {
+        level,
+      }),
+    ])
   )
-  const standard = (options, key, extra) =>
-    applyFade(new THREE.MeshStandardMaterial({ color: '#ffffff', ...options }), uniforms, key, extra)
+  const standard = (options, key, kind, extra = {}) =>
+    applyFade(new THREE.MeshStandardMaterial({ color: '#ffffff', ...options }), uniforms, `${key}-${kind}`, {
+      ...extra,
+      level: levels[kind],
+    })
 
   // Each part: geometry, material, capacity, and how to pick its items and colour.
   const parts = [
     ...leafGeometries.map((geometry, variant) => ({
       id: `leaf${variant}`,
       geometry,
-      material: standard({ roughness: 0.85, side: THREE.DoubleSide }, 'cover-leaf'),
+      kind: 'leaves',
+      material: standard({ roughness: 0.85, side: THREE.DoubleSide }, 'cover-leaf', 'leaves', { leaf: true }),
       capacity: 6000,
       castShadow: false,
       items: (tile) => tile.leaves[variant],
+      // Green as the instance colour, autumn as the second colour.
       color: (item, out) => {
-        out.copy((item.autumn ? palettes.autumn : palettes.green)[item.palette])
+        out.copy(palettes.green[item.greenPalette])
         out.multiplyScalar((0.85 + 0.3 * item.shade) * (1 - DAMP_DARKEN * smoothstep(0.55, 0.85, item.damp)))
       },
+      autumnColor: (item, out) => {
+        out.copy(palettes.autumn[item.autumnPalette])
+        out.multiplyScalar((0.85 + 0.3 * item.shade) * (1 - DAMP_DARKEN * smoothstep(0.55, 0.85, item.damp)))
+      },
+      autumnRank: (item) => item.autumnRank,
     })),
     {
       id: 'twig',
       geometry: createTwigGeometry(),
-      material: standard({ roughness: 0.95, flatShading: true }, 'cover-wood'),
+      kind: 'always',
+      material: standard({ roughness: 0.95, flatShading: true }, 'cover-wood', 'always'),
       capacity: 2000,
       castShadow: true,
       items: (tile) => tile.twigs,
@@ -219,7 +290,8 @@ export function createCoverRenderer(scene, morphUniforms) {
     {
       id: 'branch',
       geometry: createBranchGeometry(),
-      material: standard({ roughness: 0.95, flatShading: true }, 'cover-wood'),
+      kind: 'always',
+      material: standard({ roughness: 0.95, flatShading: true }, 'cover-wood', 'always'),
       capacity: 800,
       castShadow: true,
       items: (tile) => tile.branches,
@@ -228,7 +300,8 @@ export function createCoverRenderer(scene, morphUniforms) {
     {
       id: 'moss',
       geometry: createMossGeometry(),
-      material: standard({ roughness: 1 }, 'cover-moss', { moss: true }),
+      kind: 'moss',
+      material: standard({ roughness: 1 }, 'cover-moss', 'moss', { moss: true }),
       capacity: 12000,
       castShadow: true,
       items: (tile) => tile.moss,
@@ -237,7 +310,8 @@ export function createCoverRenderer(scene, morphUniforms) {
     {
       id: 'mushroomStem',
       geometry: mushroom.stem,
-      material: standard({ roughness: 0.8 }, 'cover-mushroom'),
+      kind: 'mushrooms',
+      material: standard({ roughness: 0.8 }, 'cover-mushroom', 'mushrooms'),
       capacity: 1500,
       castShadow: true,
       items: (tile) => tile.mushrooms,
@@ -246,7 +320,8 @@ export function createCoverRenderer(scene, morphUniforms) {
     {
       id: 'mushroomCap',
       geometry: mushroom.cap,
-      material: standard({ roughness: 0.6 }, 'cover-mushroom'),
+      kind: 'mushrooms',
+      material: standard({ roughness: 0.6 }, 'cover-mushroom', 'mushrooms'),
       capacity: 1500,
       castShadow: true,
       items: (tile) => tile.mushrooms,
@@ -255,7 +330,8 @@ export function createCoverRenderer(scene, morphUniforms) {
     {
       id: 'flowerStem',
       geometry: flower.stem,
-      material: standard({ roughness: 0.8, side: THREE.DoubleSide }, 'cover-flower-stem', { sway: true }),
+      kind: 'flowers',
+      material: standard({ roughness: 0.8, side: THREE.DoubleSide }, 'cover-flower-stem', 'flowers', { sway: true }),
       capacity: 3000,
       castShadow: true,
       items: (tile) => tile.flowers ?? [],
@@ -264,7 +340,11 @@ export function createCoverRenderer(scene, morphUniforms) {
     {
       id: 'flowerHead',
       geometry: flower.head,
-      material: standard({ roughness: 0.55, side: THREE.DoubleSide }, 'cover-flower-head', { flower: true, sway: true }),
+      kind: 'flowers',
+      material: standard({ roughness: 0.55, side: THREE.DoubleSide }, 'cover-flower-head', 'flowers', {
+        flower: true,
+        sway: true,
+      }),
       capacity: 3000,
       castShadow: true,
       items: (tile) => tile.flowers ?? [],
@@ -278,8 +358,14 @@ export function createCoverRenderer(scene, morphUniforms) {
     mesh.castShadow = part.castShadow
     mesh.receiveShadow = true
     mesh.frustumCulled = false
-    mesh.customDepthMaterial = depthMaterial
+    mesh.customDepthMaterial = depthMaterials[part.kind]
     mesh.setColorAt(0, new THREE.Color())
+    // Per instance: presence, and for leaves the autumn colour and rank.
+    part.geometry.setAttribute('aPresence', new THREE.InstancedBufferAttribute(new Float32Array(part.capacity), 1))
+    if (part.autumnColor) {
+      part.geometry.setAttribute('aAutumnColor', new THREE.InstancedBufferAttribute(new Float32Array(part.capacity * 3), 3))
+      part.geometry.setAttribute('aAutumnRank', new THREE.InstancedBufferAttribute(new Float32Array(part.capacity), 1))
+    }
     part.mesh = mesh
     scene.add(mesh)
   }
@@ -303,6 +389,9 @@ export function createCoverRenderer(scene, morphUniforms) {
       const list = part.items(items)
       const matrices = new Float32Array(list.length * 16)
       const colors = new Float32Array(list.length * 3)
+      const presence = new Float32Array(list.length)
+      const autumnColors = part.autumnColor ? new Float32Array(list.length * 3) : null
+      const autumnRanks = part.autumnColor ? new Float32Array(list.length) : null
       list.forEach((item, index) => {
         normal.fromArray(item.normal).normalize()
         tiltQ.setFromUnitVectors(up, normal)
@@ -316,8 +405,14 @@ export function createCoverRenderer(scene, morphUniforms) {
         colors[index * 3] = color.r
         colors[index * 3 + 1] = color.g
         colors[index * 3 + 2] = color.b
+        presence[index] = item.presence ?? 0
+        if (autumnColors) {
+          part.autumnColor(item, color)
+          color.toArray(autumnColors, index * 3)
+          autumnRanks[index] = part.autumnRank(item)
+        }
       })
-      baked[part.id] = { matrices, colors, count: list.length }
+      baked[part.id] = { matrices, colors, presence, autumnColors, autumnRanks, count: list.length }
     }
     return baked
   }
@@ -337,6 +432,18 @@ export function createCoverRenderer(scene, morphUniforms) {
     /** How much the viewer sees in ultraviolet (0–1): flower nectar guides. */
     setUV(value) {
       uniforms.uUV.value = value
+    },
+    /**
+     * Seasons: levels { leaves, flowers, mushrooms, moss } (items with
+     * presence ≤ level show; 1 / SEASON_HEADROOM is the Scatter amounts),
+     * and autumn: the share of leaves in autumn colours (0–1).
+     */
+    setSeason({ leaves, flowers, mushrooms, moss, autumn }) {
+      levels.leaves.value = leaves
+      levels.flowers.value = flowers
+      levels.mushrooms.value = mushrooms
+      levels.moss.value = moss
+      uniforms.uAutumn.value = autumn
     },
     /** Weather on the cover: wind 0–1 (flowers sway), wet 0–1, time (s). */
     setWeather({ wind, wet, time }) {
@@ -358,6 +465,9 @@ export function createCoverRenderer(scene, morphUniforms) {
       dirty = false
       for (const part of parts) {
         const { mesh, capacity } = part
+        const presence = part.geometry.attributes.aPresence
+        const autumnColor = part.geometry.attributes.aAutumnColor
+        const autumnRank = part.geometry.attributes.aAutumnRank
         let count = 0
         for (const baked of tiles.values()) {
           const block = baked[part.id]
@@ -365,11 +475,21 @@ export function createCoverRenderer(scene, morphUniforms) {
           if (take <= 0) continue
           mesh.instanceMatrix.array.set(block.matrices.subarray(0, take * 16), count * 16)
           mesh.instanceColor.array.set(block.colors.subarray(0, take * 3), count * 3)
+          presence.array.set(block.presence.subarray(0, take), count)
+          if (autumnColor) {
+            autumnColor.array.set(block.autumnColors.subarray(0, take * 3), count * 3)
+            autumnRank.array.set(block.autumnRanks.subarray(0, take), count)
+          }
           count += take
         }
         mesh.count = count
         mesh.instanceMatrix.needsUpdate = true
         mesh.instanceColor.needsUpdate = true
+        presence.needsUpdate = true
+        if (autumnColor) {
+          autumnColor.needsUpdate = true
+          autumnRank.needsUpdate = true
+        }
       }
     },
     counts() {
@@ -382,7 +502,7 @@ export function createCoverRenderer(scene, morphUniforms) {
         part.material.dispose()
         part.mesh.dispose()
       }
-      depthMaterial.dispose()
+      for (const material of Object.values(depthMaterials)) material.dispose()
     },
   }
 }

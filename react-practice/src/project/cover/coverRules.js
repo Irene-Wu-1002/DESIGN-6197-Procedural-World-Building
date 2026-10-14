@@ -91,6 +91,13 @@ export const DEFAULT_COVER = {
   flyAgaric: true,
 }
 
+// Seasons can raise leaf, flower, mushroom and moss amounts up to this many
+// times the Scatter settings. Cover is scattered once with this headroom;
+// each item records the share (its presence, 0–1) at which it appears, and
+// the renderer shows or hides items by presence, so a season change never
+// moves anything (simulation/season.js).
+export const SEASON_HEADROOM = 1.5
+
 // Typical habitat values at the default settings: preferences are 1 here,
 // so the default habitat keeps the usual amount of each kind.
 export const HABITAT_NORMAL = { shade: 0.37, sunlight: 0.45, wind: 0.4 }
