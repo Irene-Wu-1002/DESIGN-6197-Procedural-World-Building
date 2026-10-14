@@ -24,7 +24,7 @@ export const SCATTER_ELEMENTS = [
 export const ELEMENT_KEYS = {
   moss: { cover: ['moss'] },
   flowers: { cover: ['flowers'] },
-  leaves: { cover: ['leaves', 'autumn'] },
+  leaves: { cover: ['leaves'] },
   twigs: { cover: ['twigs'] },
   pebbles: { ground: ['pebbles'] },
   mushrooms: { cover: ['mushrooms', 'flyAgaric'] },

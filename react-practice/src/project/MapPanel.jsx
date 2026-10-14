@@ -127,6 +127,7 @@ export default function MapPanel({
   const setPath = (key) => (value) => onPathsChange(key, value)
   const mossSlider = groupSlider('moss')
   const flowerSlider = groupSlider('flowers')
+  const leafSlider = groupSlider('leaves')
   const colonies = cover.flowers.distribution === 'colonies'
 
   // Enable + Amount for one ground-cover group.
@@ -204,11 +205,31 @@ export default function MapPanel({
     twigs: coverAmount('twigs'),
     leaves: (
       <>
-        {coverAmount('leaves')}
+        <EnableToggle label="Enabled" checked={cover.leaves.on} onChange={setGroup('leaves', 'on')} />
         {cover.leaves.on && (
-          <AdvancedSection>
-            {percentSlider('Autumn colours', cover.autumn, (value) => onCoverChange('autumn', value), 100)}
-          </AdvancedSection>
+          <>
+            {leafSlider('Amount', 'amount', 0, 100, 1)}
+            {leafSlider('Drift size', 'driftSize', 5, 100, 1, formatCm)}
+            {leafSlider('Drift strength', 'driftStrength', 0, 100, 5)}
+            {leafSlider('Wind influence', 'windInfluence', 0, 100, 5)}
+            {leafSlider('Hollow preference', 'hollowPreference', 0, 100, 5)}
+            {leafSlider('Obstacle accumulation', 'obstacleAccumulation', 0, 100, 5)}
+            {leafSlider('Minimum spacing', 'minSpacing', 0, 3, 0.1, formatTenthCm)}
+            {leafSlider('Scale variation', 'scaleVariation', 0, 100, 5)}
+            {leafSlider('Rotation variation', 'rotationVariation', 0, 100, 5)}
+            {leafSlider('Autumn color amount', 'autumn', 0, 100, 5)}
+            <AdvancedSection>
+              {leafSlider('Deposition noise scale', 'depositionNoiseScale', 10, 100, 5)}
+              {leafSlider('Deposition threshold', 'depositionThreshold', 0, 95, 5)}
+              {leafSlider('Wind variation', 'windVariation', 0, 100, 5)}
+              {leafSlider('Overlap amount', 'overlapAmount', 0, 100, 5)}
+              {leafSlider('Seed offset', 'seedOffset', 0, 999, 1, (value) => value)}
+            </AdvancedSection>
+            <p className="section-note">
+              Leaves gather in drifts along the wind, in hollows, and beside and downwind of trunks,
+              the ant hill, pebbles and branches. Neighbouring leaves share related colours.
+            </p>
+          </>
         )}
       </>
     ),

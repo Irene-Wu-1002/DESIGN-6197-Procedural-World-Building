@@ -9,8 +9,8 @@
  *              noise + habitat score, filled on   slope, near trunk bases;
  *              a jittered grid of cushions        bare soil between patches
  *   twigs      uniform random                     more under trees
- *   leaves     uniform random + rotation,         more under trees, in litter
- *              density from a litter noise        patches and hollows
+ *   leaves     drifts along the wind              hollows, beside and downwind
+ *              (leafField.js, scatterLeaves.js)   of obstacles, under trees
  *   flowers    colonies (flowerField.js), or      sunny, moderately moist,
  *   (wood      even spacing / fully random;       fairly flat; whole regions
  *   anemones)  a slow region mask empties areas   bare (off the hill and bark)
@@ -23,9 +23,29 @@
  */
 
 export const DEFAULT_COVER = {
-  leaves: { on: true, amount: 60 },
-  // Share of leaves in autumn colours (the rest are green).
-  autumn: 50,
+  // Leaves: drift size and spacing in cm; autumn is the share in autumn
+  // colours (the rest are green).
+  leaves: {
+    on: true,
+    amount: 60,
+    driftSize: 30,
+    driftStrength: 60,
+    windInfluence: 50,
+    hollowPreference: 50,
+    obstacleAccumulation: 60,
+    minSpacing: 0.8,
+    scaleVariation: 60,
+    rotationVariation: 85,
+    autumn: 50,
+    // Advanced: breakup noise size (% of drift size), share of ground left
+    // sparse between drifts (%), wind direction wobble, share of leaves that
+    // may pile on others, and a different arrangement.
+    depositionNoiseScale: 30,
+    depositionThreshold: 40,
+    windVariation: 30,
+    overlapAmount: 30,
+    seedOffset: 0,
+  },
   twigs: { on: true, amount: 50 },
   // Moss: amount is the share of ground inside patches (%); sizes in cm.
   moss: {
@@ -117,8 +137,29 @@ export const COVER_RULES = {
     length: [0.03, 0.08],
     maxSlope: 30,
     variants: 3,
-    windShelter: 0.4,
+    // Candidates per leaf at the average density (room for drifts and
+    // piles), and the average of the other factors (so amount keeps the
+    // old total).
+    candidates: 2.5,
+    average: 3,
+    // Obstacles: strength at 100%; bands beside trunk bases (roots), the
+    // ant hill, the fly agaric's stem (radius) and branches (m); lee tails
+    // as a multiple of the obstacle's radius; how far to look for trunks.
+    obstacleBoost: 2.5,
+    rootBand: 0.06,
+    hillBand: 0.03,
+    stemRadius: 0.012,
+    stemBand: 0.015,
+    branchBand: 0.01,
+    pebbleRing: 0.008,
+    leeReach: 2.5,
+    leeWeight: 2,
+    trunkReach: 1.2,
+    // Share of leaves with their own colour; lift per leaf beneath (m).
+    ownColor: 0.25,
+    pileLift: 0.0008,
   },
+
   flowers: {
     // Stem height (m): the middle of this range, ± half of it at 100%
     // height variation.

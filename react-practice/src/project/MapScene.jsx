@@ -4,7 +4,8 @@ import MapPanel from './MapPanel'
 import { DEFAULT_COVER } from './cover/coverRules'
 import { createCoverRenderer, createTrunkRenderer } from './cover/coverRenderer'
 import { createFlowerField } from './cover/flowerField'
-import { createFlyAgaric } from './cover/flyAgaric'
+import { agaricSpot, createFlyAgaric } from './cover/flyAgaric'
+import { createLeafField } from './cover/leafField'
 import { createMossField } from './cover/mossField'
 import { scatterTile } from './cover/scatterTile'
 import { FOREST_COLORS, createForestSky } from './forest/sky'
@@ -111,7 +112,9 @@ export default function MapScene() {
     seed: DEFAULT_GROUND.seed,
     moss: null,
     flowers: null,
+    leaves: null,
     exclusions: null,
+    landmarks: null,
   })
   const [ground, setGround] = useState(DEFAULT_GROUND)
   const [view, setView] = useState(DEFAULT_VIEW)
@@ -197,8 +200,8 @@ export default function MapScene() {
     let builds = 0
     const tiles = createTileManager(scene, material, depthMaterial, {
       onTileReady: (key, data) => {
-        const { cover, seed, moss, flowers, exclusions } = coverContextRef.current
-        const items = scatterTile(data, { cover, seed, moss, flowers, exclusions, trunks: tiles.trunks })
+        const { cover, seed, moss, flowers, leaves, exclusions, landmarks } = coverContextRef.current
+        const items = scatterTile(data, { cover, seed, moss, flowers, leaves, exclusions, landmarks, trunks: tiles.trunks })
         coverRenderer.setTile(key, items)
         world.setTile(key, items)
         builds += 1
@@ -568,11 +571,14 @@ export default function MapScene() {
     if (!tiles?.habitat) return
     const moss = createMossField(settledCover.moss, { habitat: tiles.habitat, sampler: tiles.sampler, seed })
     const flowers = createFlowerField(settledCover.flowers, { habitat: tiles.habitat, seed })
-    coverContextRef.current = { cover: settledCover, seed, moss, flowers, exclusions }
+    const leaves = createLeafField(settledCover.leaves, { seed, windDirection: settledHabitat.windDirection })
+    // Landmarks leaves pile against.
+    const landmarks = { antHill, agaric: agaricShown ? agaricSpot(seed) : null }
+    coverContextRef.current = { cover: settledCover, seed, moss, flowers, leaves, exclusions, landmarks }
     farGroundRef.current?.setCover(settledCover, moss, flowers)
     tiles.setExclusions(exclusions)
     tiles.refreshCover()
-  }, [settledCover, settledHabitat, seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, exclusions])
+  }, [settledCover, settledHabitat, seed, slopes, bumps, warp, pebbles, antHill, agaricShown, trunks, trunkSpacing, exclusions])
 
   // Show exclusion zones: back to the chosen preview after a few seconds.
   useEffect(() => {

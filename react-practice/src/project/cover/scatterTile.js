@@ -2,6 +2,7 @@ import { createRandom } from '../../utils/distributions'
 import { TILE_SIZE, hash } from '../terrain/heightField'
 import { COVER_RULES, FLOWER_COLORS, HABITAT_NORMAL, MOSS_COLORS } from './coverRules'
 import { FULL_DENSITY } from './flowerField'
+import { scatterLeaves } from './scatterLeaves'
 
 /**
  * Scatter one tile's ground cover from its data maps (terrain/tileData.js).
@@ -20,10 +21,6 @@ import { FULL_DENSITY } from './flowerField'
  */
 
 const SALT = { moss: 101, mushrooms: 211, damp: 307, twigs: 401, leaves: 503, flowers: 601, thin: 709, zone: 811 }
-const smoothstep = (edge0, edge1, value) => {
-  const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1)
-  return t * t * (3 - 2 * t)
-}
 
 // Bilinear lookups on the tile's grid at world (x, z).
 function createLookup(data) {
@@ -53,7 +50,8 @@ function createLookup(data) {
 }
 
 // Circles already claimed in this tile, so items don't overlap. Moss
-// circles are marked, so flowers can grow up through a moss carpet.
+// circles are marked (with their cushion's dome), so flowers can grow up
+// through a moss carpet and leaves can lie on it.
 function createOccupancy() {
   const taken = []
   return {
@@ -65,8 +63,19 @@ function createOccupancy() {
       }
       return true
     },
-    add(x, z, radius, moss = false) {
+    /** moss: { y, radius, height } of the cushion's dome, for mossTop. */
+    add(x, z, radius, moss = null) {
       taken.push({ x, z, radius, moss })
+    },
+    /** Highest moss surface at (x, z), or -Infinity if there's none. */
+    mossTop(x, z) {
+      let top = -Infinity
+      for (const other of taken) {
+        if (!other.moss) continue
+        const d2 = ((other.x - x) ** 2 + (other.z - z) ** 2) / other.moss.radius ** 2
+        if (d2 < 1) top = Math.max(top, other.moss.y + other.moss.height * Math.sqrt(1 - d2))
+      }
+      return top
     },
   }
 }
@@ -81,15 +90,16 @@ function tilt(normal, amount) {
 }
 
 /**
- * data: tile data; options: { cover, seed, trunks, moss, flowers,
- * exclusions } (moss and flowers: the patch and colony fields,
- * cover/mossField.js and cover/flowerField.js; exclusions: the exclusion
- * zones, paths/exclusionZones.js, or null). Large things (mushrooms,
+ * data: tile data; options: { cover, seed, trunks, moss, flowers, leaves,
+ * exclusions, landmarks } (moss, flowers, leaves: the patch, colony and
+ * drift fields, cover/mossField.js, flowerField.js, leafField.js;
+ * exclusions: the exclusion zones, paths/exclusionZones.js, or null;
+ * landmarks: { antHill, agaric } for leaves to pile against). Large things (mushrooms,
  * branches) stay wholly out of the zones; small things fade back in across
  * the soft edge and thin out on the ant trail.
  * Returns { moss, mushrooms, twigs, branches, leaves: [variant0, 1, 2], flowers }.
  */
-export function scatterTile(data, { cover, seed, trunks, moss, flowers, exclusions = null }) {
+export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, exclusions = null, landmarks = null }) {
   const look = createLookup(data)
   const { x0, z0 } = look
   const occupancy = createOccupancy()
@@ -106,6 +116,8 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, exclusio
     sunlight: field('sunlight', x, z),
     shade: field('shade', x, z),
     wind: field('wind', x, z),
+    windX: field('windX', x, z),
+    windZ: field('windZ', x, z),
     concavity: field('concavity', x, z),
     habitatSlope: field('habitatSlope', x, z),
   })
@@ -227,8 +239,8 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, exclusio
         const variation = 1 + (settings.scaleVariation / 100) * (h(3) * 2 - 1) * 0.6
         const radius = cell * rule.radius * (1 - rule.edgeShrink * (1 - density)) * variation * fadeScale(keep)
         if (g.trunk < radius * 0.5 || !occupancy.free(x, z, radius * 0.7)) continue
-        placed.push([x, z, radius * 0.7])
         const tall = rule.height[0] + h(4) * (rule.height[1] - rule.height[0])
+        placed.push([x, z, radius * 0.7, { y: g.y - radius * 0.1, radius, height: radius * tall }])
         // Each patch has its own tone; colour variation mixes in others.
         const colorVariation = settings.colorVariation / 100
         const palette = h(6) < colorVariation * 0.6 ? Math.floor(h(7) * MOSS_COLORS.length) : moss.toneAt(x, z)
@@ -245,7 +257,7 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, exclusio
         })
       }
     }
-    for (const [x, z, radius] of placed) occupancy.add(x, z, radius, true)
+    for (const [x, z, radius, dome] of placed) occupancy.add(x, z, radius, dome)
   }
 
   const tileRandom = (salt) => createRandom(Math.floor(hash(data.tileX, data.tileZ, seed + salt) * 4294967295))
@@ -294,57 +306,23 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, exclusio
     }
   }
 
-  // --- Leaves: uniform random with random turns, gathering in litter
-  // patches, hollows, and under trees.
-  if (cover.leaves.on && cover.leaves.amount > 0) {
-    const rule = COVER_RULES.leaves
-    const amount = cover.leaves.amount / 100
-    const autumn = cover.autumn / 100
-    const random = tileRandom(SALT.leaves)
-    const tries = Math.round(rule.perTile * (1 + rule.underTreeBoost))
-    for (let k = 0; k < tries; k += 1) {
-      const x = x0 + random() * TILE_SIZE
-      const z = z0 + random() * TILE_SIZE
-      const yaw = random() * Math.PI * 2
-      const keep = random()
-      const size = random()
-      const variant = Math.floor(random() * rule.variants)
-      const isAutumn = random() < autumn
-      const pick = random()
-      const lift = random()
-      // Every candidate draws all its numbers up front, so one leaf kept or
-      // dropped never shifts the rest (tiles at any detail agree).
-      const shade = random()
-      const g = ground(x, z)
-      const underTree = Math.exp(-g.trunk / rule.underTreeReach)
-      const litter = 0.3 + 0.7 * smoothstep(0.3, 0.8, g.litter)
-      const hollow = 0.8 + 0.4 * smoothstep(0.45, 0.7, g.moisture)
-      const sheltered = preference(1 - g.wind, rule.windShelter, 1 - HABITAT_NORMAL.wind)
-      const zoneKeep = smallKeep(x, z)
-      const chance =
-        (amount * litter * hollow * sheltered * zoneKeep * (1 + rule.underTreeBoost * underTree)) /
-        (1 + rule.underTreeBoost)
-      if (keep >= chance) continue
-      if (g.slope > rule.maxSlope || g.hill > 0.35 || g.pebble > 0.5 || g.trunk < 0.01) continue
-      const length = (rule.length[0] + size * (rule.length[1] - rule.length[0])) * fadeScale(zoneKeep)
-      // Leaves may overlap each other and twigs, but not moss or mushrooms.
-      if (!occupancy.free(x, z, length * 0.2)) continue
-      result.leaves[variant].push({
-        x,
-        y: g.y + 0.0005 + lift * 0.0015,
-        z,
-        yaw,
-        normal: tilt(look.normalAt(x, z), 1),
-        scale: [length, length, length],
-        // Index into LEAF_COLORS.autumn or LEAF_COLORS.green.
-        autumn: isAutumn,
-        palette: Math.floor(pick * (isAutumn ? 5 : 4)),
-        shade,
-        variant,
-        // Wetter leaves look darker (decaying).
-        damp: g.moisture,
-      })
-    }
+  // --- Leaves: drifts and accumulation (scatterLeaves.js).
+  if (cover.leaves.on && cover.leaves.amount > 0 && leaves) {
+    scatterLeaves({
+      data,
+      look,
+      ground,
+      occupancy,
+      result,
+      settings: cover.leaves,
+      leafField: leaves,
+      trunks,
+      landmarks,
+      smallKeep,
+      fadeScale,
+      random: tileRandom(SALT.leaves + cover.leaves.seedOffset * 7919),
+      tilt,
+    })
   }
 
   // --- Flowers (wood anemones): colonies (flowerField.js), or evenly
