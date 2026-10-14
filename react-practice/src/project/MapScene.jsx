@@ -4,6 +4,7 @@ import MapPanel from './MapPanel'
 import { DEFAULT_COVER } from './cover/coverRules'
 import { createCoverRenderer, createTrunkRenderer } from './cover/coverRenderer'
 import { createFlyAgaric } from './cover/flyAgaric'
+import { createMossField } from './cover/mossField'
 import { scatterTile } from './cover/scatterTile'
 import { FOREST_COLORS, createForestSky } from './forest/sky'
 import { DEFAULT_HABITAT, sunDirectionOf } from './habitat/habitatFields'
@@ -49,8 +50,9 @@ const START = { distance: 0.65, yaw: 0, pitch: -0.7 }
 // direction; shadows only cover the area near it (the half-size comes from
 // the viewpoint; the sun moves back to match).
 const SUN_DISTANCE = 1.5
-// Habitat changes wait until the controls have been still this long (ms).
-const HABITAT_DEBOUNCE_MS = 300
+// Habitat and ground-cover changes wait until the controls have been still
+// this long (ms).
+const SETTLE_MS = 300
 const SHADOW_BASE = { reach: 0.6, far: 4 }
 const BUILD_BUDGET_MS = 6
 const STATUS_REFRESH_MS = 250
@@ -88,9 +90,7 @@ export default function MapScene() {
   // Ground shader uniforms (grain, dappled light).
   const groundUniformsRef = useRef(null)
   const viewRef = useRef(DEFAULT_VIEW)
-  const coverRendererRef = useRef(null)
   const flyAgaricRef = useRef(null)
-  const worldRef = useRef(null)
   const antWorldRef = useRef(null)
   const farGroundRef = useRef(null)
   const skyRef = useRef(null)
@@ -98,14 +98,17 @@ export default function MapScene() {
   const sunOffsetRef = useRef(sunOffsetOf(DEFAULT_HABITAT))
   const controllerRef = useRef(null)
   const overlayRef = useRef(null)
-  // What the tile listener needs to scatter a new tile.
-  const coverContextRef = useRef({ cover: DEFAULT_COVER, seed: DEFAULT_GROUND.seed })
+  // What the tile listener needs to scatter a new tile (moss: the moss
+  // patch field, built from the settled settings below).
+  const coverContextRef = useRef({ cover: DEFAULT_COVER, seed: DEFAULT_GROUND.seed, moss: null })
   const [ground, setGround] = useState(DEFAULT_GROUND)
   const [view, setView] = useState(DEFAULT_VIEW)
+  // Cover controls update instantly; tiles re-scatter once they settle.
   const [cover, setCover] = useState(DEFAULT_COVER)
+  const settledCover = useDebounced(cover, SETTLE_MS)
   // Habitat controls update instantly; the world follows once they settle.
   const [habitat, setHabitat] = useState(DEFAULT_HABITAT)
-  const settledHabitat = useDebounced(habitat, HABITAT_DEBOUNCE_MS)
+  const settledHabitat = useDebounced(habitat, SETTLE_MS)
   const [status, setStatus] = useState({
     loaded: 0,
     pending: 0,
@@ -167,7 +170,6 @@ export default function MapScene() {
     // Ground cover follows the tiles: scattered when a tile is built,
     // dropped when it's freed.
     const coverRenderer = createCoverRenderer(scene, morphUniforms)
-    coverRendererRef.current = coverRenderer
     const trunkRenderer = createTrunkRenderer(scene)
     const flyAgaric = createFlyAgaric(scene)
     flyAgaricRef.current = flyAgaric
@@ -176,8 +178,8 @@ export default function MapScene() {
     let builds = 0
     const tiles = createTileManager(scene, material, depthMaterial, {
       onTileReady: (key, data) => {
-        const { cover, seed } = coverContextRef.current
-        const items = scatterTile(data, { cover, seed, trunks: tiles.trunks })
+        const { cover, seed, moss } = coverContextRef.current
+        const items = scatterTile(data, { cover, seed, moss, trunks: tiles.trunks })
         coverRenderer.setTile(key, items)
         world.setTile(key, items)
         builds += 1
@@ -190,9 +192,7 @@ export default function MapScene() {
     tilesRef.current = tiles
     tiles.setGround(DEFAULT_GROUND)
     world = createWorldQueries(tiles, () => (flyAgaric.group.visible ? flyAgaric.group.position : null))
-    worldRef.current = world
     const farGround = createFarGround(farMaterial, holeUniforms)
-    farGround.setCover(DEFAULT_COVER, DEFAULT_GROUND.seed)
     farGroundRef.current = farGround
     scene.add(farGround.mesh)
 
@@ -452,12 +452,10 @@ export default function MapScene() {
       effects.dispose()
       antWorldRef.current = null
       farGroundRef.current = null
-      worldRef.current = null
       tiles.dispose()
       coverRenderer.dispose()
       trunkRenderer.dispose()
       flyAgaric.dispose()
-      coverRendererRef.current = null
       flyAgaricRef.current = null
       farGround.dispose()
       sky.dispose()
@@ -476,8 +474,6 @@ export default function MapScene() {
   // cover as they finish; grain is only a shader uniform.
   const { seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, grain } = ground
   useEffect(() => {
-    coverContextRef.current = { ...coverContextRef.current, seed }
-    farGroundRef.current?.setCover(coverContextRef.current.cover, seed)
     tilesRef.current?.setGround({ seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing })
   }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing])
 
@@ -496,20 +492,6 @@ export default function MapScene() {
     })
   }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, cover.flyAgaric])
 
-  // Cover settings only re-scatter the tiles already built (no ground rebuild).
-  useEffect(() => {
-    coverContextRef.current = { ...coverContextRef.current, cover }
-    farGroundRef.current?.setCover(cover, coverContextRef.current.seed)
-    const tiles = tilesRef.current
-    const renderer = coverRendererRef.current
-    if (!tiles || !renderer) return
-    tiles.forEachTile((key, data) => {
-      const items = scatterTile(data, { cover, seed: coverContextRef.current.seed, trunks: tiles.trunks })
-      renderer.setTile(key, items)
-      worldRef.current?.setTile(key, items)
-    })
-  }, [cover])
-
   useEffect(() => {
     if (groundUniformsRef.current) groundUniformsRef.current.uGrain.value = grain / 100
   }, [grain])
@@ -519,6 +501,19 @@ export default function MapScene() {
   useEffect(() => {
     tilesRef.current?.setHabitat(settledHabitat)
   }, [settledHabitat])
+
+  // Settled cover settings (and any ground or habitat change) rebuild the
+  // moss patch field, then loaded tiles re-scatter over a few frames
+  // (no ground rebuild). Declared after the ground and habitat effects, so
+  // it sees their new fields.
+  useEffect(() => {
+    const tiles = tilesRef.current
+    if (!tiles?.habitat) return
+    const moss = createMossField(settledCover.moss, { habitat: tiles.habitat, sampler: tiles.sampler, seed })
+    coverContextRef.current = { cover: settledCover, seed, moss }
+    farGroundRef.current?.setCover(settledCover, seed, moss)
+    tiles.refreshCover()
+  }, [settledCover, settledHabitat, seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing])
 
   // The sun itself (light, shadows, sky glow, dappled light) moves at once.
   const { sunDirection, sunElevation } = habitat
@@ -592,6 +587,7 @@ export default function MapScene() {
         cover={cover}
         habitat={habitat}
         habitatSettling={habitat !== settledHabitat || status.refreshing > 0}
+        coverSettling={cover !== settledCover || status.refreshing > 0}
         status={status}
         onGroundChange={(key, value) => setGround((current) => ({ ...current, [key]: value }))}
         onViewChange={(key, value) => setView((current) => ({ ...current, [key]: value }))}

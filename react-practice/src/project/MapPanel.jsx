@@ -28,13 +28,14 @@ const FIELD_OPTIONS = [['off', 'Off'], ...HABITAT_FIELDS]
 const PREVIEW_OPTIONS = [['off', 'Off'], ['height', 'Height'], ...HABITAT_FIELDS, ['tiles', 'Tile borders']]
 const isField = (preview) => HABITAT_FIELDS.some(([id]) => id === preview)
 const formatDegrees = (value) => `${value}°`
+const formatCm = (value) => `${value} cm`
 
 /**
  * Map tab controls, in tabs: the ground's shape, habitat, ground cover,
  * paths, and debug previews.
  * status: { loaded, pending, refreshing, focus: [x, z], ground } from the
- * scene. habitatSettling: habitat changes are still on their way to the
- * world. onResetKeys({ ground, cover, view, habitat: [...keys] }) restores
+ * scene. habitatSettling / coverSettling: habitat or ground-cover changes
+ * are still on their way to the world. onResetKeys({ ground, cover, view, habitat: [...keys] }) restores
  * just those settings to their defaults; onReset restores everything.
  */
 export default function MapPanel({
@@ -43,6 +44,7 @@ export default function MapPanel({
   cover,
   habitat,
   habitatSettling,
+  coverSettling,
   status,
   onGroundChange,
   onViewChange,
@@ -81,6 +83,19 @@ export default function MapPanel({
     />
   )
 
+  // One moss setting as a slider.
+  const mossSlider = (label, key, min, max, step, format = formatPercent) => (
+    <LabeledSlider
+      label={label}
+      value={cover.moss[key]}
+      min={min}
+      max={max}
+      step={step}
+      format={format}
+      onChange={setGroup('moss', key)}
+    />
+  )
+
   // Enable + Amount for one ground-cover group.
   const coverAmount = (id) => (
     <>
@@ -90,7 +105,34 @@ export default function MapPanel({
   )
 
   const elementControls = {
-    moss: coverAmount('moss'),
+    moss: (
+      <>
+        <EnableToggle label="Enabled" checked={cover.moss.on} onChange={setGroup('moss', 'on')} />
+        {cover.moss.on && (
+          <>
+            {mossSlider('Amount', 'amount', 0, 100, 1)}
+            {mossSlider('Patch size', 'patchSize', 5, 80, 1, formatCm)}
+            {mossSlider('Patch contrast', 'patchContrast', 0, 100, 5)}
+            {mossSlider('Minimum spacing', 'minSpacing', 0.5, 3, 0.1, (value) => `${value.toFixed(1)} cm`)}
+            {mossSlider('Moisture preference', 'moisturePreference', 0, 100, 5)}
+            {mossSlider('Shade preference', 'shadePreference', 0, 100, 5)}
+            {mossSlider('Concavity preference', 'concavityPreference', 0, 100, 5)}
+            {mossSlider('Scale variation', 'scaleVariation', 0, 100, 5)}
+            {mossSlider('Color variation', 'colorVariation', 0, 100, 5)}
+            <AdvancedSection>
+              {mossSlider('Noise scale', 'noiseScale', 10, 100, 5)}
+              {mossSlider('Noise threshold', 'noiseThreshold', 0, 95, 5)}
+              {mossSlider('Maximum slope', 'maxSlope', 5, 60, 1, formatDegrees)}
+              {mossSlider('Random offset', 'randomOffset', 0, 999, 1, (value) => value)}
+            </AdvancedSection>
+            <p className="section-note">
+              Amount is the share of ground inside moss patches. Ground below the noise threshold
+              always stays bare soil.
+            </p>
+          </>
+        )}
+      </>
+    ),
     flowers: coverAmount('flowers'),
     twigs: coverAmount('twigs'),
     leaves: (
@@ -229,6 +271,9 @@ export default function MapPanel({
             className="panel-tabs element-picker"
             label="Ground cover element"
           />
+          <p className="section-note" aria-live="polite">
+            {coverSettling ? 'Updating ground cover…' : '\u00a0'}
+          </p>
           <ControlCard
             title={ELEMENT_TITLES[element]}
             action={

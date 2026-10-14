@@ -21,7 +21,8 @@ import { createTileMesh, recolorTileMesh } from './tileMesh'
  *
  * Habitat changes (moisture, sunlight, wind…) don't rebuild shapes: loaded
  * tiles get their fields redone, recoloured, and re-scattered, nearest
- * first, a few per frame.
+ * first, a few per frame. Ground-cover changes (refreshCover) only
+ * re-scatter, the same way.
  */
 
 // Detail: the 3 × 3 tiles around the focus are finest.
@@ -52,6 +53,7 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
   let habitat = null
   let version = 0
   let habitatVersion = 0
+  let coverVersion = 0
   let refreshing = 0
   let mode = 'off'
   let pending = 0
@@ -81,6 +83,12 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
       habitat = createHabitatField(sampler, trunks, habitatSettings)
       habitatVersion += 1
       // Every loaded tile is now out of date (counted properly next update).
+      refreshing = tiles.size
+    },
+
+    /** Re-scatter every loaded tile's cover over the next few frames. */
+    refreshCover() {
+      coverVersion += 1
       refreshing = tiles.size
     },
 
@@ -173,28 +181,36 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
         if (!want.pebbles) mesh.castShadow = false
         removeTile(key)
         group.add(mesh)
-        tiles.set(key, { mesh, data, version, habitatVersion, segments: want.segments, pebbles: want.pebbles })
+        tiles.set(key, { mesh, data, version, habitatVersion, coverVersion, segments: want.segments, pebbles: want.pebbles })
         listeners.onTileReady?.(key, data)
         pending -= 1
       }
 
-      // Habitat refresh: redo the fields of tiles that are otherwise current.
+      // Habitat and cover refresh for tiles whose shape is current: redo
+      // the habitat fields (if they changed), then re-scatter.
       const stale = [...wanted.entries()]
         .filter(([key]) => {
           const tile = tiles.get(key)
-          return tile && tile.version === version && tile.habitatVersion !== habitatVersion
+          return (
+            tile &&
+            tile.version === version &&
+            (tile.habitatVersion !== habitatVersion || tile.coverVersion !== coverVersion)
+          )
         })
         .sort((a, b) => a[1].ring - b[1].ring)
       refreshing = stale.length
       for (const [key] of stale) {
         if (performance.now() - start > budgetMs) break
         const tile = tiles.get(key)
-        applyHabitat(tile.data, habitat)
-        if (tile.mesh.userData.data !== tile.data) {
-          tile.mesh.userData.data = decimateTileData(tile.data, NEAR_SEGMENTS / tile.segments)
+        if (tile.habitatVersion !== habitatVersion) {
+          applyHabitat(tile.data, habitat)
+          if (tile.mesh.userData.data !== tile.data) {
+            tile.mesh.userData.data = decimateTileData(tile.data, NEAR_SEGMENTS / tile.segments)
+          }
+          recolorTileMesh(tile.mesh, mode)
+          tile.habitatVersion = habitatVersion
         }
-        recolorTileMesh(tile.mesh, mode)
-        tile.habitatVersion = habitatVersion
+        tile.coverVersion = coverVersion
         listeners.onTileReady?.(key, tile.data)
         refreshing -= 1
       }

@@ -1,7 +1,7 @@
 import { createRandom } from '../../utils/distributions'
 import { getNoise } from '../../utils/noise'
 import { TILE_SIZE, hash } from '../terrain/heightField'
-import { COVER_RULES, HABITAT_NORMAL } from './coverRules'
+import { COVER_RULES, HABITAT_NORMAL, MOSS_COLORS } from './coverRules'
 
 /**
  * Scatter one tile's ground cover from its data maps (terrain/tileData.js).
@@ -79,10 +79,11 @@ function tilt(normal, amount) {
 }
 
 /**
- * data: tile data; options: { cover, seed, trunks }.
+ * data: tile data; options: { cover, seed, trunks, moss } (moss: the moss
+ * patch field, cover/mossField.js).
  * Returns { moss, mushrooms, twigs, branches, leaves: [variant0, 1, 2], flowers }.
  */
-export function scatterTile(data, { cover, seed, trunks }) {
+export function scatterTile(data, { cover, seed, trunks, moss }) {
   const look = createLookup(data)
   const { x0, z0 } = look
   const occupancy = createOccupancy()
@@ -99,6 +100,8 @@ export function scatterTile(data, { cover, seed, trunks }) {
     sunlight: field('sunlight', x, z),
     shade: field('shade', x, z),
     wind: field('wind', x, z),
+    concavity: field('concavity', x, z),
+    habitatSlope: field('habitatSlope', x, z),
   })
 
   // --- Mushrooms: clusters seeded by trunks (roots) and by damp tiles.
@@ -168,64 +171,66 @@ export function scatterTile(data, { cover, seed, trunks }) {
     }
   }
 
-  // --- Moss: one possible cushion per world cell, kept by a patch noise.
-  if (cover.moss.on && cover.moss.amount > 0) {
+  // --- Moss: connected patches (mossField.js), filled with cushions on a
+  // jittered world grid. Cushions in a patch may touch each other (that's
+  // what makes a carpet); they avoid what's already placed, and everything
+  // placed later avoids them.
+  if (cover.moss.on && cover.moss.amount > 0 && moss) {
     const rule = COVER_RULES.moss
-    const amount = cover.moss.amount / 100
-    const patchNoise = {
-      type: 'perlin',
-      scale: 1 / rule.patchWavelength,
-      octaves: 2,
-      persistence: 0.5,
-      lacunarity: 2,
-      seed: seed * 31 + SALT.moss,
+    const settings = cover.moss
+    const { cell, jitter } = moss
+    const placed = []
+    // Habitat for moss, averaged over a 1.5 cm ring: this cancels the ~3 cm
+    // hollows, so preferences follow broader damp, shady ground and patches
+    // don't crumble into specks.
+    const ring = 0.015
+    const mossGround = (x, z, g) => {
+      const average = (name) =>
+        (g[name] +
+          field(name, x + ring, z) +
+          field(name, x - ring, z) +
+          field(name, x, z + ring) +
+          field(name, x, z - ring)) /
+        5
+      return { moisture: average('moisture'), shade: average('shade'), concavity: average('concavity'), trunk: g.trunk }
     }
-    const firstX = Math.floor(x0 / rule.cell)
-    const firstZ = Math.floor(z0 / rule.cell)
-    const lastX = Math.floor((x0 + TILE_SIZE) / rule.cell)
-    const lastZ = Math.floor((z0 + TILE_SIZE) / rule.cell)
+    const firstX = Math.floor(x0 / cell)
+    const firstZ = Math.floor(z0 / cell)
+    const lastX = Math.floor((x0 + TILE_SIZE) / cell)
+    const lastZ = Math.floor((z0 + TILE_SIZE) / cell)
     for (let iz = firstZ; iz <= lastZ; iz += 1) {
       for (let ix = firstX; ix <= lastX; ix += 1) {
-        const x = (ix + 0.15 + 0.7 * hash(ix, iz, seed + SALT.moss)) * rule.cell
-        const z = (iz + 0.15 + 0.7 * hash(ix, iz, seed + SALT.moss + 1)) * rule.cell
+        const h = (k) => hash(ix, iz, seed + SALT.moss + k)
+        const x = (ix + 0.5 + jitter * (h(0) - 0.5)) * cell
+        const z = (iz + 0.5 + jitter * (h(1) - 0.5)) * cell
         if (!look.inside(x, z)) continue
         const g = ground(x, z)
-        if (g.slope > rule.maxSlope || g.hill > 0.2 || g.pebble > 0.3) continue
-        const radius = rule.radius[0] + hash(ix, iz, seed + SALT.moss + 2) * (rule.radius[1] - rule.radius[0])
-        if (g.trunk < radius * 0.5) continue
-        const patch = 0.5 + 0.5 * getNoise(x, z, patchNoise)
-        const wet = smoothstep(rule.minMoisture, rule.minMoisture + 0.25, g.moisture)
-        const nearTrunk = Math.exp(-g.trunk / rule.trunkReach)
-        // Beside (not on) a pebble.
-        const step = 0.012
-        const besidePebble =
-          Math.max(
-            field('pebble', x + step, z),
-            field('pebble', x - step, z),
-            field('pebble', x, z + step),
-            field('pebble', x, z - step)
-          ) > 0.5
-        const chance =
-          amount *
-          (1.4 * patch ** 1.5 * wet + 0.9 * nearTrunk + (besidePebble ? 0.35 * wet : 0)) *
-          preference(g.shade, rule.shadePreference, HABITAT_NORMAL.shade)
-        if (hash(ix, iz, seed + SALT.moss + 3) >= chance) continue
-        if (!occupancy.free(x, z, radius * 0.7)) continue
-        occupancy.add(x, z, radius * 0.7)
-        const tall = rule.height[0] + hash(ix, iz, seed + SALT.moss + 4) * (rule.height[1] - rule.height[0])
+        if (g.habitatSlope > settings.maxSlope || g.hill > 0.2 || g.pebble > 0.3) continue
+        const density = moss.density(x, z, mossGround(x, z, g))
+        // Inside a patch every cell grows; at a soft edge, fewer do.
+        if (density < 0.02 || h(2) >= density) continue
+        const variation = 1 + (settings.scaleVariation / 100) * (h(3) * 2 - 1) * 0.6
+        const radius = cell * rule.radius * (1 - rule.edgeShrink * (1 - density)) * variation
+        if (g.trunk < radius * 0.5 || !occupancy.free(x, z, radius * 0.7)) continue
+        placed.push([x, z, radius * 0.7])
+        const tall = rule.height[0] + h(4) * (rule.height[1] - rule.height[0])
+        // Each patch has its own tone; colour variation mixes in others.
+        const colorVariation = settings.colorVariation / 100
+        const palette = h(6) < colorVariation * 0.6 ? Math.floor(h(7) * MOSS_COLORS.length) : moss.toneAt(x, z)
         result.moss.push({
           x,
           y: g.y - radius * 0.1,
           z,
-          yaw: hash(ix, iz, seed + SALT.moss + 5) * Math.PI * 2,
+          yaw: h(5) * Math.PI * 2,
           normal: tilt(look.normalAt(x, z), 1),
           scale: [radius, radius * tall, radius],
-          palette: Math.floor(hash(ix, iz, seed + SALT.moss + 6) * 4),
-          shade: hash(ix, iz, seed + SALT.moss + 7),
+          palette,
+          shade: 0.5 + (h(8) - 0.5) * colorVariation,
           variant: 0,
         })
       }
     }
+    for (const [x, z, radius] of placed) occupancy.add(x, z, radius)
   }
 
   const tileRandom = (salt) => createRandom(Math.floor(hash(data.tileX, data.tileZ, seed + salt) * 4294967295))

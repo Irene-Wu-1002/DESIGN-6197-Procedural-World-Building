@@ -4,15 +4,16 @@ import { flowerMoisture, flowerPatchAt, preference } from '../cover/scatterTile'
 import { TILE_SIZE } from './heightField'
 import { GROUND_COLORS, smoothHeightOf, soilColor } from './tileData'
 
-// Ground cover read from afar: moss areas (damp ground) and flower drifts
-// tint the far ground, so they don't stop where the tiles end.
+// Ground cover read from afar: moss patches (the same patch field as the
+// tiles) and flower drifts tint the far ground, so they don't stop where
+// the tiles end.
 const averageColor = (list) => {
   const sum = list.map((hex) => new THREE.Color(hex)).reduce((a, c) => a.add(c), new THREE.Color(0, 0, 0))
   return sum.multiplyScalar(1 / list.length).toArray()
 }
 const MOSS_TONE = averageColor(MOSS_COLORS)
 const FLOWER_TONE = averageColor(FLOWER_COLORS)
-const FAR_COVER = { moss: 0.5, mossWet: [0.5, 0.75], flowers: 0.22, flowerPatch: [0.45, 0.75] }
+const FAR_COVER = { moss: 0.5, flowers: 0.22, flowerPatch: [0.45, 0.75] }
 
 /**
  * Far ground: one coarse ring-shaped mesh around the focus, out to
@@ -111,15 +112,16 @@ export function createFarGround(material, holeUniforms) {
   const fields = {}
   const color = [0, 0, 0]
   let lastKey = null
-  // { cover, seed } for the moss / flower tints, or null.
+  // { cover, seed, moss } for the moss / flower tints, or null (moss: the
+  // moss patch field, cover/mossField.js).
   let coverSettings = null
   let coverVersion = 0
 
   return {
     mesh,
     /** Ground-cover settings for the far tints (rebuilds on the next update). */
-    setCover(cover, seed) {
-      coverSettings = { cover, seed }
+    setCover(cover, seed, moss) {
+      coverSettings = { cover, seed, moss }
       coverVersion += 1
     },
     /**
@@ -167,15 +169,19 @@ export function createFarGround(material, holeUniforms) {
         const cover = out.pebbleChance * PEBBLE_AREA
         for (let k = 0; k < 3; k += 1) color[k] += (PEBBLE_TONE[k] - color[k]) * cover
         if (coverSettings) {
-          const { cover: c, seed } = coverSettings
+          const { cover: c, seed, moss: mossField } = coverSettings
           const offHill = 1 - out.hill
-          const moss = c.moss.on
-            ? (c.moss.amount / 100) *
-              FAR_COVER.moss *
-              smoothstep(...FAR_COVER.mossWet, moisture) *
-              preference(fields.shade, COVER_RULES.moss.shadePreference, HABITAT_NORMAL.shade) *
-              offHill
-            : 0
+          const moss =
+            c.moss.on && mossField
+              ? FAR_COVER.moss *
+                mossField.density(centerX + localX, centerZ + localZ, {
+                  moisture,
+                  shade: fields.shade,
+                  concavity: fields.concavity,
+                  trunk: fields.trunkDistance,
+                }) *
+                offHill
+              : 0
           const flowers = c.flowers?.on
             ? (c.flowers.amount / 100) *
               FAR_COVER.flowers *

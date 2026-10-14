@@ -5,16 +5,17 @@
  *   element    method (Week 5)                    rules
  *   mushrooms  clusters of 2–7                    damp, near trunks (roots),
  *                                                 off the ant hill and pebbles
- *   moss       noise-clustered patches,           damp, shaded, gentle slope;
- *              jittered-grid spacing inside       loves trunk bases and pebbles
+ *   moss       connected patches (mossField.js):  damp, shaded, hollows, gentle
+ *              noise + habitat score, filled on   slope, near trunk bases;
+ *              a jittered grid of cushions        bare soil between patches
  *   twigs      uniform random                     more under trees
  *   leaves     uniform random + rotation,         more under trees, in litter
  *              density from a litter noise        patches and hollows
  *   flowers    noise-clustered drifts,            moist but not wet, gentle
  *   (wood      one per jittered world cell        slopes, out in the open
  *   anemones)                                     (off the hill, away from bark)
- * Habitat (habitat/habitatFields.js) adds gentle preferences: moss likes
- * shade, mushrooms shun full sun, flowers like sunlight, and leaves and
+ * Habitat (habitat/habitatFields.js) adds gentle preferences: mushrooms
+ * shun full sun, flowers like sunlight, and leaves and
  * twigs gather where the wind is calm. Each is 1 at average conditions,
  * so the habitat reshapes where things are more than how many.
  * Placement order: mushrooms → moss → twigs → leaves → flowers (earlier
@@ -27,7 +28,25 @@ export const DEFAULT_COVER = {
   // Share of leaves in autumn colours (the rest are green).
   autumn: 50,
   twigs: { on: true, amount: 50 },
-  moss: { on: true, amount: 50 },
+  // Moss: amount is the share of ground inside patches (%); sizes in cm.
+  moss: {
+    on: true,
+    amount: 30,
+    patchSize: 25,
+    patchContrast: 60,
+    minSpacing: 1,
+    moisturePreference: 70,
+    shadePreference: 50,
+    concavityPreference: 40,
+    scaleVariation: 40,
+    colorVariation: 50,
+    // Advanced: breakup noise size (% of patch size), share of ground that
+    // always stays bare (%), steepest ground (°), and the noise arrangement.
+    noiseScale: 30,
+    noiseThreshold: 35,
+    maxSlope: 35,
+    randomOffset: 0,
+  },
   mushrooms: { on: true, amount: 50 },
   flowers: { on: true, amount: 50 },
   flyAgaric: true,
@@ -39,18 +58,12 @@ export const HABITAT_NORMAL = { shade: 0.37, sunlight: 0.45, wind: 0.4 }
 
 export const COVER_RULES = {
   moss: {
-    // Jittered grid of possible cushions inside a tile.
-    cell: 0.012,
-    radius: [0.006, 0.022],
+    // Cushion radius as a share of the grid cell (neighbours touch), and
+    // how much smaller cushions get at a patch's edge.
+    radius: 0.62,
+    edgeShrink: 0.4,
     // Cushion height as a share of its radius.
     height: [0.35, 0.6],
-    minMoisture: 0.45,
-    maxSlope: 35,
-    patchWavelength: 0.1,
-    // Strong pull toward trunk bases (m) and pebbles.
-    trunkReach: 0.3,
-    // More in shade: × (1 ± this) from open to deep shade.
-    shadePreference: 0.4,
   },
   mushrooms: {
     // Clusters around each trunk, and a chance of one per damp tile.
