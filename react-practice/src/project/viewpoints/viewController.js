@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { createChaseCamera } from './chaseCamera'
 import { createViewInput } from './input'
 import { createCrawlMovement } from './movement/crawl'
 import { createFlightMovement } from './movement/flight'
@@ -16,6 +17,9 @@ import { VIEWPOINTS, VIEW_SHARED, switchLabelOf } from './viewpointConfig'
  *   haze, vision effects, and perception blend across. With reduced motion
  *   it crossfades instead. New switches wait until it finishes, and the
  *   last frame always lands exactly on the new eye.
+ * - A viewpoint can have camera modes (`views`): the butterfly flies with a
+ *   third-person chase camera by default (chaseCamera.js), its body banking
+ *   and beating its wings in view, with the eye view as an option (V).
  * - Switching to the free camera (no body) pulls back out to its orbit
  *   while the body you leave fades where it stood.
  * - "View body" (out to third person and back) and the ant's tunnels use
@@ -77,6 +81,10 @@ function lerpParams(a, b, t, out) {
 }
 
 const newState = () => ({ position: new THREE.Vector3(), yaw: 0, pitch: 0, roll: 0, tiltPitch: 0, tiltRoll: 0 })
+// A viewpoint's starting camera mode ('eye' unless it has `views`).
+const modeOf = (forConfig) => forConfig.views?.default ?? 'eye'
+// Eye view ↔ chase view (s).
+const MODE_SECONDS = 0.6
 
 /**
  * camera: the scene camera; world: worldQueries; bodies: bodies.js;
@@ -103,6 +111,14 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
   state.yaw = start.yaw
   state.pitch = start.pitch ?? config.camera.startPitch
   movement.place(state, start, ctxFor(config))
+
+  // Camera mode of the current viewpoint, and the chase camera it may use.
+  const chase = createChaseCamera(world)
+  let mode = modeOf(config)
+  if (mode === 'chase') chase.reset(config.chase)
+  // The body as seen in chase view: bank and nose tilt (radians).
+  const bodyPose = { roll: 0, pitch: 0 }
+  const chaseCenter = new THREE.Vector3()
 
   // The running switch / body view / tunnel, or null.
   let action = null
@@ -144,6 +160,11 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     partQ.identity().slerp(turnQ, t)
     return out.copy(va).applyQuaternion(partQ).multiplyScalar(Math.exp(la + (lb - la) * t)).add(focus)
   }
+  // The body's centre for a viewer state (the eye sits `body.eye` ahead).
+  const centerOf = (s, forConfig, out) => {
+    const [forward, height] = forConfig.body.eye
+    return out.set(s.position.x + Math.sin(s.yaw) * forward, s.position.y - height, s.position.z + Math.cos(s.yaw) * forward)
+  }
   const clampPitch = (forConfig, pitch) =>
     Math.min(Math.max(pitch, forConfig.camera.pitchLimits[0]), forConfig.camera.pitchLimits[1])
 
@@ -173,6 +194,7 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     target: null,
     busy: false,
     bodyView: false,
+    cameraMode: config.views ? mode : null,
     nearTunnel: false,
     following: false,
     scentNearby: false,
@@ -209,7 +231,18 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     Object.assign(params, copyParams(next.params))
     input.clearActions()
     bodies.hideAll()
-    setUi({ id, target: null, nearTunnel: false, following: false, scentNearby: false })
+    mode = modeOf(config)
+    if (mode === 'chase') chase.reset(config.chase)
+    bodyPose.roll = 0
+    bodyPose.pitch = 0
+    setUi({
+      id,
+      target: null,
+      nearTunnel: false,
+      following: false,
+      scentNearby: false,
+      cameraMode: config.views ? mode : null,
+    })
   }
 
   // Where you are: the free camera's focus, or your body's eye.
@@ -257,15 +290,31 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         eye,
         eyeQ: eyeQuaternion(nextState, new THREE.Quaternion()),
         focus: nextMovement.anchor().clone(),
-        leaving: config.body ? { model: config.body.model, eye: state.position.clone(), yaw: state.yaw, offset: config.body.eye } : null,
+        leaving: config.body
+          ? { model: config.body.model, eye: state.position.clone(), yaw: state.yaw, offset: config.body.eye, pose: { ...bodyPose } }
+          : null,
       }
       return true
     }
     const focus = new THREE.Vector3()
     const shot = new THREE.Vector3()
     framingOf(nextConfig, eye, nextState.yaw, focus, shot)
+    const toChase = modeOf(nextConfig) === 'chase'
+    const endPosition = eye.clone()
+    const endQuaternion = eyeQuaternion(nextState, new THREE.Quaternion())
+    if (toChase) {
+      chase.reset(nextConfig.chase)
+      chase.pose(centerOf(nextState, nextConfig, new THREE.Vector3()), nextState.yaw, nextConfig.chase, endPosition, endQuaternion)
+    }
     action = {
       kind: 'switch',
+      endPosition,
+      endQuaternion,
+      keepBody: toChase,
+      leaving:
+        mode === 'chase'
+          ? { model: config.body.model, eye: state.position.clone(), yaw: state.yaw, offset: config.body.eye, pose: { ...bodyPose } }
+          : null,
       t: 0,
       duration: VIEW_SHARED.transitionSeconds,
       next,
@@ -301,12 +350,17 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       lookAtQuaternion(position, a.focus, camera.quaternion)
     } else {
       const k = ease(stage(u, SWITCH.hold, 1))
-      dolly(a.focus, a.held, a.eye, k, position)
+      dolly(a.focus, a.held, a.endPosition, k, position)
       lookAtQuaternion(position, a.focus, lookQ)
-      camera.quaternion.slerpQuaternions(lookQ, a.eyeQ, k)
+      camera.quaternion.slerpQuaternions(lookQ, a.endQuaternion, k)
     }
-    const opacity = stage(u, BODY_IN[0], BODY_IN[1]) * (1 - stage(u, BODY_OUT[0], BODY_OUT[1]))
+    // A chase-view body stays in view; an eye-view body fades as you enter it.
+    const opacity = stage(u, BODY_IN[0], BODY_IN[1]) * (a.keepBody ? 1 : 1 - stage(u, BODY_OUT[0], BODY_OUT[1]))
     bodies.show(a.config.body.model, a.eye, a.next.state.yaw, a.config.body.eye, opacity)
+    if (a.leaving) {
+      const { model, eye, yaw, offset, pose } = a.leaving
+      bodies.show(model, eye, yaw, offset, 1 - stage(u, 0.25, 0.6), pose)
+    }
     // Keep clear of the ground, and the near plane inside the body's scale.
     const ground = world.heightAt(position.x, position.z)
     position.y = Math.max(position.y, ground + Math.min(a.config.eyeHeight * 0.5, 0.002))
@@ -331,15 +385,67 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       camera.quaternion.slerp(a.eyeQ, stage(u, 0.85, 1))
     }
     if (a.leaving) {
-      bodies.show(a.leaving.model, a.leaving.eye, a.leaving.yaw, a.leaving.offset, 1 - stage(u, 0.5, 0.95))
+      bodies.show(a.leaving.model, a.leaving.eye, a.leaving.yaw, a.leaving.offset, 1 - stage(u, 0.5, 0.95), a.leaving.pose)
     }
     position.y = Math.max(position.y, world.heightAt(position.x, position.z) + 0.002)
     params.near = Math.max(Math.min(params.near, position.distanceTo(a.focus) * 0.05), 0.0002)
     return u >= 1
   }
 
+  // --- Eye view ↔ chase view (viewpoints with both modes).
+  const toggleMode = () => {
+    if (action) return false
+    const next = mode === 'chase' ? 'eye' : 'chase'
+    showLabel(config, `${config.label} · ${next === 'chase' ? 'chase view' : 'eye view'}`)
+    setUi({ busy: true })
+    if (next === 'chase') chase.recenter(config.chase)
+    if (settings.reducedMotion) {
+      hooks.capture()
+      mode = next
+      applyIdlePose()
+      action = { kind: 'crossfade', t: 0, duration: VIEW_SHARED.crossfadeSeconds }
+      setUi({ cameraMode: mode })
+      return true
+    }
+    const toPosition = new THREE.Vector3()
+    const toQuaternion = new THREE.Quaternion()
+    if (next === 'chase') {
+      chase.pose(centerOf(state, config, chaseCenter), state.yaw, config.chase, toPosition, toQuaternion)
+    } else {
+      toPosition.copy(state.position)
+      eyeQuaternion(state, toQuaternion)
+    }
+    action = {
+      kind: 'mode',
+      t: 0,
+      to: next,
+      fromPosition: camera.position.clone(),
+      fromQuaternion: camera.quaternion.clone(),
+      toPosition,
+      toQuaternion,
+    }
+    return true
+  }
+
+  const stepMode = (a) => {
+    const u = clamp01(a.t / MODE_SECONDS)
+    const k = ease(u)
+    camera.position.lerpVectors(a.fromPosition, a.toPosition, k)
+    camera.quaternion.slerpQuaternions(a.fromQuaternion, a.toQuaternion, k)
+    // The body leaves view as you enter the eye, and appears as you leave it.
+    const opacity = a.to === 'eye' ? 1 - stage(u, 0.6, 0.95) : stage(u, 0.05, 0.4)
+    bodies.show(config.body.model, state.position, state.yaw, config.body.eye, opacity, bodyPose)
+    if (u >= 1) {
+      mode = a.to
+      setUi({ cameraMode: mode })
+      return true
+    }
+    return false
+  }
+
   // --- View body: out to third person, hold, back.
   const viewBody = () => {
+    if (config.views?.modes?.length > 1) return toggleMode()
     if (action?.kind === 'body') {
       // Pressed again while looking: head back now.
       const [out, hold] = VIEW_SHARED.bodyViewSeconds
@@ -461,7 +567,20 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     }
   }
 
-  const applyIdlePose = () => {
+  // The camera for the current mode: the eye, or the chase camera (which
+  // follows on springs unless snapped).
+  const applyIdlePose = (dt = 0, snap = true) => {
+    if (mode === 'chase') {
+      chase.update(dt, {
+        center: centerOf(state, config, chaseCenter),
+        heading: state.yaw,
+        moving: info.moving,
+        settings: config.chase,
+        camera,
+        snap,
+      })
+      return
+    }
     camera.position.copy(state.position)
     eyeQuaternion(state, camera.quaternion)
   }
@@ -521,17 +640,24 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       const look = input.takeLook(dt, VIEW_SHARED.dragLook, VIEW_SHARED.keyLook)
 
       if (!action) {
-        state.yaw += look.yaw
-        state.pitch = clampPitch(config, state.pitch + look.pitch)
+        // In chase view, dragging swings the camera around the body.
+        if (mode === 'chase') chase.look(look.yaw, look.pitch, config.chase)
+        else {
+          state.yaw += look.yaw
+          state.pitch = clampPitch(config, state.pitch + look.pitch)
+        }
         runPresses()
       } else {
         input.takePresses()
       }
-      // Pan drags only move the free camera; drop them anywhere else.
+      // Pan drags only move the free camera; drop them anywhere else. The
+      // wheel zooms the free camera or the chase camera; elsewhere it's dropped.
       if (action || !movement.setFocus) input.takePan()
+      if (!action && mode === 'chase') chase.zoom(input.takeZoom(dt, config.chase.zoomRate), config.chase)
+      else if (action || !movement.setFocus) input.takeZoom(dt, 0)
       if (!action) {
         info = movement.update(dt, input, state, ctxFor(config))
-        applyIdlePose()
+        applyIdlePose(dt, false)
       }
 
       let prevMix = 0
@@ -557,6 +683,9 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
           done = stepTunnel(action)
           dark = action.dark
           applyIdlePose()
+        } else if (action.kind === 'mode') {
+          done = stepMode(action)
+          if (done) applyIdlePose()
         }
         // Never leave the camera somewhere invalid.
         if (!Number.isFinite(camera.position.x + camera.position.y + camera.position.z)) {
@@ -633,7 +762,9 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
 
       // Embodiment cues fade in once you're settled in the new body.
       embodiment.id = id
-      embodiment.presence += ((action ? 0 : 1) - embodiment.presence) * smooth(action ? 12 : 3, dt)
+      // (None in chase view: there the real body is on screen.)
+      const present = !action && mode !== 'chase'
+      embodiment.presence += ((present ? 1 : 0) - embodiment.presence) * smooth(present ? 3 : 12, dt)
       embodiment.turn += ((info.turn ?? 0) - embodiment.turn) * smooth(5, dt)
       embodiment.following = Boolean(info.following)
       embodiment.motion = settings.motionEffects
@@ -656,6 +787,18 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         if (ui.hint && time > hintUntil) setUi({ hint: '' })
       }
       frame.nearEntrance = nearEntrance
+      // The body in chase view: bank into turns, tip with climbs, and beat
+      // faster climbing or glide sinking.
+      if (!action && mode === 'chase') {
+        const k = smooth(4, dt)
+        bodyPose.roll += ((info.turn ?? 0) * config.pose.bank - bodyPose.roll) * k
+        bodyPose.pitch += ((info.climb ?? 0) * config.pose.climbTilt - bodyPose.pitch) * k
+        bodies.show(config.body.model, state.position, state.yaw, config.body.eye, 1, bodyPose)
+        const climb = info.climb ?? 0
+        bodies.setWingBeat(climb < -0.3 ? 0.35 : 1 + 0.6 * Math.max(climb, 0))
+      } else {
+        bodies.setWingBeat(1)
+      }
       bodies.animate(time)
 
       if (uiDirty) {
@@ -713,6 +856,9 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         pitch: state.pitch,
         following: Boolean(movement.following),
         focus: movement.anchor ? movement.anchor().toArray() : null,
+        mode,
+        bodyPose: { ...bodyPose },
+        chaseDistance: mode === 'chase' ? chase.distance : null,
       }
     },
   }

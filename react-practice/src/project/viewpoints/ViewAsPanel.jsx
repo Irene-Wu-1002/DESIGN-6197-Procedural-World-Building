@@ -48,6 +48,9 @@ function Check({ label, hint, checked, onChange }) {
 export default function ViewAsPanel({ ui, settings, onSelect, onSettingChange, onViewBody }) {
   const [open, setOpen] = useState(true)
   const config = VIEWPOINTS[ui.id]
+  // Camera modes (the butterfly: chase view by default, eye view optional).
+  const hasModes = config.views?.modes?.length > 1
+  const eyeView = hasModes && ui.cameraMode === 'eye'
 
   return (
     <section className="view-as" aria-labelledby="view-as-title" data-busy={ui.busy || undefined}>
@@ -99,7 +102,7 @@ export default function ViewAsPanel({ ui, settings, onSelect, onSettingChange, o
       <div id="view-as-details" className="view-as-details" hidden={!open}>
         <p className="view-as-description">{config.description}</p>
         <dl className="view-as-controls" aria-label={`${config.label} controls`}>
-          {config.controls.map(([what, how]) => (
+          {(eyeView && config.eyeControls ? config.eyeControls : config.controls).map(([what, how]) => (
             <div key={what}>
               <dt>{what}</dt>
               <dd>{how}</dd>
@@ -107,7 +110,21 @@ export default function ViewAsPanel({ ui, settings, onSelect, onSettingChange, o
           ))}
         </dl>
         <div className="view-as-actions">
-          {config.body && (
+          {hasModes && (
+            <button
+              type="button"
+              className="view-as-body"
+              aria-pressed={eyeView}
+              aria-keyshortcuts="V"
+              aria-disabled={ui.busy || undefined}
+              onClick={() => {
+                if (!ui.busy) onViewBody()
+              }}
+            >
+              {eyeView ? 'Chase view' : 'Eye view'}
+            </button>
+          )}
+          {config.body && !hasModes && (
             <button
               type="button"
               className="view-as-body"
@@ -121,7 +138,9 @@ export default function ViewAsPanel({ ui, settings, onSelect, onSettingChange, o
               {ui.bodyView ? 'Back to eye' : 'View body'}
             </button>
           )}
-          <span className="view-as-key">Switch: 1 2 3{config.body ? ' · Body: V' : ''}</span>
+          <span className="view-as-key">
+            Switch: 1 2 3{hasModes ? ` · ${eyeView ? 'Chase' : 'Eye'} view: V` : config.body ? ' · Body: V' : ''}
+          </span>
         </div>
         <details className="view-as-options">
           <summary>Perception options</summary>

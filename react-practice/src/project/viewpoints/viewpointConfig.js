@@ -23,6 +23,10 @@
  *                eye sits relative to its feet ([forward, up]), or null
  *   embodiment   first-person cue (Embodiment.jsx)
  *   framing      third-person shot used to reveal the body
+ *   views        camera modes: { default, modes } ('eye' when absent);
+ *                'chase' follows the body from behind (chaseCamera.js,
+ *                settings in `chase`; `pose` banks and tips the body)
+ *   eyeControls  instructions while in the optional eye view
  *   actions      species actions: key, label, and mode (hold: while
  *                pressed; toggle; press: once; `when` limits a contextual
  *                action to a UI state flag)
@@ -103,6 +107,24 @@ export const VIEWPOINTS = {
     body: { model: 'butterfly', eye: [0.012, 0.0] },
     embodiment: 'wings',
     framing: { distance: 0.2, elevation: 0.4, lookUp: 0, orbit: 0.6 },
+    // Third-person chase camera by default; the eye view is optional (V).
+    views: { default: 'chase', modes: ['chase', 'eye'] },
+    chase: {
+      distance: 0.25,
+      distanceLimits: [0.12, 0.6],
+      elevation: 0.32,
+      elevationLimits: [0.02, 1.2],
+      lift: 0.16,
+      follow: 5,
+      aim: 12,
+      recenterDelay: 1.5,
+      recenterRate: 1.5,
+      clearance: 0.02,
+      trunkGap: 0.03,
+      zoomRate: 1.4,
+    },
+    // The body in chase view: bank into turns, tip with climbs (radians).
+    pose: { bank: 0.45, climbTilt: 0.3 },
     actions: {
       rise: { label: 'Rise', key: 'Space', mode: 'hold' },
       sink: { label: 'Sink', key: 'KeyC', mode: 'hold' },
@@ -111,7 +133,16 @@ export const VIEWPOINTS = {
       ['Fly', 'W / S'],
       ['Turn', 'A / D'],
       ['Rise / sink', 'Space / C'],
+      ['Look around', 'Drag'],
+      ['Camera distance', 'Scroll or + / −'],
+      ['Eye view', 'V'],
+    ],
+    eyeControls: [
+      ['Fly', 'W / S'],
+      ['Turn', 'A / D'],
+      ['Rise / sink', 'Space / C'],
       ['Look', 'Drag'],
+      ['Chase view', 'V'],
     ],
   },
 

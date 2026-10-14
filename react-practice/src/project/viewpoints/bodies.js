@@ -8,6 +8,9 @@ import * as THREE from 'three'
  * the start so fading them never recompiles a shader.
  */
 
+// Wing beat at cruising (radians of stroke phase per second, ~2 beats/s).
+const WING_BEAT = 13
+
 const fadeMaterial = (options) =>
   new THREE.MeshStandardMaterial({ transparent: true, opacity: 1, ...options })
 
@@ -101,6 +104,7 @@ function createButterfly(material) {
     group.add(pivot)
     return { pivot, side }
   })
+  let phase = 0
   const sphere = new THREE.SphereGeometry(1, 16, 10)
   const cylinder = new THREE.CylinderGeometry(1, 1, 1, 5)
   group.add(blob(sphere, material, [0, 0, 0.002], [0.0022, 0.0022, 0.011]))
@@ -113,8 +117,12 @@ function createButterfly(material) {
     group,
     geometries: [plane, sphere, cylinder],
     extra: [wingMaterial, texture],
-    animate(time) {
-      const flap = 0.35 + Math.sin(time * 13) * 0.75
+    // beat: 1 is cruising; higher climbs (faster, fuller strokes), lower
+    // glides (slow, shallow strokes held up in a V).
+    animate(time, dt, beat = 1) {
+      phase += dt * WING_BEAT * beat
+      const stroke = Math.min(1, 0.35 + 0.65 * beat)
+      const flap = 0.35 + (1 - stroke) * 0.25 + Math.sin(phase) * 0.75 * stroke
       // The left wing is mirrored, so it turns the other way to rise.
       for (const { pivot, side } of wings) pivot.rotation.z = flap * side
     },
@@ -175,23 +183,30 @@ export function createBodies(scene) {
   bodies.butterfly.materials.push(bodies.butterfly.extra[0])
   for (const body of Object.values(bodies)) {
     body.group.visible = false
+    // Turn, then tip nose up/down, then bank.
+    body.group.rotation.order = 'YXZ'
     scene.add(body.group)
   }
 
   const origin = new THREE.Vector3()
-  const place = (group, eye, yaw, offset) => {
+  const place = (group, eye, yaw, offset, pose) => {
     // offset: [forward, up] of the eye from the body's origin.
     origin.set(eye.x + Math.sin(yaw) * offset[0], eye.y - offset[1], eye.z + Math.cos(yaw) * offset[0])
     group.position.copy(origin)
-    group.rotation.set(0, yaw, 0)
+    group.rotation.set(pose?.pitch ?? 0, yaw, pose?.roll ?? 0)
   }
+  let lastTime = null
+  let wingBeat = 1
 
   return {
-    /** Show `id` with its eye at `eye`, facing yaw, at this opacity. */
-    show(id, eye, yaw, offset, opacity) {
+    /**
+     * Show `id` with its eye at `eye`, facing yaw, at this opacity; pose
+     * ({ roll, pitch }, radians) banks and tips it (positive roll banks left).
+     */
+    show(id, eye, yaw, offset, opacity, pose = null) {
       const body = bodies[id]
       if (!body) return
-      place(body.group, eye, yaw, offset)
+      place(body.group, eye, yaw, offset, pose)
       body.group.visible = opacity > 0.01
       for (const material of body.materials) {
         material.opacity = opacity
@@ -201,8 +216,14 @@ export function createBodies(scene) {
     hideAll() {
       for (const body of Object.values(bodies)) body.group.visible = false
     },
+    /** Butterfly wing beat (1 cruising, > 1 climbing, < 1 gliding). */
+    setWingBeat(beat) {
+      wingBeat = beat
+    },
     animate(time) {
-      for (const body of Object.values(bodies)) if (body.group.visible) body.animate(time)
+      const dt = lastTime === null ? 0 : Math.min(time - lastTime, 0.1)
+      lastTime = time
+      for (const body of Object.values(bodies)) if (body.group.visible) body.animate(time, dt, wingBeat)
     },
     /** Every group, for compiling shaders up front. */
     groups: Object.values(bodies).map((body) => body.group),

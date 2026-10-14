@@ -49,7 +49,7 @@ export function createFlightMovement() {
       // Bank into the turn (positive turn = left = roll left).
       const bank = motion ? Math.max(Math.min(turn / m.turnRate, 1), -1) * m.bank : 0
       state.roll += (bank - state.roll) * smooth(3, dt)
-      return { moving: Math.abs(pace) > 0.05, turn: turn / m.turnRate, altitude }
+      return { moving: Math.abs(pace) > 0.05, turn: turn / m.turnRate, climb: climb / m.climbRate, altitude }
     },
   }
 }
