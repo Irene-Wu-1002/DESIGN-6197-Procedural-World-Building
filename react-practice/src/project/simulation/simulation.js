@@ -14,6 +14,8 @@ import {
   DEFAULT_DAY,
   PEAK_ELEVATION,
 } from './dayCycle'
+import { DEFAULT_WEATHER, createWeatherState } from './weather'
+import { windVector } from '../../utils/windField'
 
 /**
  * The simulation engine: a clock and everything that follows from it, run
@@ -26,7 +28,14 @@ import {
  * Environment: { sunDirection (Vector3, toward the light), lightColor,
  * lightIntensity, hemiSky, hemiGround, hemiIntensity, sky: { canopy,
  * middle, horizon, sunGlow }, dapple (0–1 share of the dappled light),
- * flowerOpen, butterflies, ants (activity 0–1), plus readouts }.
+ * flowerOpen, butterflies, ants (activity 0–1), haze (× the usual haze),
+ * mist (ground mist per metre), mistHeight (m), rain, wetness, wind (0–1),
+ * windDirection [x, z] }.
+ *
+ * Weather (weather.js) acts on top of the day: clouds dim and soften the
+ * sun and grey the sky, rain closes flowers and sends butterflies and ants
+ * home, humidity and fog thicken the haze and ground mist, lightning
+ * flashes the sky, and the ground wets and dries.
  */
 
 const START_SECONDS = 1.5
@@ -50,6 +59,14 @@ const SKY = {
   night: palette({ canopy: '#04070c', middle: '#0a1018', horizon: '#141c26', sunGlow: '#3a4a66' }),
 }
 const SKY_KEYS = Object.keys(FOREST_COLORS)
+const OVERCAST = palette({ canopy: '#1a1f1d', middle: '#3b423e', horizon: '#7a807b', sunGlow: '#8a8d86' })
+const OVERCAST_HEMI = new THREE.Color('#7d8580')
+const FLASH = new THREE.Color('#c9d4ff')
+// Ground mist at 100% fog (per metre), and extra haze at full humidity.
+const MIST = 4
+const HUMID_HAZE = 1.2
+// Wind direction for rain slant (degrees it comes from, as in the Habitat tab).
+const WIND_FROM = 45
 
 const makeEnvironment = () => ({
   sunDirection: new THREE.Vector3(),
@@ -63,23 +80,38 @@ const makeEnvironment = () => ({
   flowerOpen: 1,
   butterflies: 0,
   ants: 0,
+  haze: 1,
+  mist: 0,
+  mistHeight: 0.3,
+  rain: 0,
+  wetness: 0,
+  wind: 0,
+  windDirection: windVector(WIND_FROM),
 })
 
 export function createSimulation() {
-  let settings = { day: DEFAULT_DAY }
+  let settings = { day: DEFAULT_DAY, weather: DEFAULT_WEATHER }
+  const weather = createWeatherState()
+  let weatherNow = { ...weather.current, flash: 0, rainEnded: false }
   let running = false
   let blend = 0
   let time = DEFAULT_DAY.time
   const readout = { sun: { azimuth: 0, elevation: 0 }, air: 0, surface: 0, daylight: 0 }
+  const lerp = (a, b, t) => a + (b - a) * t
   const simulated = makeEnvironment()
   const out = makeEnvironment()
   const moonDirection = new THREE.Vector3()
 
-  // The simulated environment at the current time.
-  const simulate = () => {
+  // The simulated environment at the current time (dt real seconds, hours
+  // simulated hours passed this frame).
+  const simulate = (dt, hours) => {
     const day = settings.day
     const sun = day.manualSun ? { azimuth: day.azimuth, elevation: day.elevation } : sunAt(time, day, PEAK_ELEVATION)
     const daylight = daylightOf(sun.elevation)
+    const sunUp = Math.max(Math.sin((sun.elevation * Math.PI) / 180), 0)
+    const w = weather.update(settings.weather, dt, hours, sunUp * (1 - 0.8 * weatherNow.cloud), Math.random)
+    weatherNow = w
+    const cloud = w.cloud
     const sunScale = day.sunIntensity / 100
     const moonScale = day.moonIntensity / 100
     // The light follows the sun down to just below the horizon, then the
@@ -95,21 +127,36 @@ export function createSimulation() {
       simulated.lightColor.copy(MOON)
       simulated.lightIntensity = MOON_INTENSITY * moonScale * smoothstep(-2, -10, sun.elevation)
     }
-    simulated.hemiSky.copy(NIGHT_HEMI_SKY).lerp(BASE.hemiSky, daylight)
+    // Clouds dim the direct light (sun or moon) far more than the sky's.
+    simulated.lightIntensity *= 1 - 0.78 * cloud
+    simulated.hemiSky.copy(NIGHT_HEMI_SKY).lerp(BASE.hemiSky, daylight).lerp(OVERCAST_HEMI, 0.6 * cloud * daylight)
     simulated.hemiGround.copy(NIGHT_HEMI_GROUND).lerp(BASE.hemiGround, daylight)
-    simulated.hemiIntensity = BASE.hemiIntensity * (NIGHT_HEMI + (1 - NIGHT_HEMI) * daylight) * (0.6 + 0.4 * sunScale)
+    simulated.hemiIntensity =
+      BASE.hemiIntensity * (NIGHT_HEMI + (1 - NIGHT_HEMI) * daylight) * (0.6 + 0.4 * sunScale) * (1 - 0.15 * cloud) +
+      2.5 * w.flash
     // Sky: golden near the horizon, forest day above, night below.
     const dayWeight = smoothstep(4, 22, sun.elevation)
     const nightWeight = smoothstep(-1, -12, sun.elevation)
     for (const key of SKY_KEYS) {
       simulated.sky[key].copy(SKY.golden[key]).lerp(SKY.day[key], dayWeight).lerp(SKY.night[key], nightWeight)
+      // Overcast: greyer by day, a little lighter grey at night.
+      simulated.sky[key].lerp(OVERCAST[key], 0.7 * cloud * (0.25 + 0.75 * daylight))
+      simulated.sky[key].lerp(FLASH, 0.6 * w.flash)
     }
-    simulated.dapple = smoothstep(0, 12, sun.elevation)
-    const { air, surface } = temperatureAt(time, sun.elevation)
-    const brightness = daylight * sunScale
-    simulated.flowerOpen = flowerOpening(brightness)
-    simulated.butterflies = butterflyActivity(daylight, surface)
-    simulated.ants = antActivity(daylight, surface)
+    simulated.dapple = smoothstep(0, 12, sun.elevation) * (1 - cloud)
+    const temperature = temperatureAt(time, sun.elevation, { mean: w.temperature, sunShare: 1 - 0.8 * cloud })
+    const air = temperature.air
+    const surface = temperature.surface - 3 * w.rain
+    const brightness = daylight * sunScale * (1 - 0.55 * cloud)
+    simulated.flowerOpen = flowerOpening(brightness) * (1 - 0.7 * w.rain)
+    simulated.butterflies = butterflyActivity(daylight, surface) * (1 - w.rain) * (1 - 0.8 * Math.max(w.wind - 0.5, 0) * 2)
+    simulated.ants = antActivity(daylight, surface) * (1 - 0.85 * w.rain)
+    simulated.haze = 1 + HUMID_HAZE * Math.max(w.humidity - 0.5, 0) * 2
+    simulated.mist = MIST * w.fog ** 1.5
+    simulated.mistHeight = w.fogHeight
+    simulated.rain = w.rain
+    simulated.wetness = w.wetness
+    simulated.wind = w.wind
     Object.assign(readout, { sun, air, surface, daylight })
   }
 
@@ -134,9 +181,12 @@ export function createSimulation() {
      */
     update(dt, staticSun) {
       blend = Math.min(Math.max(blend + (running ? 1 : -1) * (dt / START_SECONDS), 0), 1)
-      if (running && settings.day.playing) time = (time + hoursPerSecond(settings.day) * dt) % 24
+      const playing = running && settings.day.playing
+      const hours = playing ? hoursPerSecond(settings.day) * dt : 0
+      time = (time + hours) % 24
       const k = blend * blend * (3 - 2 * blend)
-      if (k > 0) simulate()
+      // Paused holds everything still, the weather included.
+      if (k > 0) simulate(playing ? dt : 0, hours)
       out.sunDirection.copy(staticSun).lerp(simulated.sunDirection, k).normalize()
       out.lightColor.copy(BASE.light).lerp(simulated.lightColor, k)
       out.lightIntensity = BASE.lightIntensity + (simulated.lightIntensity - BASE.lightIntensity) * k
@@ -148,6 +198,12 @@ export function createSimulation() {
       out.flowerOpen = 1 + (simulated.flowerOpen - 1) * k
       out.butterflies = simulated.butterflies * k
       out.ants = simulated.ants * k
+      out.haze = lerp(1, simulated.haze, k)
+      out.mist = simulated.mist * k
+      out.mistHeight = simulated.mistHeight
+      out.rain = simulated.rain * k
+      out.wetness = simulated.wetness * k
+      out.wind = simulated.wind * k
       return out
     },
 
@@ -163,6 +219,11 @@ export function createSimulation() {
         surface: readout.surface,
         butterflies: simulated.butterflies,
         ants: simulated.ants,
+        cloud: weatherNow.cloud,
+        rain: weatherNow.rain,
+        wetness: weatherNow.wetness,
+        fog: weatherNow.fog,
+        rainEnded: weatherNow.rainEnded,
       }
     },
   }

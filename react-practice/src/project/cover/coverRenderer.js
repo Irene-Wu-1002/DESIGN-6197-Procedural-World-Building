@@ -40,6 +40,31 @@ const palettes = {
 const FADE_DECLARATIONS = /* glsl */ `
 uniform vec2 uMorphCenter;
 uniform vec2 uCoverFade;
+uniform float uWind;
+uniform float uTime;
+`
+
+// Flowers sway in the wind (uWind 0–1), more toward the top.
+const SWAY_VERTEX = /* glsl */ `
+#include <begin_vertex>
+#ifdef USE_INSTANCING
+{
+  vec3 swayBase = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+  float swayPhase = swayBase.x * 41.0 + swayBase.z * 37.0;
+  float gust = sin(uTime * 2.3 + swayPhase) + 0.5 * sin(uTime * 5.1 + swayPhase * 1.7);
+  transformed.x += gust * uWind * 0.12 * position.y * position.y;
+}
+#endif
+`
+
+// Wet cover is a little darker and glossier (rain).
+const WET_COLOR = /* glsl */ `
+#include <color_fragment>
+diffuseColor.rgb *= 1.0 - 0.22 * uWet;
+`
+const WET_ROUGHNESS = /* glsl */ `
+#include <roughnessmap_fragment>
+roughnessFactor *= 1.0 - 0.45 * uWet;
 `
 const FADE_VERTEX = /* glsl */ `
 #include <begin_vertex>
@@ -103,12 +128,17 @@ if (vPetal < 0.0) {
 }
 `
 
-function applyFade(material, uniforms, key, { moss = false, flower = false } = {}) {
+function applyFade(material, uniforms, key, { moss = false, flower = false, sway = false } = {}) {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms)
     let vertex = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${FADE_DECLARATIONS}`)
       .replace('#include <begin_vertex>', FADE_VERTEX)
+    if (sway) vertex = vertex.replace('#include <begin_vertex>', SWAY_VERTEX)
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uWet;')
+      .replace('#include <color_fragment>', WET_COLOR)
+      .replace('#include <roughnessmap_fragment>', WET_ROUGHNESS)
     if (moss) {
       vertex = vertex
         .replace('#include <common>', '#include <common>\nvarying vec3 vMossPosition;')
@@ -147,6 +177,10 @@ export function createCoverRenderer(scene, morphUniforms) {
     uUV: { value: 0 },
     // Flowers: 1 open – 0 closed (the day cycle closes them at night).
     uOpen: { value: 1 },
+    // Weather: wind (sway) and wetness, and the clock for the sway.
+    uWind: { value: 0 },
+    uWet: { value: 0 },
+    uTime: { value: 0 },
   }
   const leafGeometries = createLeafGeometries()
   const mushroom = createMushroomGeometries()
@@ -221,7 +255,7 @@ export function createCoverRenderer(scene, morphUniforms) {
     {
       id: 'flowerStem',
       geometry: flower.stem,
-      material: standard({ roughness: 0.8, side: THREE.DoubleSide }, 'cover-flower-stem'),
+      material: standard({ roughness: 0.8, side: THREE.DoubleSide }, 'cover-flower-stem', { sway: true }),
       capacity: 3000,
       castShadow: true,
       items: (tile) => tile.flowers ?? [],
@@ -230,7 +264,7 @@ export function createCoverRenderer(scene, morphUniforms) {
     {
       id: 'flowerHead',
       geometry: flower.head,
-      material: standard({ roughness: 0.55, side: THREE.DoubleSide }, 'cover-flower-head', { flower: true }),
+      material: standard({ roughness: 0.55, side: THREE.DoubleSide }, 'cover-flower-head', { flower: true, sway: true }),
       capacity: 3000,
       castShadow: true,
       items: (tile) => tile.flowers ?? [],
@@ -303,6 +337,12 @@ export function createCoverRenderer(scene, morphUniforms) {
     /** How much the viewer sees in ultraviolet (0–1): flower nectar guides. */
     setUV(value) {
       uniforms.uUV.value = value
+    },
+    /** Weather on the cover: wind 0–1 (flowers sway), wet 0–1, time (s). */
+    setWeather({ wind, wet, time }) {
+      uniforms.uWind.value = wind
+      uniforms.uWet.value = wet
+      uniforms.uTime.value = time
     },
     /** How open the flowers are (0 closed – 1 open). */
     setFlowerOpen(value) {

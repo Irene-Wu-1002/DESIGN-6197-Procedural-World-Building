@@ -14,6 +14,9 @@ import { DEFAULT_PATHS, createAntTrail } from './paths/antTrail'
 import { createExclusions } from './paths/exclusionZones'
 import SimulationPanel from './simulation/SimulationPanel'
 import { createAmbientLife } from './simulation/ambientLife'
+import { HeightFog, installHeightFog } from './simulation/heightFog'
+import { createRain } from './simulation/rain'
+import { DEFAULT_WEATHER } from './simulation/weather'
 import { DEFAULT_DAY } from './simulation/dayCycle'
 import { createSimulation } from './simulation/simulation'
 import { createFarGround, morphRange } from './terrain/farGround'
@@ -70,6 +73,9 @@ const MAX_FRAME = 0.1
 // Small cover shrinks away just as the ground starts to smooth (m, relative
 // to the start of the morph band).
 const COVER_FADE = [-0.06, 0.1]
+
+// Fog that thins with height (the simulation's ground mist).
+installHeightFog()
 
 const isTyping = (event) => ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)
 const prefersReducedMotion = () =>
@@ -137,7 +143,7 @@ export default function MapScene() {
   // Simulation: settings here; the clock and its effects run in the frame
   // loop (simulationRef), and simStatus is its snapshot for the panel.
   const simulationRef = useRef(null)
-  const [simSettings, setSimSettings] = useState({ day: DEFAULT_DAY })
+  const [simSettings, setSimSettings] = useState({ day: DEFAULT_DAY, weather: DEFAULT_WEATHER })
   const [simStatus, setSimStatus] = useState({
     running: false,
     blend: 0,
@@ -148,6 +154,11 @@ export default function MapScene() {
     surface: 0,
     butterflies: 0,
     ants: 0,
+    cloud: 0,
+    rain: 0,
+    wetness: 0,
+    fog: 0,
+    rainEnded: false,
   })
   const [status, setStatus] = useState({
     loaded: 0,
@@ -178,7 +189,8 @@ export default function MapScene() {
     const scene = new THREE.Scene()
     // Haze in the sky's horizon colour, so the far ground melts into the sky.
     scene.background = new THREE.Color(FOREST_COLORS.horizon)
-    scene.fog = new THREE.FogExp2(FOREST_COLORS.horizon, hazeDensity(DEFAULT_VIEW.haze))
+    scene.fog = new HeightFog(FOREST_COLORS.horizon)
+    scene.fog.set(hazeDensity(DEFAULT_VIEW.haze), 0, 0.3)
     const sky = createForestSky(sunOffsetRef.current)
     scene.add(sky.mesh)
 
@@ -244,6 +256,7 @@ export default function MapScene() {
     const simulation = createSimulation()
     simulationRef.current = simulation
     const ambientLife = createAmbientLife(scene)
+    const rain = createRain(scene)
     const staticSun = new THREE.Vector3()
     const bodies = createBodies(scene)
 
@@ -359,7 +372,7 @@ export default function MapScene() {
     // shown for a moment, so switching viewpoints never stalls on it.
     let warmed = false
     const warmUp = () => {
-      const hidden = [...bodies.groups, ...antWorld.meshes, ...airLayer.meshes, ...ambientLife.meshes].filter(
+      const hidden = [...bodies.groups, ...antWorld.meshes, ...airLayer.meshes, ...ambientLife.meshes, ...rain.meshes].filter(
         (object) => !object.visible
       )
       for (const object of hidden) object.visible = true
@@ -426,7 +439,7 @@ export default function MapScene() {
 
       // Each body sees the same haze over a different range (higher eyes
       // see further, so the end of the world stays hidden).
-      scene.fog.density = Math.max(hazeDensity(viewRef.current.haze) * params.hazeScale, params.hazeMin)
+      const haze = Math.max(hazeDensity(viewRef.current.haze) * params.hazeScale, params.hazeMin)
       antWorld.update({
         scent: params.perception.scent,
         time,
@@ -459,6 +472,20 @@ export default function MapScene() {
       scene.background.copy(env.sky.horizon)
       scene.fog.color.copy(env.sky.horizon)
       coverRenderer.setFlowerOpen(env.flowerOpen)
+      // Weather: haze and ground mist, wet ground and cover, wind, rain.
+      scene.fog.set(haze * env.haze, env.mist, env.mistHeight)
+      uniforms.uWet.value = env.wetness
+      coverRenderer.setWeather({ wind: env.wind, wet: env.wetness, time })
+      const pixels = canvas.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))
+      rain.update({
+        time,
+        intensity: env.rain,
+        camera,
+        ground: tiles.heightAt(camera.position.x, camera.position.z),
+        wind: [env.windDirection[0] * env.wind, env.windDirection[1] * env.wind],
+        light: Math.min(env.lightIntensity / 1.8 + env.hemiIntensity, 1),
+        pixels,
+      })
       ambientLife.update({
         dt: delta,
         time,
@@ -526,6 +553,7 @@ export default function MapScene() {
       antWorld.dispose()
       airLayer.dispose()
       ambientLife.dispose()
+      rain.dispose()
       simulationRef.current = null
       bodies.dispose()
       effects.dispose()

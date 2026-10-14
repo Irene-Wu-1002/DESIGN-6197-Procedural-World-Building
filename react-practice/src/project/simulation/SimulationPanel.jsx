@@ -1,20 +1,33 @@
 import { useState } from 'react'
 import { ControlCard, EnableToggle, LabeledSlider, SegmentedButtons } from '../panel/PanelControls'
 import { SPEEDS, formatClock } from './dayCycle'
+import { WEATHER_PRESETS, weatherFromPreset } from './weather'
 
-const TABS = [['day', 'Day & night']]
+const TABS = [
+  ['day', 'Day & night'],
+  ['weather', 'Weather'],
+]
+const PRESET_BUTTONS = Object.entries(WEATHER_PRESETS).map(([id, preset]) => [id, preset.label])
+const percent = (value) => `${Math.round(value * 100)}%`
 const formatPercent = (value) => `${value}%`
 const formatDegrees = (value) => `${Math.round(value)}°`
 
 /**
  * The Simulation panel: Start / End, live readouts, and the simulation's
- * settings by tab. settings: { day }; status: the engine's snapshot
- * (running, blend, time, sun, temperatures, activity).
+ * settings by tab. settings: { day, weather }; status: the engine's
+ * snapshot (running, blend, time, sun, temperatures, activity, weather).
  */
 export default function SimulationPanel({ settings, status, onChange, onStart, onEnd, onTime }) {
   const [open, setOpen] = useState(true)
   const [tab, setTab] = useState('day')
   const day = settings.day
+  const weather = settings.weather
+  // Moving a weather slider makes it a custom weather (no preset lit).
+  const setWeather = (key) => (value) => onChange('weather', { ...weather, preset: 'custom', [key]: value })
+  const weatherSlider = (label, key, min, max, step, format) => (
+    <LabeledSlider label={label} value={weather[key]} min={min} max={max} step={step} format={format} onChange={setWeather(key)} />
+  )
+  const stormy = weather.lightning > 0 || WEATHER_PRESETS[weather.preset]?.storm
   const setDay = (key) => (value) => onChange('day', { ...day, [key]: value })
   const daySlider = (label, key, min, max, step, format = formatPercent) => (
     <LabeledSlider label={label} value={day[key]} min={min} max={max} step={step} format={format} onChange={setDay(key)} />
@@ -60,6 +73,47 @@ export default function SimulationPanel({ settings, status, onChange, onStart, o
       {open && (
         <>
           <SegmentedButtons items={TABS} value={tab} onChange={setTab} label="Simulation settings" />
+          {tab === 'weather' && (
+            <>
+              <SegmentedButtons
+                items={PRESET_BUTTONS}
+                value={weather.preset}
+                onChange={(id) => onChange('weather', weatherFromPreset(id, weather.transition))}
+                className="panel-tabs element-picker weather-picker"
+                label="Weather preset"
+              />
+              {running && (
+                <p className="section-note">
+                  Now: cloud {percent(status.cloud)} · rain {percent(status.rain)} · ground wet{' '}
+                  {percent(status.wetness)}
+                  {status.rainEnded ? ' · the rain has stopped (after rain)' : ''}
+                </p>
+              )}
+              <ControlCard title="Sky and rain">
+                {weatherSlider('Cloud coverage', 'cloud', 0, 1, 0.05, percent)}
+                {weatherSlider('Rain intensity', 'rain', 0, 1, 0.05, percent)}
+                {weatherSlider('Rain duration', 'rainDuration', 0, 240, 5, (value) =>
+                  value === 0 ? 'until changed' : `${value} min`
+                )}
+                {stormy && weatherSlider('Lightning frequency', 'lightning', 0, 20, 1, (value) => `${value} / min`)}
+              </ControlCard>
+              <ControlCard title="Air">
+                {weatherSlider('Humidity', 'humidity', 0, 1, 0.05, percent)}
+                {weatherSlider('Temperature', 'temperature', -5, 35, 1, (value) => `${value} °C`)}
+                {weatherSlider('Fog density', 'fog', 0, 1, 0.05, percent)}
+                {weatherSlider('Fog height', 'fogHeight', 0.05, 3, 0.05, (value) => `${Math.round(value * 100)} cm`)}
+                {weatherSlider('Wind strength', 'wind', 0, 1, 0.05, percent)}
+              </ControlCard>
+              <ControlCard title="Change">
+                {weatherSlider('Transition duration', 'transition', 0, 120, 5, (value) => `${value} s`)}
+              </ControlCard>
+              <p className="section-note">
+                Weather moves toward the chosen values over the transition. Rain duration is in simulated
+                minutes; when it ends the weather turns to after rain. Wind is visual only (flowers sway, rain
+                slants).
+              </p>
+            </>
+          )}
           {tab === 'day' && (
             <>
               <ControlCard title="Clock">

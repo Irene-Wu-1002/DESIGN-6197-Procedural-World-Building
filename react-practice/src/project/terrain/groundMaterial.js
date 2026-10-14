@@ -7,7 +7,8 @@ import * as THREE from 'three'
  * and stays sharp up close. It fades out where a pixel covers several
  * grains, so it never shimmers in the distance.
  *
- * It also paints still, dappled sunlight from the canopy (uDapple, 0–1).
+ * It also paints still, dappled sunlight from the canopy (uDapple, 0–1),
+ * and wet soil (uWet, 0–1: darker and glossier, from rain or season).
  */
 
 const VERTEX_DECLARATIONS = /* glsl */ `
@@ -17,6 +18,7 @@ varying vec3 vGrainPosition;
 const FRAGMENT_DECLARATIONS = /* glsl */ `
 uniform float uGrain;
 uniform float uDapple;
+uniform float uWet;
 uniform vec3 uSunDirection;
 varying vec3 vGrainPosition;
 
@@ -82,7 +84,15 @@ const GRAIN_COLOR = /* glsl */ `
   // Dappled light: shaded under leaves, brighter in the sun patches.
   float sunPatch = dappleField(vGrainPosition);
   diffuseColor.rgb *= mix(1.0 - 0.45 * uDapple, 1.0 + 0.55 * uDapple, sunPatch);
+  // Wet soil is darker.
+  diffuseColor.rgb *= 1.0 - 0.38 * uWet;
 }
+`
+
+// Wet soil is glossier.
+const WET_ROUGHNESS = /* glsl */ `
+#include <roughnessmap_fragment>
+roughnessFactor *= 1.0 - 0.55 * uWet;
 `
 
 // Far ground only: skip pixels inside the hole (where detailed tiles are).
@@ -132,6 +142,7 @@ function patchGround(material, uniforms, { hole = false, morph = false }) {
       .replace('#include <common>', `#include <common>\n${FRAGMENT_DECLARATIONS}`)
       .replace('#include <normal_fragment_maps>', GRAIN_NORMAL)
       .replace('#include <color_fragment>', GRAIN_COLOR)
+      .replace('#include <roughnessmap_fragment>', WET_ROUGHNESS)
     if (hole) {
       fragment = fragment
         .replace('#include <common>', '#include <common>\nuniform vec2 uHoleCenter;\nuniform float uHoleRadius;')
@@ -179,6 +190,7 @@ export function createGroundMaterial(sunDirection) {
   const uniforms = {
     uGrain: { value: 1 },
     uDapple: { value: 0.6 },
+    uWet: { value: 0 },
     uSunDirection: { value: sunDirection.clone().normalize() },
   }
   const morphUniforms = {
