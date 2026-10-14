@@ -72,7 +72,7 @@ const smoothstep = (edge0, edge1, value) => {
 /**
  * Build a sampler for these settings. sample(x, z, out) fills `out` with
  *   height   metres (the sum of the parts below plus any pebble)
- *   broadHeight, bumpHeight, hillHeight   the parts
+ *   broadHeight, bumpHeight, hillHeight, pebbleHeight   the parts
  *   broadLowHeight   just the 30 cm octave of the slopes (smooth surface)
  *   broad    the broad-slope noise (-1–1); low ground collects moisture
  *   bump     the bumps/hollows noise (-1–1); negative in hollows
@@ -175,8 +175,8 @@ export function createGroundSampler(settings) {
         slopes
       out.bumpHeight = shaped * BUMPS.height * bumps
       out.hillHeight = hill.lift
-      out.height =
-        out.broadHeight + out.bumpHeight + out.hillHeight + pebbleAt(x, z, hill.mask, out)
+      out.pebbleHeight = pebbleAt(x, z, hill.mask, out)
+      out.height = out.broadHeight + out.bumpHeight + out.hillHeight + out.pebbleHeight
       out.broad = broad
       out.bump = shaped
       out.hill = hill.mask

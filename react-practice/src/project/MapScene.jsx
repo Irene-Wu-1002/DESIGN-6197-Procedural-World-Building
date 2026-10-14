@@ -70,6 +70,7 @@ export default function MapScene() {
   const flyAgaricRef = useRef(null)
   const worldRef = useRef(null)
   const antWorldRef = useRef(null)
+  const farGroundRef = useRef(null)
   const controllerRef = useRef(null)
   const overlayRef = useRef(null)
   // What the tile listener needs to scatter a new tile.
@@ -162,6 +163,8 @@ export default function MapScene() {
     world = createWorldQueries(tiles, () => (flyAgaric.group.visible ? flyAgaric.group.position : null))
     worldRef.current = world
     const farGround = createFarGround(farMaterial, holeUniforms)
+    farGround.setCover(DEFAULT_COVER, DEFAULT_GROUND.seed)
+    farGroundRef.current = farGround
     scene.add(farGround.mesh)
 
     // Shared by every viewpoint and created once: the ants' tunnels and
@@ -321,16 +324,21 @@ export default function MapScene() {
       latestFrame = frame
       const { anchor, params } = frame
 
-      const distance = viewRef.current.distance
-      tiles.update(anchor.x, anchor.z, distance, BUILD_BUDGET_MS)
+      // Detail rings: the Detail distance setting plus what this viewpoint
+      // adds (the butterfly sees much further than the ant). Near tiles are
+      // full detail, middle tiles simplified; the far ground starts after.
+      const detail = viewRef.current.distance
+      const rings = { near: detail + frame.lod.near, outer: detail + frame.lod.middle }
+      const distance = rings.outer
+      tiles.update(anchor.x, anchor.z, rings, BUILD_BUDGET_MS)
       if (farGround.update(tiles.sampler, anchor.x, anchor.z, distance, tiles.version)) {
         holeRadius = holeUniforms.uHoleRadius.value
       }
       // While tiles are still building (e.g. right after switching body),
       // don't cut the hole: the far ground, sunk below the tiles, fills in.
       holeUniforms.uHoleRadius.value = tiles.stats().pending > 0 ? 0 : holeRadius
-      // Tiles fade from full detail to the smooth surface around the ground
-      // you're looking at, so they meet the far ground without a seam.
+      // At the outer ring's edge tiles fade to the smooth surface (and small
+      // cover shrinks away), so they meet the far ground without a seam.
       morphUniforms.uMorphCenter.value.set(anchor.x, anchor.z)
       const [morphStart, morphEnd] = morphRange(distance)
       morphUniforms.uMorphRange.value.set(morphStart, morphEnd)
@@ -414,6 +422,7 @@ export default function MapScene() {
       bodies.dispose()
       effects.dispose()
       antWorldRef.current = null
+      farGroundRef.current = null
       worldRef.current = null
       tiles.dispose()
       coverRenderer.dispose()
@@ -438,6 +447,7 @@ export default function MapScene() {
   const { seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, grain } = ground
   useEffect(() => {
     coverContextRef.current = { ...coverContextRef.current, seed }
+    farGroundRef.current?.setCover(coverContextRef.current.cover, seed)
     tilesRef.current?.setGround({ seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing })
   }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing])
 
@@ -459,6 +469,7 @@ export default function MapScene() {
   // Cover settings only re-scatter the tiles already built (no ground rebuild).
   useEffect(() => {
     coverContextRef.current = { ...coverContextRef.current, cover }
+    farGroundRef.current?.setCover(cover, coverContextRef.current.seed)
     const tiles = tilesRef.current
     const renderer = coverRendererRef.current
     if (!tiles || !renderer) return

@@ -18,7 +18,7 @@ import { COVER_RULES } from './coverRules'
  * Plain data only, no Three.js.
  */
 
-const SALT = { moss: 101, mushrooms: 211, damp: 307, twigs: 401, leaves: 503, flowers: 601 }
+const SALT = { moss: 101, mushrooms: 211, damp: 307, twigs: 401, leaves: 503, flowers: 601, thin: 709 }
 const smoothstep = (edge0, edge1, value) => {
   const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1)
   return t * t * (3 - 2 * t)
@@ -279,6 +279,9 @@ export function scatterTile(data, { cover, seed, trunks }) {
       const isAutumn = random() < autumn
       const pick = random()
       const lift = random()
+      // Every candidate draws all its numbers up front, so one leaf kept or
+      // dropped never shifts the rest (tiles at any detail agree).
+      const shade = random()
       const g = ground(x, z)
       const underTree = Math.exp(-g.trunk / rule.underTreeReach)
       const litter = 0.3 + 0.7 * smoothstep(0.3, 0.8, g.litter)
@@ -300,7 +303,7 @@ export function scatterTile(data, { cover, seed, trunks }) {
         // Index into LEAF_COLORS.autumn or LEAF_COLORS.green.
         autumn: isAutumn,
         palette: Math.floor(pick * (isAutumn ? 5 : 4)),
-        shade: random(),
+        shade,
         variant,
         // Wetter leaves look darker (decaying).
         damp: g.moisture,
@@ -313,14 +316,6 @@ export function scatterTile(data, { cover, seed, trunks }) {
   if (cover.flowers?.on && cover.flowers.amount > 0) {
     const rule = COVER_RULES.flowers
     const amount = cover.flowers.amount / 100
-    const patchNoise = {
-      type: 'perlin',
-      scale: 1 / rule.patchWavelength,
-      octaves: 2,
-      persistence: 0.5,
-      lacunarity: 2,
-      seed: seed * 37 + SALT.flowers,
-    }
     const firstX = Math.floor(x0 / rule.cell)
     const firstZ = Math.floor(z0 / rule.cell)
     const lastX = Math.floor((x0 + TILE_SIZE) / rule.cell)
@@ -333,9 +328,8 @@ export function scatterTile(data, { cover, seed, trunks }) {
         if (!look.inside(x, z)) continue
         const g = ground(x, z)
         if (g.slope > rule.maxSlope || g.hill > 0.1 || g.pebble > 0.2 || g.trunk < rule.trunkGap) continue
-        const [dry, wet] = rule.moisture
-        const suited = smoothstep(dry, dry + 0.15, g.moisture) * (1 - smoothstep(wet - 0.1, wet, g.moisture))
-        const patch = 0.5 + 0.5 * getNoise(x, z, patchNoise)
+        const suited = flowerMoisture(g.moisture)
+        const patch = flowerPatchAt(x, z, seed)
         if (h(2) >= amount * suited * smoothstep(0.45, 0.75, patch) * 1.6) continue
         if (!occupancy.free(x, z, 0.006)) continue
         occupancy.add(x, z, 0.006)
@@ -357,5 +351,60 @@ export function scatterTile(data, { cover, seed, trunks }) {
     }
   }
 
+  // Middle-ring tiles keep a fixed share of each kind, decided per item by
+  // its position, so this is always a subset of the full scatter: when the
+  // tile comes into the near ring, items are only added, never moved.
+  if (data.pebbles === false) thinForDistance(result, seed)
+
   return result
+}
+
+// Share of each kind kept in the middle ring. Big features stay whole
+// (mushrooms, branches, large moss cushions) so patches still read from
+// the air; small litter thins.
+export const MIDDLE_RING_KEEP = {
+  mushrooms: 1,
+  branches: 1,
+  mossLarge: 1,
+  moss: 0.5,
+  flowers: 0.85,
+  twigs: 0.75,
+  leaves: 0.5,
+}
+// Moss cushions at least this wide (radius, m) count as large.
+const LARGE_MOSS = 0.012
+
+function thinForDistance(result, seed) {
+  const keep = (item, share) =>
+    share >= 1 || hash(Math.round(item.x * 1e5), Math.round(item.z * 1e5), seed + SALT.thin) < share
+  const k = MIDDLE_RING_KEEP
+  result.mushrooms = result.mushrooms.filter((item) => keep(item, k.mushrooms))
+  result.branches = result.branches.filter((item) => keep(item, k.branches))
+  result.moss = result.moss.filter((item) => keep(item, item.scale[0] >= LARGE_MOSS ? k.mossLarge : k.moss))
+  result.flowers = result.flowers.filter((item) => keep(item, k.flowers))
+  result.twigs = result.twigs.filter((item) => keep(item, k.twigs))
+  result.leaves = result.leaves.map((list) => list.filter((item) => keep(item, k.leaves)))
+}
+
+/** Flower drift strength at (x, z): 0–1 (flowers grow above ~0.5). */
+export function flowerPatchAt(x, z, seed) {
+  const rule = COVER_RULES.flowers
+  return (
+    0.5 +
+    0.5 *
+      getNoise(x, z, {
+        type: 'perlin',
+        scale: 1 / rule.patchWavelength,
+        octaves: 2,
+        persistence: 0.5,
+        lacunarity: 2,
+        seed: seed * 37 + SALT.flowers,
+      })
+  )
+}
+
+/** How well flowers like this moisture: 0–1 (moist, not wet). */
+export function flowerMoisture(moisture) {
+  const [dry, wet] = COVER_RULES.flowers.moisture
+  return smoothstep(dry, dry + 0.15, moisture) * (1 - smoothstep(wet - 0.1, wet, moisture))
 }

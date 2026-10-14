@@ -588,6 +588,8 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
   const embodiment = { id, presence: 0, turn: 0, following: false }
   const frame = {
     anchor,
+    // Detail rings, in tiles added to the Detail distance setting.
+    lod: { near: 0, middle: 0 },
     viewer: new THREE.Vector3(),
     shadowCenter: new THREE.Vector2(),
     params,
@@ -787,6 +789,18 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         if (ui.hint && time > hintUntil) setUi({ hint: '' })
       }
       frame.nearEntrance = nearEntrance
+      // Detail rings to stream: the viewpoint you're in, or heading into, so
+      // tiles start filling in during a switch.
+      const lodConfig = action?.next ? VIEWPOINTS[action.next.id] : config
+      const lod = lodConfig.lod ?? { near: 0, middle: 0 }
+      let middle = lod.middle
+      if (Array.isArray(middle)) {
+        const zoom = lodConfig === config && typeof movement.distance === 'number' ? movement.distance : lod.zoom[1]
+        const t = clamp01((zoom - lod.zoom[0]) / (lod.zoom[1] - lod.zoom[0]))
+        middle = Math.round(middle[0] + (middle[1] - middle[0]) * t)
+      }
+      frame.lod.near = lod.near
+      frame.lod.middle = Math.max(middle, lod.near)
       // The body in chase view: bank into turns, tip with climbs, and beat
       // faster climbing or glide sinking.
       if (!action && mode === 'chase') {

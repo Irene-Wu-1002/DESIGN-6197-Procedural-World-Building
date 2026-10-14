@@ -219,7 +219,8 @@ export default function MapPanel({
         Position {status.focus[0].toFixed(2)}, {status.focus[1].toFixed(2)} m · ground{' '}
         {(status.ground * 100).toFixed(1)} cm
         <br />
-        Tiles {status.loaded} loaded
+        Tiles {status.near ?? status.loaded} near
+        {status.middle > 0 ? ` · ${status.middle} middle` : ''}
         {status.pending > 0 ? ` · ${status.pending} building` : ''}
       </p>
     </aside>

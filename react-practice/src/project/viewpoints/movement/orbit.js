@@ -60,6 +60,11 @@ export function createOrbitMovement() {
       return focus
     },
 
+    /** Current zoom: camera distance from the focus (m). */
+    get distance() {
+      return distance
+    },
+
     /** Near plane for this zoom, so close-ups never clip. */
     near() {
       return clamp(distance * 0.01, 0.0005, 0.01)

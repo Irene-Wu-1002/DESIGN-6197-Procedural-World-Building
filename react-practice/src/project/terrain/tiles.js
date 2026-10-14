@@ -1,21 +1,29 @@
 import * as THREE from 'three'
 import { createTrunkField } from '../cover/trunks'
 import { TILE_SIZE, createGroundSampler } from './heightField'
-import { buildTileData, tileKey } from './tileData'
+import { buildTileData, decimateTileData, tileKey } from './tileData'
 import { createTileMesh, recolorTileMesh } from './tileMesh'
 
 /**
- * Streams terrain tiles around a focus point. Each frame update() decides
- * which tiles should exist (a round area `viewDistance` tiles across), frees
- * the rest, and builds missing or outdated tiles nearest-first within a
- * small time budget, so moving never stutters. Old meshes stay visible
- * until their replacement is ready.
+ * Streams terrain tiles around a focus point in rings. Each frame update()
+ * decides which tiles should exist and at what detail, frees the rest, and
+ * builds missing or outdated tiles nearest-first within a small time
+ * budget, so moving never stutters. Old meshes stay visible until their
+ * replacement is ready.
+ *
+ *   near ring    full detail with pebbles (the 3 × 3 around the focus at
+ *                128 segments, the rest at 64), all ground cover, shadows
+ *   middle ring  a 32-segment surface without pebble shapes and thinner,
+ *                larger-featured cover (scatterTile `lite`); receives
+ *                shadows but doesn't cast them
+ * Beyond the rings the far ground (farGround.js) takes over.
  */
 
-// Detail: the 3 × 3 tiles around the focus are fine, the rest coarser.
-const NEAR_SEGMENTS = 128
-const FAR_SEGMENTS = 64
-const NEAR_RING = 1
+// Detail: the 3 × 3 tiles around the focus are finest.
+const FINE_SEGMENTS = 128
+const NEAR_SEGMENTS = 64
+const MIDDLE_SEGMENTS = 32
+const FINE_RING = 1
 
 /**
  * Whether the tile (dx, dz) tiles away from the focus tile is loaded: a
@@ -63,7 +71,7 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
 
     /** Call fn(key, data) for every loaded tile (e.g. to re-scatter cover). */
     forEachTile(fn) {
-      tiles.forEach((tile, key) => fn(key, tile.mesh.userData.data))
+      tiles.forEach((tile, key) => fn(key, tile.data))
     },
 
     /** Height of the ground at a world point (for the camera and focus). */
@@ -87,20 +95,28 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
       tiles.forEach((tile) => recolorTileMesh(tile.mesh, mode))
     },
 
-    update(focusX, focusZ, viewDistance, budgetMs) {
+    /**
+     * rings: { near, outer } in tiles (outer ≥ near; equal means no middle
+     * ring).
+     */
+    update(focusX, focusZ, rings, budgetMs) {
       if (!sampler) return
+      const { near } = rings
+      const outer = Math.max(rings.outer, near)
       const centerX = Math.floor(focusX / TILE_SIZE)
       const centerZ = Math.floor(focusZ / TILE_SIZE)
       const wanted = new Map()
-      for (let dz = -viewDistance; dz <= viewDistance; dz += 1) {
-        for (let dx = -viewDistance; dx <= viewDistance; dx += 1) {
-          if (!inTileArea(dx, dz, viewDistance)) continue
+      for (let dz = -outer; dz <= outer; dz += 1) {
+        for (let dx = -outer; dx <= outer; dx += 1) {
+          if (!inTileArea(dx, dz, outer)) continue
           const ring = Math.max(Math.abs(dx), Math.abs(dz))
+          const inNear = inTileArea(dx, dz, near)
           wanted.set(tileKey(centerX + dx, centerZ + dz), {
             x: centerX + dx,
             z: centerZ + dz,
             ring,
-            segments: ring <= NEAR_RING ? NEAR_SEGMENTS : FAR_SEGMENTS,
+            pebbles: inNear,
+            segments: !inNear ? MIDDLE_SEGMENTS : ring <= FINE_RING ? FINE_SEGMENTS : NEAR_SEGMENTS,
           })
         }
       }
@@ -118,18 +134,27 @@ export function createTileManager(scene, material, depthMaterial, listeners = {}
       for (const [key, want] of todo) {
         // Always build at least one tile per frame, then stop at the budget.
         if (performance.now() - start > budgetMs && pending < todo.length) break
-        const data = buildTileData(sampler, want.x, want.z, want.segments, trunks)
-        const mesh = createTileMesh(data, material, mode, depthMaterial)
+        // Cover always scatters from 64-segment data (so near and middle rings
+        // agree on placement); middle tiles draw a decimated copy.
+        const data = buildTileData(sampler, want.x, want.z, Math.max(want.segments, NEAR_SEGMENTS), trunks, { pebbles: want.pebbles })
+        const drawn = want.segments < NEAR_SEGMENTS ? decimateTileData(data, NEAR_SEGMENTS / want.segments) : data
+        const mesh = createTileMesh(drawn, material, mode, depthMaterial)
+        // Middle-ring tiles only receive shadows (fewer draws in the shadow pass).
+        if (!want.pebbles) mesh.castShadow = false
         removeTile(key)
         group.add(mesh)
-        tiles.set(key, { mesh, version, segments: want.segments })
+        tiles.set(key, { mesh, data, version, segments: want.segments, pebbles: want.pebbles })
         listeners.onTileReady?.(key, data)
         pending -= 1
       }
     },
 
     stats() {
-      return { loaded: tiles.size, pending }
+      let middle = 0
+      tiles.forEach((tile) => {
+        if (!tile.pebbles) middle += 1
+      })
+      return { loaded: tiles.size, near: tiles.size - middle, middle, pending }
     },
 
     dispose() {

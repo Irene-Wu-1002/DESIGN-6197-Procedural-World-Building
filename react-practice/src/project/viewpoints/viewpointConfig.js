@@ -11,6 +11,10 @@
  *   haze         multiplies the Haze setting's fog density; `min` keeps the
  *                end of the world (12 m) hidden from high eyes
  *   streamAhead  how far ahead along your gaze the detailed ground centres
+ *   lod          detail rings, in tiles added to the Detail distance
+ *                setting: `near` (full detail) and `middle` (simplified
+ *                ground, thinner cover, out to this far); `middle` may be
+ *                [min, max] grown with the free camera's zoom over `zoom` (m)
  *   shadowReach  half-size of the sun's shadow box (m)
  *   eyeHeight    m above the ground, or null with no body; `summary` and
  *                `switchLabel` then replace "Eye height: …"
@@ -50,6 +54,7 @@ export const VIEWPOINTS = {
     haze: { scale: 1, min: 0 },
     streamAhead: 3.5,
     shadowReach: 0.9,
+    lod: { near: 0, middle: [1, 5], zoom: [0.5, 3] },
     movement: {
       type: 'orbit',
       startDistance: 0.6,
@@ -89,7 +94,8 @@ export const VIEWPOINTS = {
     camera: { fov: 72, near: 0.004, far: 30, startPitch: -0.45, pitchLimits: [-1.2, 0.5] },
     haze: { scale: 0.8, min: 0.19 },
     streamAhead: 1.2,
-    shadowReach: 0.9,
+    shadowReach: 1.3,
+    lod: { near: 1, middle: 5 },
     movement: {
       type: 'flight',
       speed: 0.7,
@@ -157,6 +163,7 @@ export const VIEWPOINTS = {
     camera: { fov: 95, near: 0.0003, far: 30, startPitch: 0.08, pitchLimits: [-0.9, 1.1] },
     haze: { scale: 1, min: 0 },
     streamAhead: 0.12,
+    lod: { near: 0, middle: 0 },
     shadowReach: 0.6,
     movement: { type: 'crawl', speed: 0.03, runFactor: 3, tilt: 0.55, scentReach: 0.02, tunnelReach: 0.014 },
     collision: { radius: 0.003, trunks: true, flyAgaric: true, mushrooms: true },

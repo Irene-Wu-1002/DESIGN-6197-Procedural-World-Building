@@ -42,8 +42,11 @@ export function moistureOf(broad, bump) {
 /**
  * trunks: the trunk field (cover/trunks.js) or null. Adds per point
  * trunkDistance (m to the nearest bark) and litter (0–1) for ground cover.
+ * pebbles: false leaves the pebble domes out of the height (middle-ring
+ * tiles, whose coarse grid can't draw them); their coverage and shade are
+ * kept, so pebble colour and the cover rules stay the same.
  */
-export function buildTileData(sampler, tileX, tileZ, segments, trunks = null) {
+export function buildTileData(sampler, tileX, tileZ, segments, trunks = null, { pebbles = true } = {}) {
   const n = segments + 1
   const step = TILE_SIZE / segments
   const wide = n + 2
@@ -80,12 +83,12 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks = null) {
       const x = x0 + (column - 1) * step
       const z = z0 + (row - 1) * step
       sampler.sample(x, z, out)
-      apron[row * wide + column] = out.height
+      apron[row * wide + column] = pebbles ? out.height : out.height - out.pebbleHeight
       smoothApron[row * wide + column] = smoothHeightOf(out)
       const inside = row > 0 && column > 0 && row < wide - 1 && column < wide - 1
       if (!inside) continue
       const index = (row - 1) * n + (column - 1)
-      height[index] = out.height
+      height[index] = apron[row * wide + column]
       broad[index] = out.broad
       bump[index] = out.bump
       pebble[index] = out.pebble
@@ -131,6 +134,8 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks = null) {
     tileX,
     tileZ,
     segments,
+    // false for a middle-ring tile (no pebble shapes, thinner ground cover).
+    pebbles,
     n,
     step,
     height,
@@ -144,6 +149,43 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks = null) {
     hill,
     litter,
     trunkDistance,
+  }
+}
+
+/**
+ * A coarser copy of tile data for drawing: every `factor`-th sample in each
+ * direction. Middle-ring tiles scatter their cover from the full data (so
+ * placement agrees with the near ring) but draw this lighter mesh.
+ */
+export function decimateTileData(data, factor) {
+  const n = (data.n - 1) / factor + 1
+  const pick = (field, stride = 1) => {
+    const out = new Float32Array(n * n * stride)
+    for (let row = 0; row < n; row += 1) {
+      for (let column = 0; column < n; column += 1) {
+        const from = (row * factor * data.n + column * factor) * stride
+        const to = (row * n + column) * stride
+        for (let k = 0; k < stride; k += 1) out[to + k] = field[from + k]
+      }
+    }
+    return out
+  }
+  return {
+    ...data,
+    segments: data.segments / factor,
+    n,
+    step: data.step * factor,
+    height: pick(data.height),
+    normal: pick(data.normal, 3),
+    smoothHeight: pick(data.smoothHeight),
+    smoothNormal: pick(data.smoothNormal, 3),
+    slope: pick(data.slope),
+    moisture: pick(data.moisture),
+    pebble: pick(data.pebble),
+    shade: pick(data.shade),
+    hill: pick(data.hill),
+    litter: pick(data.litter),
+    trunkDistance: pick(data.trunkDistance),
   }
 }
 

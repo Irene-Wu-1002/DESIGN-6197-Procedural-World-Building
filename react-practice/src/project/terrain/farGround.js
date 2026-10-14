@@ -1,6 +1,18 @@
 import * as THREE from 'three'
+import { FLOWER_COLORS, MOSS_COLORS } from '../cover/coverRules'
+import { flowerMoisture, flowerPatchAt } from '../cover/scatterTile'
 import { TILE_SIZE } from './heightField'
 import { GROUND_COLORS, moistureOf, smoothHeightOf, soilColor } from './tileData'
+
+// Ground cover read from afar: moss areas (damp ground) and flower drifts
+// tint the far ground, so they don't stop where the tiles end.
+const averageColor = (list) => {
+  const sum = list.map((hex) => new THREE.Color(hex)).reduce((a, c) => a.add(c), new THREE.Color(0, 0, 0))
+  return sum.multiplyScalar(1 / list.length).toArray()
+}
+const MOSS_TONE = averageColor(MOSS_COLORS)
+const FLOWER_TONE = averageColor(FLOWER_COLORS)
+const FAR_COVER = { moss: 0.5, mossWet: [0.5, 0.75], flowers: 0.22, flowerPatch: [0.45, 0.75] }
 
 /**
  * Far ground: one coarse ring-shaped mesh around the focus, out to
@@ -98,17 +110,26 @@ export function createFarGround(material, holeUniforms) {
   const out = {}
   const color = [0, 0, 0]
   let lastKey = null
+  // { cover, seed } for the moss / flower tints, or null.
+  let coverSettings = null
+  let coverVersion = 0
 
   return {
     mesh,
+    /** Ground-cover settings for the far tints (rebuilds on the next update). */
+    setCover(cover, seed) {
+      coverSettings = { cover, seed }
+      coverVersion += 1
+    },
     /**
-     * Rebuild around the focus tile when it, the ground, or the view
-     * distance changed. Returns true if it rebuilt.
+     * Rebuild around the focus tile when it, the ground, the cover, or the
+     * view distance (the outer ring, in tiles) changed. Returns true if it
+     * rebuilt.
      */
     update(sampler, focusX, focusZ, viewDistance, version) {
       const tileX = Math.floor(focusX / TILE_SIZE)
       const tileZ = Math.floor(focusZ / TILE_SIZE)
-      const key = `${tileX},${tileZ},${viewDistance},${version}`
+      const key = `${tileX},${tileZ},${viewDistance},${version},${coverVersion}`
       if (key === lastKey || !sampler) return false
       lastKey = key
 
@@ -141,6 +162,25 @@ export function createFarGround(material, holeUniforms) {
         // speckled ground doesn't stop at the tile edge.
         const cover = out.pebbleChance * PEBBLE_AREA
         for (let k = 0; k < 3; k += 1) color[k] += (PEBBLE_TONE[k] - color[k]) * cover
+        if (coverSettings) {
+          const { cover: c, seed } = coverSettings
+          const moisture = moistureOf(out.broad, out.bump * bumps)
+          const offHill = 1 - out.hill
+          const moss = c.moss.on
+            ? (c.moss.amount / 100) * FAR_COVER.moss * smoothstep(...FAR_COVER.mossWet, moisture) * offHill
+            : 0
+          const flowers = c.flowers?.on
+            ? (c.flowers.amount / 100) *
+              FAR_COVER.flowers *
+              flowerMoisture(moisture) *
+              smoothstep(...FAR_COVER.flowerPatch, flowerPatchAt(centerX + localX, centerZ + localZ, seed)) *
+              offHill
+            : 0
+          for (let k = 0; k < 3; k += 1) {
+            color[k] += (MOSS_TONE[k] - color[k]) * moss
+            color[k] += (FLOWER_TONE[k] - color[k]) * flowers
+          }
+        }
         colors.set(color, index * 3)
       }
 
