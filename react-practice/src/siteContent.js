@@ -46,7 +46,8 @@ export const WEEKS = [
   {
     id: 6,
     title: 'Branching System',
-    summary: 'A plain canvas for studying how branches split and grow.',
+    summary:
+      'Ways to grow branching shapes, compared side by side. First: recursive splitting, generation by generation.',
     hint: 'Orbit · Pan · Zoom',
   },
 ]

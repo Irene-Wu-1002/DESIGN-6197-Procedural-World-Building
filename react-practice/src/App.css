@@ -684,6 +684,11 @@ input[type='checkbox'] {
   white-space: nowrap;
 }
 
+/* Topic 6: four one-click tree presets, two per row. */
+.panel-actions.branch-presets {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .control-section {
   border: 1px solid var(--panel-border);
   border-radius: 9px;
