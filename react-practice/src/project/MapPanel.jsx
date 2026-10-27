@@ -267,7 +267,7 @@ export default function MapPanel({
         <h2>Forest Floor</h2>
       </div>
 
-      <SegmentedButtons items={MAP_TABS} value={tab} onChange={setTab} label="Forest floor settings" />
+      <SelectMenu label="Section" value={tab} options={MAP_TABS} onChange={setTab} />
 
       <div className="panel-actions">
         <ResetButton
