@@ -9,9 +9,8 @@ import * as THREE from 'three'
  *            away (trunks, crowns and roots stay); beyond it the forest
  *            stands as usual, with its normal sky, haze and light
  *   edge     a curtain hanging in the cut whose top follows the real
- *            ground: leaf litter (a thin solid strip), then a little dark
- *            topsoil fading quickly to near-black, grainy soil,
- *            drawn as background (right after the sky, no depth test) so
+ *            ground: a faint brown at the ground line fading quickly into
+ *            near-black, grainy soil, all drawn as background (right after the sky, no depth test) so
  *            the roots draw over it and the sky above the ground line stays
  *            as it is; the roots fade into it with distance (rootRenderer.js)
  *
@@ -26,15 +25,11 @@ const FADE_SECONDS = 0.4
 const EDGE_HALF_WIDTH = 30
 const EDGE_STEP = 0.05
 const EDGE_BANDS = [
-  [0.004, '#4a3826'], // leaf litter just proud of the surface
-  [-0.015, '#24190f'], // topsoil
-  [-0.06, '#100b08'],
+  [0.004, '#2e2216'], // topsoil, just proud of the surface
+  [-0.03, '#120d09'],
   [-0.3, '#070505'], // into the soil's darkness
   [-40, '#030303'],
 ]
-// Bands above this row are the solid strip (just the litter edge); below
-// it, the background, so the roots show right up to the surface.
-const SOLID_ROWS = 1
 // The curtain sits this far toward you, in front of the clipped ground edge.
 const EDGE_OFFSET = 0.003
 // The soil's grain: crumbs of a few sizes, a little lighter or darker.
@@ -64,23 +59,16 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
   const rows = EDGE_BANDS.length
   const positions = new Float32Array(columns * rows * 3)
   const colors = new Float32Array(columns * rows * 3)
-  // Indices of the solid strip first, then the background, one group each.
   const indices = []
-  for (const [first, last] of [
-    [0, SOLID_ROWS],
-    [SOLID_ROWS, rows - 1],
-  ]) {
-    for (let column = 0; column < columns - 1; column += 1) {
-      for (let row = first; row < last; row += 1) {
-        const a = column * rows + row
-        const b = a + 1
-        const c = a + rows
-        const d = c + 1
-        indices.push(a, b, c, b, d, c)
-      }
+  for (let column = 0; column < columns - 1; column += 1) {
+    for (let row = 0; row < rows - 1; row += 1) {
+      const a = column * rows + row
+      const b = a + 1
+      const c = a + rows
+      const d = c + 1
+      indices.push(a, b, c, b, d, c)
     }
   }
-  const solidCount = (columns - 1) * SOLID_ROWS * 6
   const bandColors = EDGE_BANDS.map(([, color]) => new THREE.Color(color))
   for (let column = 0; column < columns; column += 1) {
     bandColors.forEach((color, row) => {
@@ -96,9 +84,6 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   geometry.setIndex(indices)
-  geometry.addGroup(0, solidCount, 0)
-  geometry.addGroup(solidCount, indices.length - solidCount, 1)
-  const solidMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false })
   const backgroundMaterial = new THREE.MeshBasicMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
@@ -114,7 +99,7 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
       .replace('#include <common>', `#include <common>\nvarying vec3 vSoil;\n${SOIL_GRAIN}`)
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= soilGrain(vSoil);')
   }
-  const edge = new THREE.Mesh(geometry, [solidMaterial, backgroundMaterial])
+  const edge = new THREE.Mesh(geometry, backgroundMaterial)
   edge.frustumCulled = false
   // Right after the sky (renderOrder -1), before everything else.
   edge.renderOrder = -0.5
@@ -204,7 +189,6 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
       setClipping(false)
       scene.remove(edge)
       geometry.dispose()
-      solidMaterial.dispose()
       backgroundMaterial.dispose()
     },
   }
