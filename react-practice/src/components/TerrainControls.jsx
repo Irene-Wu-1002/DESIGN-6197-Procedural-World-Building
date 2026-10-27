@@ -43,7 +43,7 @@ export default function TerrainControls({
     <aside className="noise-panel terrain-panel">
       <div className="panel-title">
         <h2>Terrain</h2>
-        <span className="panel-badge">Week 2</span>
+        <span className="panel-badge">Topic 2</span>
       </div>
 
       <p className="pipeline-note">

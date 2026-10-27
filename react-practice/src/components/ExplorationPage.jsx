@@ -17,11 +17,11 @@ export default function ExplorationPage({ week, onWeek, children }) {
           <div>
             <p className="page-kicker">Exploration lab</p>
             <h1>From Experiments to an Ecosystem</h1>
-            <p>A five-week journey through procedural generation, each week one technique.</p>
+            <p>A five-topic journey through procedural generation, each topic one technique.</p>
           </div>
         </div>
 
-        <nav className="week-timeline" aria-label="Weeks">
+        <nav className="week-timeline" aria-label="Topics">
           {WEEKS.map((item) => (
             <button
               key={item.id}
@@ -31,7 +31,7 @@ export default function ExplorationPage({ week, onWeek, children }) {
             >
               <span className="week-dot" aria-hidden="true" />
               <span className="week-text">
-                <span className="week-label">Week {item.id}</span>
+                <span className="week-label">Topic {item.id}</span>
                 <span className="week-title">{item.title}</span>
               </span>
             </button>
@@ -40,7 +40,7 @@ export default function ExplorationPage({ week, onWeek, children }) {
       </div>
 
       <section className="week-card" aria-labelledby="week-card-title">
-        <p className="page-kicker">Week {current.id}</p>
+        <p className="page-kicker">Topic {current.id}</p>
         <h2 id="week-card-title">{current.title}</h2>
         <p>{current.summary}</p>
       </section>

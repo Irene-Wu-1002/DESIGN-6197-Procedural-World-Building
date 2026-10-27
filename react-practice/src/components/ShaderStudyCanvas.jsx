@@ -292,7 +292,7 @@ export default function ShaderStudyCanvas({ activeStudyId, settings }) {
   return (
     <canvas
       ref={canvasRef}
-      aria-label="Week 4 shader study preview"
+      aria-label="Topic 4 shader study preview"
       data-shader-study={activeStudyId}
     />
   )

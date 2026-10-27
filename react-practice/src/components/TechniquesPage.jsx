@@ -242,7 +242,7 @@ export default function TechniquesPage({ onOpenWeek }) {
               </div>
               <p>{technique.line}</p>
               <button type="button" className="text-link" onClick={() => onOpenWeek(technique.week)}>
-                See it in Week {technique.week} <span aria-hidden="true">&rarr;</span>
+                See it in Topic {technique.week} <span aria-hidden="true">&rarr;</span>
               </button>
             </li>
           ))}
