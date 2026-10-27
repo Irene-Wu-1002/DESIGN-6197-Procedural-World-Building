@@ -10,7 +10,7 @@ import * as THREE from 'three'
  *            stands as usual, with its normal sky, haze and light
  *   edge     a curtain hanging in the cut whose top follows the real
  *            ground: a faint brown at the ground line fading quickly into
- *            near-black, grainy soil, all drawn as background (right after the sky, no depth test) so
+ *            near-black soil, all drawn as background (right after the sky, no depth test) so
  *            the roots draw over it and the sky above the ground line stays
  *            as it is; the roots fade into it with distance (rootRenderer.js)
  *   veil     a see-through layer of topsoil in the same cut, drawn over
@@ -44,26 +44,6 @@ const VEIL_BANDS = [
 ]
 // The curtain sits this far toward you, in front of the clipped ground edge.
 const EDGE_OFFSET = 0.003
-// The soil's grain: smooth noise at a few sizes (blended between cells,
-// so no grid shows), a little lighter or darker.
-const SOIL_GRAIN = /* glsl */ `
-float soilHash(vec3 p) {
-  return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
-}
-float soilNoise(vec3 p) {
-  vec3 i = floor(p);
-  vec3 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(
-    mix(mix(soilHash(i), soilHash(i + vec3(1, 0, 0)), f.x), mix(soilHash(i + vec3(0, 1, 0)), soilHash(i + vec3(1, 1, 0)), f.x), f.y),
-    mix(mix(soilHash(i + vec3(0, 0, 1)), soilHash(i + vec3(1, 0, 1)), f.x), mix(soilHash(i + vec3(0, 1, 1)), soilHash(i + vec3(1, 1, 1)), f.x), f.y),
-    f.z);
-}
-float soilGrain(vec3 p) {
-  float crumbs = 0.5 * soilNoise(p * 140.0) + 0.3 * soilNoise(p * 37.0) + 0.2 * soilNoise(p * 9.0);
-  return 0.75 + 0.5 * crumbs;
-}
-`
 // Rebuild the strip once the cut has moved (m) or turned (rad) this much.
 const MOVE_EPSILON = 0.02
 const TURN_EPSILON = 0.01
@@ -124,14 +104,6 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
     depthTest: false,
     depthWrite: false,
   })
-  backgroundMaterial.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vSoil;')
-      .replace('#include <project_vertex>', '#include <project_vertex>\nvSoil = (modelMatrix * vec4(transformed, 1.0)).xyz;')
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vSoil;\n${SOIL_GRAIN}`)
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= soilGrain(vSoil);')
-  }
   const edge = createStrip(EDGE_BANDS, backgroundMaterial)
   // Right after the sky (renderOrder -1), before everything else.
   edge.mesh.renderOrder = -0.5
@@ -144,7 +116,6 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
     transparent: true,
     depthWrite: false,
   })
-  veilMaterial.onBeforeCompile = backgroundMaterial.onBeforeCompile
   const veil = createStrip(VEIL_BANDS, veilMaterial)
   veil.mesh.renderOrder = 10
   const strips = [edge, veil]
