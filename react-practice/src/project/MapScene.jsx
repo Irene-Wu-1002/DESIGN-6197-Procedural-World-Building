@@ -335,8 +335,12 @@ export default function MapScene({ intro }) {
     }
 
     // Keys: the controller decides what they mean for the current body.
+    // Whether focus last moved by Tab (keyboard) rather than a click.
+    let tabbed = false
+    const onPointerFocus = () => (tabbed = false)
     const onKeyDown = (event) => {
       if (isTyping(event)) return
+      if (event.code === 'Tab') tabbed = true
       if (event.code === 'KeyU' && !event.repeat) {
         // Surface → X-ray → cross-section → surface.
         setUnderground((current) => ({
@@ -345,8 +349,10 @@ export default function MapScene({ intro }) {
         }))
         return
       }
-      // Space or Enter on a focused button presses that button.
-      const onControl = ['BUTTON', 'SUMMARY', 'A'].includes(event.target.tagName)
+      // Space or Enter on a button reached with Tab presses that button. A
+      // button that only has focus because it was clicked (e.g. Butterfly)
+      // doesn't keep Space from flying.
+      const onControl = tabbed && ['BUTTON', 'SUMMARY', 'A'].includes(event.target.tagName)
       if (onControl && (event.code === 'Space' || event.code === 'Enter')) return
       const scrolls = event.code === 'Space' || event.code.startsWith('Arrow')
       if (event.repeat) {
@@ -360,6 +366,7 @@ export default function MapScene({ intro }) {
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('blur', onBlur)
+    window.addEventListener('pointerdown', onPointerFocus, true)
 
     // Drag to look / orbit; right-drag or Shift+drag pans (free view).
     const canvas = renderer.domElement
@@ -618,6 +625,7 @@ export default function MapScene({ intro }) {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
+      window.removeEventListener('pointerdown', onPointerFocus, true)
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointermove', onPointerMove)
       canvas.removeEventListener('pointerup', onPointerUp)

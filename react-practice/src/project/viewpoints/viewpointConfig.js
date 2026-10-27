@@ -66,6 +66,9 @@ export const VIEWPOINTS = {
       // Ground moved per pixel of pan drag, per metre of zoom (about what
       // stays under the cursor at a 50° field of view).
       panPerPixel: 0.0012,
+      // Space / C lift the focus above the ground (m, m/s); in the X-ray it
+      // may also sink, down to `sink` below the surface with the Depth.
+      lift: { max: 12, speed: 1, sink: 0.6 },
     },
     collision: { radius: 0, trunks: false, flyAgaric: false, mushrooms: false },
     effects: 'natural',
@@ -74,10 +77,14 @@ export const VIEWPOINTS = {
     embodiment: null,
     // Only its distance is used: how far to pull back when leaving.
     framing: { distance: 0.6, elevation: 0, lookUp: 0, orbit: 0 },
-    actions: {},
+    actions: {
+      rise: { label: 'Rise', key: 'Space', mode: 'hold' },
+      sink: { label: 'Sink', key: 'KeyC', mode: 'hold' },
+    },
     controls: [
       ['Orbit', 'Drag or arrow keys'],
       ['Pan', 'Right-drag, Shift+drag, or W A S D'],
+      ['Rise / sink', 'Space / C (0 – 12 m)'],
       ['Zoom', 'Scroll or + / − (5 cm – 3 m)'],
       ['Re-centre', 'Double-click the ground'],
     ],

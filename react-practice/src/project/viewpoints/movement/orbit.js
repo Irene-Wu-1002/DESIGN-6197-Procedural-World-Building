@@ -4,10 +4,12 @@ import * as THREE from 'three'
  * Orbit (Free view): no body. The camera circles a focus point on the
  * ground: drag or the arrow keys turn and tilt it (the controller's look
  * input is the orbit angle), the wheel or + / − zoom, right-drag / Shift+drag
- * or W A S D pan the focus across the ground (faster when zoomed out), and
- * setFocus glides it to a spot (double-click). The camera never dips under
- * the ground, except in the underground X-ray (ctx.underground.active),
- * where the focus also sinks ctx.underground.depth below the surface.
+ * or W A S D pan the focus across the ground (faster when zoomed out),
+ * Space / C lift it above the ground (up to the crowns), and setFocus
+ * glides it to a spot and back down (double-click). The camera never dips
+ * under the ground, except in the underground X-ray (ctx.underground.active),
+ * where the focus also sinks ctx.underground.depth below the surface, and
+ * C can take it further down.
  *
  * Every movement strategy has the same shape:
  *   place(state, from, ctx)      put the viewer at from.x/z (new viewpoint)
@@ -28,6 +30,10 @@ export function createOrbitMovement() {
   let distance = 0.6
   let targetDistance = 0.6
   let gliding = false
+  // Height of the focus above its ground point (m); the lift eases to
+  // targetLift so rising and sinking glide to a stop.
+  let lift = 0
+  let targetLift = 0
 
   // Camera = focus, backed off along the view direction by `distance`.
   const pose = (state, world, underground) => {
@@ -46,16 +52,18 @@ export function createOrbitMovement() {
       const [near, far] = config.movement.distance
       distance = targetDistance = clamp(from.distance ?? config.movement.startDistance, near, far)
       gliding = false
+      lift = targetLift = 0
       state.roll = 0
       state.tiltPitch = 0
       state.tiltRoll = 0
       pose(state, world, underground)
     },
 
-    /** Glide the focus to (x, z). */
+    /** Glide the focus to (x, z), back down to the ground. */
     setFocus(x, z) {
       glide.set(x, 0, z)
       gliding = true
+      targetLift = 0
     },
 
     /** The ground point you're looking at (detail streams around it). */
@@ -102,7 +110,13 @@ export function createOrbitMovement() {
         focus.z += (glide.z - focus.z) * k
         if (Math.hypot(glide.x - focus.x, glide.z - focus.z) < 1e-4) gliding = false
       }
-      focus.y += (world.heightAt(focus.x, focus.z) - sinkOf(underground) - focus.y) * smooth(10, dt)
+      // Rise / sink: the lift range is the ground up to max, or in the
+      // X-ray down to m.lift.sink below the surface, counting the Depth.
+      const vertical = (input.held('rise') ? 1 : 0) - (input.held('sink') ? 1 : 0)
+      const lowest = underground?.active ? -Math.max(m.lift.sink - sinkOf(underground), 0) : 0
+      targetLift = clamp(targetLift + vertical * m.lift.speed * (input.run ? m.runFactor : 1) * dt, lowest, m.lift.max)
+      lift += (targetLift - lift) * smooth(8, dt)
+      focus.y += (world.heightAt(focus.x, focus.z) - sinkOf(underground) + lift - focus.y) * smooth(10, dt)
       pose(state, world, underground)
       return { moving: false, turn: 0 }
     },
