@@ -13,10 +13,14 @@ import * as THREE from 'three'
  *            near-black, grainy soil, all drawn as background (right after the sky, no depth test) so
  *            the roots draw over it and the sky above the ground line stays
  *            as it is; the roots fade into it with distance (rootRenderer.js)
+ *   veil     a see-through layer of topsoil in the same cut, drawn over
+ *            the roots behind it: pale grey-brown and nearly opaque at the
+ *            ground line, clearing over about 30 cm, so the roots show
+ *            through it more and more as they go down
  *
  * The cut moves with you: each frame it passes through the anchor, facing
  * the camera's horizontal view direction. The edge strip is rebuilt only
- * when the cut has moved or turned noticeably.
+ * when the cut has moved or turned noticeably (the veil with it).
  */
 
 const FADE_SECONDS = 0.4
@@ -29,6 +33,14 @@ const EDGE_BANDS = [
   [-0.03, '#120d09'],
   [-0.3, '#070505'], // into the soil's darkness
   [-40, '#030303'],
+]
+// The veil: depth below the ground (m), colour and opacity.
+const VEIL_BANDS = [
+  [0.004, '#6e5e4c', 0.9],
+  [-0.03, '#625342', 0.75],
+  [-0.1, '#4f4336', 0.45],
+  [-0.2, '#3c332a', 0.18],
+  [-0.32, '#2a241e', 0],
 ]
 // The curtain sits this far toward you, in front of the clipped ground edge.
 const EDGE_OFFSET = 0.003
@@ -56,34 +68,45 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
   const planes = [plane]
 
   const columns = Math.round((EDGE_HALF_WIDTH * 2) / EDGE_STEP) + 1
-  const rows = EDGE_BANDS.length
-  const positions = new Float32Array(columns * rows * 3)
-  const colors = new Float32Array(columns * rows * 3)
-  const indices = []
-  for (let column = 0; column < columns - 1; column += 1) {
-    for (let row = 0; row < rows - 1; row += 1) {
-      const a = column * rows + row
-      const b = a + 1
-      const c = a + rows
-      const d = c + 1
-      indices.push(a, b, c, b, d, c)
+
+  // A strip hanging in the cut, one row per band ([depth, colour, opacity?]).
+  const createStrip = (bands, material) => {
+    const rows = bands.length
+    const alpha = bands[0].length > 2
+    const size = alpha ? 4 : 3
+    const positions = new Float32Array(columns * rows * 3)
+    const colors = new Float32Array(columns * rows * size)
+    const indices = []
+    for (let column = 0; column < columns - 1; column += 1) {
+      for (let row = 0; row < rows - 1; row += 1) {
+        const a = column * rows + row
+        const b = a + 1
+        const c = a + rows
+        const d = c + 1
+        indices.push(a, b, c, b, d, c)
+      }
     }
+    const bandColors = bands.map(([, color]) => new THREE.Color(color))
+    for (let column = 0; column < columns; column += 1) {
+      bandColors.forEach((color, row) => {
+        // A little variation along the cut, so the band isn't a flat stripe.
+        const shade = 1 + 0.12 * Math.sin(column * 0.37) * Math.sin(column * 0.11 + row)
+        const index = (column * rows + row) * size
+        color.clone().multiplyScalar(shade).toArray(colors, index)
+        if (alpha) colors[index + 3] = bands[row][2]
+      })
+    }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, size))
+    geometry.setIndex(indices)
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.frustumCulled = false
+    mesh.visible = false
+    scene.add(mesh)
+    return { mesh, bands, positions }
   }
-  const bandColors = EDGE_BANDS.map(([, color]) => new THREE.Color(color))
-  for (let column = 0; column < columns; column += 1) {
-    bandColors.forEach((color, row) => {
-      // A little variation along the cut, so the band isn't a flat stripe.
-      const shade = 1 + 0.12 * Math.sin(column * 0.37) * Math.sin(column * 0.11 + row)
-      color
-        .clone()
-        .multiplyScalar(shade)
-        .toArray(colors, (column * rows + row) * 3)
-    })
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-  geometry.setIndex(indices)
+
   const backgroundMaterial = new THREE.MeshBasicMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
@@ -99,12 +122,22 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
       .replace('#include <common>', `#include <common>\nvarying vec3 vSoil;\n${SOIL_GRAIN}`)
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= soilGrain(vSoil);')
   }
-  const edge = new THREE.Mesh(geometry, backgroundMaterial)
-  edge.frustumCulled = false
+  const edge = createStrip(EDGE_BANDS, backgroundMaterial)
   // Right after the sky (renderOrder -1), before everything else.
-  edge.renderOrder = -0.5
-  edge.visible = false
-  scene.add(edge)
+  edge.mesh.renderOrder = -0.5
+  // The veil: depth-tested, so it covers only the roots behind the cut;
+  // drawn after them.
+  const veilMaterial = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    fog: false,
+    transparent: true,
+    depthWrite: false,
+  })
+  veilMaterial.onBeforeCompile = backgroundMaterial.onBeforeCompile
+  const veil = createStrip(VEIL_BANDS, veilMaterial)
+  veil.mesh.renderOrder = 10
+  const strips = [edge, veil]
 
   let target = 0
   let amount = 0
@@ -133,15 +166,19 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
       const x = anchor.x + across.x * offset - forward.x * EDGE_OFFSET
       const z = anchor.z + across.z * offset - forward.z * EDGE_OFFSET
       const ground = height(x, z)
-      EDGE_BANDS.forEach(([depth], row) => {
-        const index = (column * rows + row) * 3
-        positions[index] = x
-        positions[index + 1] = ground + depth
-        positions[index + 2] = z
-      })
+      for (const { bands, positions } of strips) {
+        bands.forEach(([depth], row) => {
+          const index = (column * bands.length + row) * 3
+          positions[index] = x
+          positions[index + 1] = ground + depth
+          positions[index + 2] = z
+        })
+      }
     }
-    geometry.attributes.position.needsUpdate = true
-    geometry.computeBoundingSphere()
+    for (const { mesh } of strips) {
+      mesh.geometry.attributes.position.needsUpdate = true
+      mesh.geometry.computeBoundingSphere()
+    }
     builtAt.copy(anchor)
     builtFacing.copy(forward)
   }
@@ -167,7 +204,7 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
       amount = target > amount ? Math.min(amount + step, target) : Math.max(amount - step, target)
       // The cut is all or nothing; the roots' glow fades in.
       setClipping(target > 0)
-      edge.visible = clipping
+      for (const { mesh } of strips) mesh.visible = clipping
       if (!clipping) return
 
       // Face the camera's horizontal view (keep the last one when looking
@@ -187,9 +224,12 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
 
     dispose() {
       setClipping(false)
-      scene.remove(edge)
-      geometry.dispose()
+      for (const { mesh } of strips) {
+        scene.remove(mesh)
+        mesh.geometry.dispose()
+      }
       backgroundMaterial.dispose()
+      veilMaterial.dispose()
     },
   }
 }
