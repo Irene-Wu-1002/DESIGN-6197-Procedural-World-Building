@@ -43,6 +43,12 @@ export const WEEKS = [
       'A procedural world in layers: terrain, scattered trees and rocks, rivers, roads, and wind.',
     hint: 'Orbit · Pan · Zoom',
   },
+  {
+    id: 6,
+    title: 'Branching System',
+    summary: 'A plain canvas for studying how branches split and grow.',
+    hint: 'Orbit · Pan · Zoom',
+  },
 ]
 
 const PAGE_IDS = new Set(PAGES.map((page) => page.id))

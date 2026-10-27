@@ -7,6 +7,7 @@ import Week2Scene from './components/Week2Scene'
 import Week3Scene from './components/Week3Scene'
 import Week4Scene from './components/Week4Scene'
 import Week5Scene from './components/Week5Scene'
+import Week6Scene from './components/Week6Scene'
 import ConceptPage from './components/ConceptPage'
 import TechniquesPage from './components/TechniquesPage'
 import ExplorationPage from './components/ExplorationPage'
@@ -100,6 +101,7 @@ export default function App() {
             {week === 3 && <Week3Scene />}
             {week === 4 && <Week4Scene />}
             {week === 5 && <Week5Scene />}
+            {week === 6 && <Week6Scene />}
           </ExplorationPage>
         )}
       </main>

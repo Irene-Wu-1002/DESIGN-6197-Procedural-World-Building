@@ -17,7 +17,7 @@ export default function ExplorationPage({ week, onWeek, children }) {
           <div>
             <p className="page-kicker">Exploration lab</p>
             <h1>From Experiments to an Ecosystem</h1>
-            <p>A five-topic journey through procedural generation, each topic one technique.</p>
+            <p>A six-topic journey through procedural generation, each topic one technique.</p>
           </div>
         </div>
 
