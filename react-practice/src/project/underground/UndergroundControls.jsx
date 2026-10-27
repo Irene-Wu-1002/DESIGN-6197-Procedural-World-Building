@@ -11,11 +11,12 @@ const ROOT_COLORS = [
 ]
 
 /**
- * The Underground tab: the X-ray view and the tree roots.
+ * The Underground tab: the X-ray view and the tree roots. locked: not in
+ * the free view, so only the surface view is offered.
  * stats: { trees, surfaceTrees, pending, segments, triangles, fine, perLevel }
  * from the roots.
  */
-export default function UndergroundControls({ underground, onChange, settling, stats }) {
+export default function UndergroundControls({ underground, locked, onChange, settling, stats }) {
   const set = (key) => (value) => onChange(key, value)
   const slider = (label, key, min, max, step, format) => (
     <LabeledSlider
@@ -34,14 +35,15 @@ export default function UndergroundControls({ underground, onChange, settling, s
       <p className="section-note">
         X-ray turns the ground see-through to show what grows beneath it; the cross-section cuts the
         world in front of you, so the forest and the roots in the dark below are seen together. Press{' '}
-        <strong>U</strong> to switch. In X-ray the free camera can follow you underground; the butterfly and the ant look through
-        from the surface.
+        <strong>U</strong> to switch. Both are views of the free camera, which can follow you underground in X-ray.
       </p>
+      {locked && <p className="section-note">Choose Free view to see X-ray or the cross-section.</p>}
       <SegmentedButtons
         items={VIEWS}
         value={underground.view}
         onChange={(view) => onChange('view', view)}
         label="Underground view"
+        disabled={locked}
       />
 
       <ControlCard title="X-ray">

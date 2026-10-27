@@ -112,6 +112,8 @@ export default function MapScene({ intro }) {
   // Ground shader uniforms (grain, dappled light).
   const groundUniformsRef = useRef(null)
   const viewRef = useRef(DEFAULT_VIEW)
+  // The current viewpoint's id, for the key handler.
+  const viewIdRef = useRef(START_VIEW)
   const flyAgaricRef = useRef(null)
   const antWorldRef = useRef(null)
   const farGroundRef = useRef(null)
@@ -342,7 +344,8 @@ export default function MapScene({ intro }) {
       if (isTyping(event)) return
       if (event.code === 'Tab') tabbed = true
       if (event.code === 'KeyU' && !event.repeat) {
-        // Surface → X-ray → cross-section → surface.
+        // Surface → X-ray → cross-section → surface; the free view only.
+        if (viewIdRef.current !== 'free') return
         setUnderground((current) => ({
           ...current,
           view: UNDERGROUND_VIEWS[(UNDERGROUND_VIEWS.indexOf(current.view) + 1) % UNDERGROUND_VIEWS.length],
@@ -734,7 +737,14 @@ export default function MapScene({ intro }) {
 
   // Underground: the X-ray view and the free camera follow at once; roots
   // regrow from the settled root settings (Roots on/off is instant).
-  const { view: undergroundView, opacity: groundOpacity, depth: undergroundDepth, guides } = underground
+  // X-ray and the cross-section belong to the free view: the butterfly and
+  // the ant always see the surface (the choice comes back in the free view).
+  const freeView = viewUi.id === 'free'
+  useEffect(() => {
+    viewIdRef.current = viewUi.id
+  }, [viewUi.id])
+  const undergroundView = freeView ? underground.view : 'surface'
+  const { opacity: groundOpacity, depth: undergroundDepth, guides } = underground
   const xrayOn = undergroundView === 'xray'
   useEffect(() => {
     xrayRef.current?.setOn(xrayOn)
@@ -897,7 +907,8 @@ export default function MapScene({ intro }) {
         crownsSettling={['crownStart', 'crownSize', 'branchDensity'].some((key) => crowns[key] !== settledCrowns[key])}
         crownStats={crownStats}
         onCrownsChange={(key, value) => setCrowns((current) => ({ ...current, [key]: value }))}
-        underground={underground}
+        underground={freeView ? underground : { ...underground, view: 'surface' }}
+        undergroundLocked={!freeView}
         undergroundSettling={ROOT_KEYS.some((key) => underground[key] !== settledUnderground[key])}
         rootStats={rootStats}
         onUndergroundChange={(key, value) => setUnderground((current) => ({ ...current, [key]: value }))}

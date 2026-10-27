@@ -74,7 +74,7 @@ export function SeedButton({ label = 'Random Seed', onSeed }) {
 }
 
 /** Segmented row of buttons; used for the tabs and the element picker. */
-export function SegmentedButtons({ items, value, onChange, className = 'panel-tabs', label }) {
+export function SegmentedButtons({ items, value, onChange, className = 'panel-tabs', label, disabled = false }) {
   return (
     <div className={className} role="tablist" aria-label={label}>
       {items.map(([id, text]) => (
@@ -84,6 +84,7 @@ export function SegmentedButtons({ items, value, onChange, className = 'panel-ta
           role="tab"
           aria-selected={value === id}
           className={value === id ? 'active' : ''}
+          disabled={disabled}
           onClick={() => onChange(id)}
         >
           {text}
