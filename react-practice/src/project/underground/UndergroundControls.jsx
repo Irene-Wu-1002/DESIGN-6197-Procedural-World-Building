@@ -14,9 +14,9 @@ const ROOT_COLORS = [
  * The Underground tab: the X-ray view and the tree roots. locked: not in
  * the free view, so only the surface view is offered.
  * stats: { trees, surfaceTrees, pending, segments, triangles, fine, perLevel }
- * from the roots.
+ * from the roots; waterStats: { pockets, tableBelow } from the water.
  */
-export default function UndergroundControls({ underground, locked, onChange, settling, stats }) {
+export default function UndergroundControls({ underground, locked, onChange, settling, stats, waterStats }) {
   const set = (key) => (value) => onChange(key, value)
   const slider = (label, key, min, max, step, format) => (
     <LabeledSlider
@@ -80,6 +80,20 @@ export default function UndergroundControls({ underground, locked, onChange, set
                 `${stats.fine.toLocaleString()} fine roots · ` +
                 stats.perLevel.map((count, level) => `L${level} ${count}`).join(' ')
               : `${stats.surfaceTrees} trees with surface roots. The roots underground are grown only while X-ray is on.`}
+        </p>
+      </ControlCard>
+
+      <ControlCard title="Water">
+        <EnableToggle label="Water in the ground" checked={underground.water} onChange={set('water')} />
+        {slider('Water table depth', 'tableDepth', 0.6, 2.5, 0.1, (value) => `${value.toFixed(1)} m`)}
+        {slider('Pockets', 'pockets', 0, 100, 5, (value) => `${value}%`)}
+        <p className="section-note">
+          {!underground.water
+            ? 'No water in the ground.'
+            : underground.view === 'surface'
+              ? 'Rain soaks down to a water table and gathers in pockets of wet soil. Switch to X-ray or the cross-section to see it.'
+              : `Water table ${waterStats?.tableBelow != null ? `${waterStats.tableBelow.toFixed(2)} m` : '…'} below where you look · ` +
+                `${waterStats?.pockets ?? 0} pockets nearby. Soil wetness near the surface follows the Habitat tab.`}
         </p>
       </ControlCard>
     </>

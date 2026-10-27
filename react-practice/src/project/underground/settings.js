@@ -1,6 +1,7 @@
 import { DEFAULT_ROOTS } from './roots'
+import { DEFAULT_WATER } from './water'
 
-// The Underground tab. view: 'surface' | 'xray' | 'section' (the
+// The Underground tab (roots and water). view: 'surface' | 'xray' | 'section' (the
 // cross-section); opacity: % of the ground left in X-ray; depth: cm the
 // free camera's orbit point sinks below the surface in X-ray.
 export const UNDERGROUND_VIEWS = ['surface', 'xray', 'section']
@@ -10,8 +11,10 @@ export const DEFAULT_UNDERGROUND = {
   depth: 0,
   guides: true,
   ...DEFAULT_ROOTS,
+  ...DEFAULT_WATER,
 }
 
 // Settings that regrow (or recolour) the roots; the rest only change how
 // they're seen.
+export const WATER_KEYS = Object.keys(DEFAULT_WATER)
 export const ROOT_KEYS = Object.keys(DEFAULT_ROOTS).filter((key) => key !== 'roots')

@@ -26,7 +26,9 @@ import { DEFAULT_GROUND } from './terrain/heightField'
 import { createGroundMaterial } from './terrain/groundMaterial'
 import { createTileManager } from './terrain/tiles'
 import { createRootRenderer } from './underground/rootRenderer'
-import { DEFAULT_UNDERGROUND, ROOT_KEYS, UNDERGROUND_VIEWS } from './underground/settings'
+import { DEFAULT_UNDERGROUND, ROOT_KEYS, UNDERGROUND_VIEWS, WATER_KEYS } from './underground/settings'
+import { createWaterRenderer } from './underground/waterRenderer'
+import { DEFAULT_WATER } from './underground/water'
 import { createCrossSection } from './underground/crossSection'
 import { createXray } from './underground/xray'
 import Embodiment from './viewpoints/Embodiment'
@@ -125,6 +127,8 @@ export default function MapScene({ intro }) {
   const crossSectionRef = useRef(null)
   // What the roots are grown from (the settled Underground settings).
   const rootSettingsRef = useRef(DEFAULT_UNDERGROUND)
+  // The water in the ground: its settings and the Habitat wetness.
+  const waterSettingsRef = useRef({ ...DEFAULT_WATER, wetness: DEFAULT_HABITAT.wetness })
   const crownSettingsRef = useRef(DEFAULT_CROWNS)
   // What the tile listener needs to scatter a new tile (moss, flowers: the
   // moss patch and flower colony fields, built from the settled settings
@@ -162,6 +166,7 @@ export default function MapScene({ intro }) {
   const [underground, setUnderground] = useState(DEFAULT_UNDERGROUND)
   const settledUnderground = useDebounced(underground, SETTLE_MS)
   const [rootStats, setRootStats] = useState({ trees: 0, pending: 0, segments: 0, triangles: 0, fine: 0, surfaceTrees: 0, perLevel: [0, 0, 0, 0] })
+  const [waterStats, setWaterStats] = useState({ pockets: 0, tableBelow: null })
   // Simulation: settings here; the clock and its effects run in the frame
   // loop (simulationRef), and simStatus is its snapshot for the panel.
   const simulationRef = useRef(null)
@@ -251,7 +256,12 @@ export default function MapScene({ intro }) {
     // Underground: the see-through ground and the roots under the trunks.
     const xray = createXray(scene, [material, farMaterial])
     xrayRef.current = xray
-    const crossSection = createCrossSection(scene, { renderer, materials: [material, farMaterial], cover: coverRenderer })
+    const waterRenderer = createWaterRenderer(scene)
+    const crossSection = createCrossSection(scene, {
+      renderer,
+      materials: [material, farMaterial, ...waterRenderer.materials],
+      cover: coverRenderer,
+    })
     crossSectionRef.current = crossSection
     const rootRenderer = createRootRenderer(scene)
     const flyAgaric = createFlyAgaric(scene)
@@ -497,7 +507,23 @@ export default function MapScene({ intro }) {
       })
       xray.update(delta, anchor)
       coverRenderer.setHidden(xray.amount)
-      crossSection.update(delta, anchor, camera, (x, z) => tiles.sampler.height(x, z))
+      waterRenderer.update({
+        active: xray.amount > 0 || crossSection.amount > 0,
+        sheet: xray.amount > 0,
+        sampler: tiles.sampler,
+        settings: waterSettingsRef.current,
+        anchor,
+        colors: rootSettingsRef.current.colors,
+        time,
+        version: tiles.version,
+      })
+      crossSection.update(
+        delta,
+        anchor,
+        camera,
+        (x, z) => tiles.sampler.height(x, z),
+        waterRenderer.field && { field: waterRenderer.field, key: waterRenderer.key }
+      )
       trunkRenderer.setCutBuried(crossSection.active)
       const groundSampler = tiles.sampler
       rootRenderer.update({
@@ -605,6 +631,7 @@ export default function MapScene({ intro }) {
       })
       setSimStatus(simulation.snapshot())
       setRootStats(rootRenderer.stats())
+      setWaterStats(waterRenderer.stats())
       setCrownStats(crownRenderer.stats())
     }, STATUS_REFRESH_MS)
 
@@ -619,7 +646,7 @@ export default function MapScene({ intro }) {
     // For checks during development: the controller and how many tiles
     // have been built (switching viewpoints must not build any).
     if (import.meta.env.DEV) {
-      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, crownRenderer }
+      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, waterRenderer, crownRenderer }
     }
 
     return () => {
@@ -657,6 +684,7 @@ export default function MapScene({ intro }) {
       crossSection.dispose()
       crossSectionRef.current = null
       rootRenderer.dispose()
+      waterRenderer.dispose()
       flyAgaric.dispose()
       flyAgaricRef.current = null
       farGround.dispose()
@@ -772,6 +800,13 @@ export default function MapScene({ intro }) {
         : {}),
     }
   }, [settledUnderground, underground.roots, undergroundView])
+  useEffect(() => {
+    waterSettingsRef.current = {
+      ...Object.fromEntries(WATER_KEYS.map((key) => [key, settledUnderground[key]])),
+      water: underground.water,
+      wetness: settledHabitat.wetness,
+    }
+  }, [settledUnderground, underground.water, settledHabitat.wetness])
 
   // Habitat fields follow the settled controls (loaded tiles refresh over a
   // few frames, nearest first).
@@ -911,6 +946,7 @@ export default function MapScene({ intro }) {
         undergroundLocked={!freeView}
         undergroundSettling={ROOT_KEYS.some((key) => underground[key] !== settledUnderground[key])}
         rootStats={rootStats}
+        waterStats={waterStats}
         onUndergroundChange={(key, value) => setUnderground((current) => ({ ...current, [key]: value }))}
         status={status}
         onGroundChange={(key, value) => setGround((current) => ({ ...current, [key]: value }))}

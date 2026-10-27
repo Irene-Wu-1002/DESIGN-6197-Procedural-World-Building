@@ -50,9 +50,10 @@ const FLOWER_DISTRIBUTIONS = [
  * status: { loaded, pending, refreshing, focus: [x, z], ground } from the
  * scene. habitatSettling / coverSettling: habitat or ground-cover changes
  * are still on their way to the world. underground / undergroundLocked /
- * rootStats / undergroundSettling: the Underground tab's settings, whether
- * its views are locked to the surface (outside the free view), the roots'
- * numbers, and whether root changes are still on their way. crowns / crownStats /
+ * rootStats / waterStats / undergroundSettling: the Underground tab's
+ * settings, whether its views are locked to the surface (outside the free
+ * view), the roots' and the water's numbers, and whether root changes are
+ * still on their way. crowns / crownStats /
  * crownsSettling: the same for the tree crowns (Habitat tab).
  * onResetKeys({ ground, cover, view, habitat, paths, underground, crowns: [...keys] }) restores
  * just those settings to their defaults; onReset restores everything.
@@ -74,6 +75,7 @@ export default function MapPanel({
   crowns,
   crownsSettling,
   crownStats,
+  waterStats,
   status,
   onGroundChange,
   onViewChange,
@@ -487,6 +489,7 @@ export default function MapPanel({
           onChange={onUndergroundChange}
           settling={undergroundSettling}
           stats={rootStats}
+          waterStats={waterStats}
         />
       )}
 
