@@ -9,8 +9,8 @@ import * as THREE from 'three'
  *            away (trunks, crowns and roots stay); beyond it the forest
  *            stands as usual, with its normal sky, haze and light
  *   edge     a curtain hanging in the cut whose top follows the real
- *            ground: leaf litter (a thin solid strip), then dark humus and
- *            the soil's darkness far down,
+ *            ground: leaf litter (a thin solid strip), then a little dark
+ *            topsoil fading quickly to near-black, grainy soil,
  *            drawn as background (right after the sky, no depth test) so
  *            the roots draw over it and the sky above the ground line stays
  *            as it is; the roots fade into it with distance (rootRenderer.js)
@@ -26,17 +26,27 @@ const FADE_SECONDS = 0.4
 const EDGE_HALF_WIDTH = 30
 const EDGE_STEP = 0.05
 const EDGE_BANDS = [
-  [0.004, '#6b5238'], // leaf litter just proud of the surface
-  [-0.02, '#4a3624'],
-  [-0.06, '#2c1f15'], // humus
-  [-0.18, '#1a120c'], // into the soil's darkness
-  [-40, '#0d0906'],
+  [0.004, '#4a3826'], // leaf litter just proud of the surface
+  [-0.015, '#24190f'], // topsoil
+  [-0.06, '#100b08'],
+  [-0.3, '#070505'], // into the soil's darkness
+  [-40, '#030303'],
 ]
 // Bands above this row are the solid strip (just the litter edge); below
 // it, the background, so the roots show right up to the surface.
 const SOLID_ROWS = 1
 // The curtain sits this far toward you, in front of the clipped ground edge.
 const EDGE_OFFSET = 0.003
+// The soil's grain: crumbs of a few sizes, a little lighter or darker.
+const SOIL_GRAIN = /* glsl */ `
+float soilHash(vec3 p) {
+  return fract(sin(dot(floor(p), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+}
+float soilGrain(vec3 p) {
+  float crumbs = 0.5 * soilHash(p * 90.0) + 0.3 * soilHash(p * 31.0) + 0.2 * soilHash(p * 9.0);
+  return 0.7 + 0.6 * crumbs;
+}
+`
 // Rebuild the strip once the cut has moved (m) or turned (rad) this much.
 const MOVE_EPSILON = 0.02
 const TURN_EPSILON = 0.01
@@ -96,6 +106,14 @@ export function createCrossSection(scene, { renderer, materials, cover }) {
     depthTest: false,
     depthWrite: false,
   })
+  backgroundMaterial.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSoil;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvSoil = (modelMatrix * vec4(transformed, 1.0)).xyz;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vSoil;\n${SOIL_GRAIN}`)
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= soilGrain(vSoil);')
+  }
   const edge = new THREE.Mesh(geometry, [solidMaterial, backgroundMaterial])
   edge.frustumCulled = false
   // Right after the sky (renderOrder -1), before everything else.

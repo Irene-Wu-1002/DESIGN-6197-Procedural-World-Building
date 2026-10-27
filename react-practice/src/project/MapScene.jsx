@@ -495,6 +495,7 @@ export default function MapScene({ intro }) {
       xray.update(delta, anchor)
       coverRenderer.setHidden(xray.amount)
       crossSection.update(delta, anchor, camera, (x, z) => tiles.sampler.height(x, z))
+      trunkRenderer.setCutBuried(crossSection.active)
       const groundSampler = tiles.sampler
       rootRenderer.update({
         active: xray.amount > 0 || crossSection.amount > 0,
@@ -749,8 +750,16 @@ export default function MapScene({ intro }) {
     rootSettingsRef.current = {
       ...Object.fromEntries(ROOT_KEYS.map((key) => [key, settledUnderground[key]])),
       roots: underground.roots,
-      // The cross-section always shows the glowing reference colours.
-      ...(undergroundView === 'section' ? { colors: 'reference' } : {}),
+      // The cross-section always shows its own glowing orange, and a denser
+      // tangle: more deep roots, forking more, with more fine roots.
+      ...(undergroundView === 'section'
+        ? {
+            colors: 'section',
+            deep: settledUnderground.deep + 4,
+            branching: Math.min(settledUnderground.branching * 1.6, 1),
+            fine: settledUnderground.fine * 2.5,
+          }
+        : {}),
     }
   }, [settledUnderground, underground.roots, undergroundView])
 

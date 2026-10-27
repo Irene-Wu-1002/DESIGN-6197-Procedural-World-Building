@@ -543,6 +543,18 @@ export function createTrunkRenderer(scene) {
   let geometry = createTrunkGeometry()
   let height = null
   const material = new THREE.MeshStandardMaterial({ color: '#3e3128', roughness: 1 })
+  // The cross-section cuts the buried base away (below where the trunk
+  // stands), so the roots show under it.
+  const buried = { value: 0 }
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uCutBuried = buried
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vTrunkY;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTrunkY = position.y;')
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uCutBuried;\nvarying float vTrunkY;')
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (uCutBuried > 0.5 && vTrunkY < 0.0) discard;')
+  }
   const mesh = new THREE.InstancedMesh(geometry, material, TRUNK_CAPACITY)
   mesh.count = 0
   mesh.castShadow = true
@@ -558,6 +570,10 @@ export function createTrunkRenderer(scene) {
 
   return {
     mesh,
+    /** Hide the buried base (the cross-section). */
+    setCutBuried(on) {
+      buried.value = on ? 1 : 0
+    },
     /** trunkHeight: the visible trunk (m), up to where the crown starts. */
     update(trunks, sampler, focusX, focusZ, version, trunkHeight) {
       if (trunkHeight !== height) {

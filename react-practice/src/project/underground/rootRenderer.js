@@ -25,6 +25,9 @@ import { growRoots, growSurfaceRoots } from './roots'
  *   natural    weathered grey-brown wood, paler where thin; pale fine roots
  *   reference  woody roots brown to warm orange; fine roots glow orange
  *              near the wood and run to deep red or cool blue at the tips
+ *   section    the cross-section: all glowing orange, deep amber in the
+ *              thick wood to bright orange in the thin, fine roots bright
+ *              orange to red or amber at the tips
  */
 
 // Extra distance (m) beyond the root reach within which a trunk is wanted,
@@ -44,6 +47,15 @@ const PALETTES = {
     fine: [
       ['#e08048', '#b8341f'],
       ['#d0703c', '#4a8ee8'],
+    ],
+  },
+  section: {
+    thick: '#8a3e14',
+    thin: '#ff8a3a',
+    rim: '#ffb070',
+    fine: [
+      ['#e8702c', '#a82a10'],
+      ['#f08a34', '#c0481a'],
     ],
   },
   natural: {
@@ -88,10 +100,11 @@ uniform float uSoilFade;
 uniform vec3 uSoilColor;
 uniform float uGlow;
 `
-// The cross-section: roots fade into the dark soil with distance.
+// The cross-section: roots stay crisp close by and fade into the dark soil
+// further off.
 const SOIL_FRAGMENT = /* glsl */ `
 #include <fog_fragment>
-gl_FragColor.rgb = mix(gl_FragColor.rgb, uSoilColor, uSoilFade * (1.0 - exp(-length(vViewPosition) * 0.3)));
+gl_FragColor.rgb = mix(gl_FragColor.rgb, uSoilColor, uSoilFade * 0.9 * smoothstep(1.5, 7.0, length(vViewPosition)));
 `
 const RIM_FRAGMENT = /* glsl */ `
 {
@@ -114,7 +127,7 @@ export function createRootRenderer(scene) {
   const rimUniforms = {
     uRim: { value: 0 },
     uRimColor: { value: new THREE.Color() },
-    uSoilColor: { value: new THREE.Color('#1a120c') },
+    uSoilColor: { value: new THREE.Color('#050404') },
   }
   const fineMaterial = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false })
   // Two copies: the underground one fades into the soil and glows in the
@@ -134,7 +147,8 @@ export function createRootRenderer(scene) {
   }
   const underUniforms = { uSoilFade: { value: 0 }, uGlow: { value: 0 } }
   const material = makeMaterial('underground-roots', underUniforms)
-  const surfaceMaterial = makeMaterial('surface-roots', { uSoilFade: { value: 0 }, uGlow: { value: 0 } })
+  const surfaceUniforms = { uSoilFade: { value: 0 }, uGlow: { value: 0 } }
+  const surfaceMaterial = makeMaterial('surface-roots', surfaceUniforms)
 
   // Per layer, key → { trunk, roots, levels: [{ geometry, segments,
   // triangles } | null], mesh, lines (underground only), level }
@@ -202,7 +216,9 @@ export function createRootRenderer(scene) {
      */
     update({ active, rim, soil = 0, trunks, height, anchor, camera, viewportHeight, settings, version }) {
       underUniforms.uSoilFade.value = soil
-      underUniforms.uGlow.value = 1.3 * soil
+      underUniforms.uGlow.value = 1.4 * soil
+      // The surface roots carry on underground, so they glow too.
+      surfaceUniforms.uGlow.value = 1.4 * soil
       // Underground in the cross-section: no forest haze on the roots (the
       // soil fade replaces it). Switching recompiles the material once.
       const hazed = soil < 0.5
@@ -213,7 +229,9 @@ export function createRootRenderer(scene) {
       group.visible = active && settings.roots
       surfaceGroup.visible = settings.roots && Boolean(trunks)
       rimUniforms.uRim.value = rim
-      fineMaterial.opacity = Math.min(rim, 1) * 0.85
+      // In the cross-section the fine roots glow (added onto the dark soil).
+      fineMaterial.opacity = Math.max(Math.min(rim, 1) * 0.85, soil * 0.4)
+      fineMaterial.blending = soil > 0.5 ? THREE.AdditiveBlending : THREE.NormalBlending
       const key = [version, ...Object.values(settings)].join('|')
       if (key !== settingsKey) {
         clear()
