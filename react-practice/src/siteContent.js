@@ -47,7 +47,7 @@ export const WEEKS = [
     id: 6,
     title: 'Branching System',
     summary:
-      'Ways to grow branching shapes, compared side by side. First: recursive splitting, generation by generation.',
+      'Four ways to grow branching shapes, compared side by side: recursive splitting, L-systems, random growth, and space colonization.',
     hint: 'Orbit · Pan · Zoom',
   },
 ]

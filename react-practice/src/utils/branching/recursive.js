@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createRandom } from '../distributions'
+import { DEG, MAX_SEGMENTS, UP, perpendicular } from './common'
 
 /**
  * Topic 6: recursive branching.
@@ -10,9 +11,9 @@ import { createRandom } from '../distributions'
  * generation), and is shorter by the length ratio. This repeats until the depth
  * limit. One seed always grows the same tree.
  *
- * Returns { segments: [{ start, end, depth }], tips: [Vector3], maxDepth, capped }.
- * Segments come out generation by generation (breadth first), so a renderer
- * can reveal the tree one generation at a time.
+ * Returns { segments: [{ start, end, depth }], tips: [Vector3], maxDepth,
+ * capped, stats, stepName }, the shape every Topic 6 method returns. Here a
+ * segment's depth is its generation.
  */
 
 export const DEFAULT_RECURSIVE = {
@@ -48,18 +49,6 @@ export const RECURSIVE_PRESETS = {
     label: 'Roots',
     params: { depth: 7, children: 3, splitAngle: 55, angleJitter: 25, spreadTwist: 137.5, lengthRatio: 0.7, lengthJitter: 0.35, trunkLength: 1, tropism: -0.35, prune: 0.25, growDown: true },
   },
-}
-
-// Upper bound on segments so a deep, bushy tree can't freeze the page.
-export const MAX_SEGMENTS = 120000
-
-const UP = new THREE.Vector3(0, 1, 0)
-const DEG = Math.PI / 180
-
-// Any unit vector perpendicular to `dir`.
-function perpendicular(dir) {
-  const helper = Math.abs(dir.y) < 0.9 ? UP : new THREE.Vector3(1, 0, 0)
-  return new THREE.Vector3().crossVectors(dir, helper).normalize()
 }
 
 export function growRecursive(params) {
@@ -135,5 +124,15 @@ export function growRecursive(params) {
     queue = next
   }
 
-  return { segments, tips, maxDepth: params.depth, capped }
+  return {
+    segments,
+    tips,
+    maxDepth: params.depth,
+    capped,
+    stepName: 'Generation',
+    stats: [
+      [segments.length, 'segments'],
+      [tips.length, 'tips'],
+    ],
+  }
 }

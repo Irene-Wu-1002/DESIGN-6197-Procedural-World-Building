@@ -2,36 +2,49 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import BranchingPanel from './BranchingPanel'
+import { BRANCHING_METHODS } from './branching/methods'
 import { createBranchObject } from '../utils/branching/branchRenderer'
-import {
-  DEFAULT_RECURSIVE,
-  RECURSIVE_PRESETS,
-  growRecursive,
-} from '../utils/branching/recursive'
 
-// Seconds to grow one generation when Grow is pressed.
-const SECONDS_PER_GENERATION = 0.45
+// A full growth takes about 0.45 s per step, kept between 2 and 6 seconds so
+// a 7-generation tree and a 300-iteration one both replay at a watchable pace.
+const SECONDS_PER_STEP = 0.45
+const MIN_GROW_SECONDS = 2
+const MAX_GROW_SECONDS = 6
+
+const DEFAULT_PARAMS = Object.fromEntries(
+  BRANCHING_METHODS.map((method) => [method.id, method.defaults])
+)
+
+// Settings that only change what is shown, so they don't regrow the tree.
+const DISPLAY_KEYS = new Set(['showTips', 'showAttractors'])
 
 // Topic 6: Branching System. Each method returns the same { segments, tips }
 // shape, so one renderer draws them all.
 export default function Week6Scene() {
   const mountRef = useRef(null)
   const sceneRef = useRef(null)
+  const frameRef = useRef(null)
   const branchRef = useRef(null)
   const growStartRef = useRef(null)
   // The tree grows by itself on first load and after Reset, Random Seed or a
   // preset; slider drags show the result at once so tweaking stays quick.
   const growNextRef = useRef(true)
+  const speedRef = useRef(1)
   const [method, setMethod] = useState('recursive')
-  const [params, setParams] = useState(DEFAULT_RECURSIVE)
-  // Generation being grown (1-based) while Grow plays, otherwise null.
-  const [growingGeneration, setGrowingGeneration] = useState(null)
+  // Each tab keeps its own settings, so switching back loses nothing.
+  const [paramsByMethod, setParamsByMethod] = useState(DEFAULT_PARAMS)
+  const [speed, setSpeed] = useState(1)
+  // Step being grown (1-based) while Grow plays, otherwise null.
+  const [growingStep, setGrowingStep] = useState(null)
 
-  // Tips only toggle visibility, so they don't regrow the tree.
-  const { showTips, ...growParams } = params
-  const growKey = JSON.stringify(growParams)
+  const params = paramsByMethod[method]
+  const { defaults, presets, grow } = BRANCHING_METHODS.find((item) => item.id === method)
+  const growParams = Object.fromEntries(
+    Object.entries(params).filter(([key]) => !DISPLAY_KEYS.has(key))
+  )
+  const growKey = method + JSON.stringify(growParams)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const tree = useMemo(() => growRecursive(growParams), [growKey])
+  const tree = useMemo(() => grow(growParams), [growKey])
 
   useEffect(() => {
     const mount = mountRef.current
@@ -63,23 +76,38 @@ export default function Week6Scene() {
     const grid = new THREE.GridHelper(24, 24, '#39424e', '#232a33')
     scene.add(grid)
 
+    // Point the camera at a structure and back off until all of it fits,
+    // keeping the current viewing direction.
+    frameRef.current = (box) => {
+      const center = box.getCenter(new THREE.Vector3())
+      const radius = box.getSize(new THREE.Vector3()).length() / 2
+      const distance = Math.max(4, radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.05
+      const direction = camera.position.clone().sub(controls.target).normalize()
+      controls.target.copy(center)
+      camera.position.copy(center).addScaledVector(direction, distance)
+      controls.maxDistance = Math.max(40, distance * 2)
+    }
+
     let frameId
-    let shownGeneration = null
+    let shownStep = null
     const animate = (now) => {
       const branch = branchRef.current
       if (branch && growStartRef.current !== null) {
-        const progress = Math.max(0, now - growStartRef.current) / 1000 / SECONDS_PER_GENERATION
+        const steps = branch.generations
+        const seconds =
+          Math.min(MAX_GROW_SECONDS, Math.max(MIN_GROW_SECONDS, steps * SECONDS_PER_STEP)) /
+          speedRef.current
+        const progress = (Math.max(0, now - growStartRef.current) / 1000 / seconds) * steps
         branch.reveal(progress)
-        if (progress >= branch.generations) growStartRef.current = null
-        const generation =
-          growStartRef.current === null ? null : Math.floor(progress) + 1
-        if (generation !== shownGeneration) {
-          shownGeneration = generation
-          setGrowingGeneration(generation)
+        if (progress >= steps) growStartRef.current = null
+        const step = growStartRef.current === null ? null : Math.floor(progress) + 1
+        if (step !== shownStep) {
+          shownStep = step
+          setGrowingStep(step)
         }
-      } else if (shownGeneration !== null) {
-        shownGeneration = null
-        setGrowingGeneration(null)
+      } else if (shownStep !== null) {
+        shownStep = null
+        setGrowingStep(null)
       }
       controls.update()
       renderer.render(scene, camera)
@@ -106,6 +134,7 @@ export default function Week6Scene() {
       grid.material.dispose()
       renderer.dispose()
       sceneRef.current = null
+      frameRef.current = null
     }
   }, [])
 
@@ -116,7 +145,10 @@ export default function Week6Scene() {
     scene.add(branch.group)
     branchRef.current = branch
     growStartRef.current = null
-    if (growNextRef.current) startGrowing()
+    if (growNextRef.current) {
+      frameRef.current?.(branch.bounds)
+      startGrowing()
+    }
     return () => {
       scene.remove(branch.group)
       branch.dispose()
@@ -125,11 +157,19 @@ export default function Week6Scene() {
   }, [tree])
 
   useEffect(() => {
-    branchRef.current?.setShowTips(showTips)
-  }, [tree, showTips])
+    branchRef.current?.setShowTips(params.showTips)
+    branchRef.current?.setShowAttractors(params.showAttractors ?? false)
+  }, [tree, params.showTips, params.showAttractors])
+
+  // Update the open tab's settings.
+  const setParams = (update) =>
+    setParamsByMethod((current) => ({
+      ...current,
+      [method]: typeof update === 'function' ? update(current[method]) : update,
+    }))
 
   const setParam = (key, value) => {
-    growNextRef.current = false
+    growNextRef.current = DISPLAY_KEYS.has(key) && growNextRef.current
     setParams((current) => ({ ...current, [key]: value }))
   }
 
@@ -144,27 +184,37 @@ export default function Week6Scene() {
     setParams(update)
   }
 
+  // Changing speed mid-growth keeps the current step instead of jumping.
+  const changeSpeed = (value) => {
+    if (growStartRef.current !== null) {
+      const now = performance.now()
+      growStartRef.current = now - ((now - growStartRef.current) * speedRef.current) / value
+    }
+    speedRef.current = value
+    setSpeed(value)
+  }
+
   return (
     <div className="voxel-workspace">
-      <div className="scene" ref={mountRef} aria-label="Recursive branching tree" />
+      <div className="scene" ref={mountRef} aria-label="Branching structure" />
       <BranchingPanel
         method={method}
-        onMethod={setMethod}
+        onMethod={(id) => {
+          growNextRef.current = true
+          setMethod(id)
+        }}
         params={params}
         onParam={setParam}
-        onPreset={(id) => regrow((current) => ({ ...current, ...RECURSIVE_PRESETS[id].params }))}
-        onReset={() => regrow(DEFAULT_RECURSIVE)}
+        onPreset={(id) => regrow((current) => ({ ...current, ...presets[id].params }))}
+        onReset={() => regrow(defaults)}
         onRandomSeed={() =>
           regrow((current) => ({ ...current, seed: Math.floor(Math.random() * 1000) }))
         }
         onGrow={startGrowing}
-        stats={{
-          segments: tree.segments.length,
-          tips: tree.tips.length,
-          capped: tree.capped,
-          generation: growingGeneration,
-          generations: tree.maxDepth + 1,
-        }}
+        speed={speed}
+        onSpeed={changeSpeed}
+        tree={tree}
+        growingStep={growingStep}
       />
     </div>
   )
