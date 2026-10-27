@@ -1,3 +1,4 @@
+import { DEFAULT_CROWNS } from '../cover/crowns'
 import { DEFAULT_HABITAT } from '../habitat/habitatFields'
 import { DEFAULT_PATHS } from '../paths/antTrail'
 import { DEFAULT_UNDERGROUND } from '../underground/settings'
@@ -38,6 +39,7 @@ export const TAB_KEYS = {
     ground: ['trunks', 'trunkSpacing', 'antHill'],
     view: ['haze', 'dapple'],
     habitat: Object.keys(DEFAULT_HABITAT),
+    crowns: Object.keys(DEFAULT_CROWNS),
   },
   scatter: mergeKeys(Object.values(ELEMENT_KEYS)),
   paths: { paths: Object.keys(DEFAULT_PATHS) },

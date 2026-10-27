@@ -17,8 +17,9 @@ import * as THREE from 'three'
 const FADE_SECONDS = 0.6
 const SOIL = new THREE.Color('#1c140e')
 // Haze density underground (exponential-squared, per metre): about a
-// third gone 3 m away, so roots across the view stay readable.
-const SOIL_HAZE = 0.2
+// sixth gone 3 m away, so roots across the view and the crown above stay
+// readable.
+const SOIL_HAZE = 0.14
 const GUIDE_DEPTHS = [0.1, 0.25, 0.5]
 const GUIDE_RADIUS = 0.3
 

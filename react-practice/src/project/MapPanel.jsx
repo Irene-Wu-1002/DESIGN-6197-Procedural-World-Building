@@ -51,8 +51,9 @@ const FLOWER_DISTRIBUTIONS = [
  * scene. habitatSettling / coverSettling: habitat or ground-cover changes
  * are still on their way to the world. underground / rootStats /
  * undergroundSettling: the Underground tab's settings, the roots' numbers,
- * and whether root changes are still on their way.
- * onResetKeys({ ground, cover, view, habitat, paths, underground: [...keys] }) restores
+ * and whether root changes are still on their way. crowns / crownStats /
+ * crownsSettling: the same for the tree crowns (Habitat tab).
+ * onResetKeys({ ground, cover, view, habitat, paths, underground, crowns: [...keys] }) restores
  * just those settings to their defaults; onReset restores everything.
  */
 export default function MapPanel({
@@ -68,6 +69,9 @@ export default function MapPanel({
   underground,
   undergroundSettling,
   rootStats,
+  crowns,
+  crownsSettling,
+  crownStats,
   status,
   onGroundChange,
   onViewChange,
@@ -76,6 +80,7 @@ export default function MapPanel({
   onPathsChange,
   onShowZones,
   onUndergroundChange,
+  onCrownsChange,
   onResetKeys,
   onReset,
 }) {
@@ -355,6 +360,41 @@ export default function MapPanel({
             )}
             <EnableToggle label="Ant hill" checked={ground.antHill} onChange={setGround('antHill')} />
           </ControlCard>
+          {ground.trunks && (
+            <ControlCard title="Tree crowns">
+              <EnableToggle label="Branches" checked={crowns.crowns} onChange={(on) => onCrownsChange('crowns', on)} />
+              <LabeledSlider
+                label="Crown starts at"
+                value={crowns.crownStart}
+                min={2}
+                max={6}
+                step={0.2}
+                format={(value) => `${value.toFixed(1)} m`}
+                onChange={(value) => onCrownsChange('crownStart', value)}
+              />
+              {[
+                ['Crown size', 'crownSize', 40, 150],
+                ['Branch density', 'branchDensity', 25, 200],
+              ].map(([label, key, min, max]) => (
+                <LabeledSlider
+                  key={key}
+                  label={label}
+                  value={crowns[key]}
+                  min={min}
+                  max={max}
+                  step={5}
+                  format={formatPercent}
+                  onChange={(value) => onCrownsChange(key, value)}
+                />
+              ))}
+              <p className="section-note">
+                {crownsSettling
+                  ? 'Regrowing crowns…'
+                  : `${crownStats.trees} crowns · ${crownStats.triangles.toLocaleString()} triangles · ` +
+                    crownStats.perLevel.map((count, level) => `L${level} ${count}`).join(' ')}
+              </p>
+            </ControlCard>
+          )}
           <ControlCard title="Atmosphere">
             {percentSlider('Haze', view.haze, setView('haze'), 100)}
             {percentSlider('Dappled light', view.dapple, setView('dapple'), 100)}

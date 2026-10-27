@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import MapPanel from './MapPanel'
 import { DEFAULT_COVER } from './cover/coverRules'
-import { createCoverRenderer, createTrunkRenderer } from './cover/coverRenderer'
+import { createCoverRenderer, createTrunkRenderer, trunkGround } from './cover/coverRenderer'
+import { DEFAULT_CROWNS, createCrownRenderer } from './cover/crowns'
 import { createFlowerField } from './cover/flowerField'
 import { agaricSpot, createFlyAgaric } from './cover/flyAgaric'
 import { createLeafField } from './cover/leafField'
@@ -120,6 +121,7 @@ export default function MapScene({ intro }) {
   const xrayRef = useRef(null)
   // What the roots are grown from (the settled Underground settings).
   const rootSettingsRef = useRef(DEFAULT_UNDERGROUND)
+  const crownSettingsRef = useRef(DEFAULT_CROWNS)
   // What the tile listener needs to scatter a new tile (moss, flowers: the
   // moss patch and flower colony fields, built from the settled settings
   // below).
@@ -143,6 +145,10 @@ export default function MapScene({ intro }) {
   // Paths: the trail and exclusion zones follow once the controls settle;
   // pheromones change at once.
   const [paths, setPaths] = useState(DEFAULT_PATHS)
+  // Tree crowns regrow once their sliders settle.
+  const [crowns, setCrowns] = useState(DEFAULT_CROWNS)
+  const settledCrowns = useDebounced(crowns, SETTLE_MS)
+  const [crownStats, setCrownStats] = useState({ trees: 0, triangles: 0, perLevel: [0, 0, 0, 0] })
   const settledPaths = useDebounced(paths, SETTLE_MS)
   // Show exclusion zones: paints them for a few seconds (a counter, so a
   // second press restarts the timer).
@@ -237,6 +243,7 @@ export default function MapScene({ intro }) {
     // dropped when it's freed.
     const coverRenderer = createCoverRenderer(scene, morphUniforms)
     const trunkRenderer = createTrunkRenderer(scene)
+    const crownRenderer = createCrownRenderer(scene)
     // Underground: the see-through ground and the roots under the trunks.
     const xray = createXray(scene, [material, farMaterial])
     xrayRef.current = xray
@@ -457,7 +464,19 @@ export default function MapScene({ intro }) {
       coverRenderer.setFadeRange(morphStart + COVER_FADE[0], morphStart + COVER_FADE[1])
       coverRenderer.setUV(params.perception.uv)
       coverRenderer.sync()
-      trunkRenderer.update(tiles.trunks, tiles.sampler, anchor.x, anchor.z, tiles.version)
+      const crownSettings = crownSettingsRef.current
+      trunkRenderer.update(tiles.trunks, tiles.sampler, anchor.x, anchor.z, tiles.version, crownSettings.crownStart)
+      const trunkSampler = tiles.sampler
+      crownRenderer.update({
+        trunks: tiles.trunks,
+        ground: (trunk) => trunkGround(trunk, trunkSampler),
+        focusX: anchor.x,
+        focusZ: anchor.z,
+        camera,
+        viewportHeight: mount.clientHeight,
+        settings: crownSettings,
+        version: tiles.version,
+      })
       xray.update(delta, anchor)
       coverRenderer.setHidden(xray.amount)
       const groundSampler = tiles.sampler
@@ -565,6 +584,7 @@ export default function MapScene({ intro }) {
       })
       setSimStatus(simulation.snapshot())
       setRootStats(rootRenderer.stats())
+      setCrownStats(crownRenderer.stats())
     }, STATUS_REFRESH_MS)
 
     const onResize = () => {
@@ -578,7 +598,7 @@ export default function MapScene({ intro }) {
     // For checks during development: the controller and how many tiles
     // have been built (switching viewpoints must not build any).
     if (import.meta.env.DEV) {
-      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, rootRenderer }
+      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, rootRenderer, crownRenderer }
     }
 
     return () => {
@@ -609,6 +629,7 @@ export default function MapScene({ intro }) {
       tiles.dispose()
       coverRenderer.dispose()
       trunkRenderer.dispose()
+      crownRenderer.dispose()
       xray.dispose()
       xrayRef.current = null
       rootRenderer.dispose()
@@ -699,6 +720,9 @@ export default function MapScene({ intro }) {
     xrayRef.current?.setGuides(guides)
     controllerRef.current?.setSettings({ underground: { active: xrayOn, depth: undergroundDepth / 100 } })
   }, [xrayOn, groundOpacity, guides, undergroundDepth])
+  useEffect(() => {
+    crownSettingsRef.current = { ...settledCrowns, crowns: crowns.crowns }
+  }, [settledCrowns, crowns.crowns])
   useEffect(() => {
     rootSettingsRef.current = {
       ...Object.fromEntries(ROOT_KEYS.map((key) => [key, settledUnderground[key]])),
@@ -836,6 +860,10 @@ export default function MapScene({ intro }) {
         zonesShowing={zoneFlash > 0}
         onPathsChange={(key, value) => setPaths((current) => ({ ...current, [key]: value }))}
         onShowZones={() => setZoneFlash((count) => count + 1)}
+        crowns={crowns}
+        crownsSettling={['crownStart', 'crownSize', 'branchDensity'].some((key) => crowns[key] !== settledCrowns[key])}
+        crownStats={crownStats}
+        onCrownsChange={(key, value) => setCrowns((current) => ({ ...current, [key]: value }))}
         underground={underground}
         undergroundSettling={ROOT_KEYS.some((key) => underground[key] !== settledUnderground[key])}
         rootStats={rootStats}
@@ -852,12 +880,14 @@ export default function MapScene({ intro }) {
           habitat: habitatKeys,
           paths: pathKeys,
           underground: undergroundKeys,
+          crowns: crownKeys,
         }) => {
           if (groundKeys) setGround((current) => withDefaults(current, DEFAULT_GROUND, groundKeys))
           if (viewKeys) setView((current) => withDefaults(current, DEFAULT_VIEW, viewKeys))
           if (coverKeys) setCover((current) => withDefaults(current, DEFAULT_COVER, coverKeys))
           if (habitatKeys) setHabitat((current) => withDefaults(current, DEFAULT_HABITAT, habitatKeys))
           if (pathKeys) setPaths((current) => withDefaults(current, DEFAULT_PATHS, pathKeys))
+          if (crownKeys) setCrowns((current) => withDefaults(current, DEFAULT_CROWNS, crownKeys))
           if (undergroundKeys) setUnderground((current) => withDefaults(current, DEFAULT_UNDERGROUND, undergroundKeys))
         }}
         onReset={() => {
@@ -867,6 +897,7 @@ export default function MapScene({ intro }) {
           setHabitat(DEFAULT_HABITAT)
           setPaths(DEFAULT_PATHS)
           setUnderground(DEFAULT_UNDERGROUND)
+          setCrowns(DEFAULT_CROWNS)
         }}
       />
     </div>

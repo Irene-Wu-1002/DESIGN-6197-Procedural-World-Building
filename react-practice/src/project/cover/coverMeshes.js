@@ -181,15 +181,17 @@ export function createFlowerGeometries() {
   return { stem, head }
 }
 
-// --- Trunk (unit radius, 10 m tall): bark ridges, tapered, flared roots.
-export const TRUNK_HEIGHT = 10
+// --- Trunk (unit radius, `height` m above the ground, where the crown
+// takes over): bark ridges, tapered, flared roots.
+export const TRUNK_HEIGHT = 3.6
 const TRUNK_BURY = 0.15
 const ROOT_HEIGHT = 0.45
 const ROOT_LOBES = 5
 
-export function createTrunkGeometry() {
-  const geometry = new THREE.CylinderGeometry(1, 1, TRUNK_HEIGHT, 40, 80, true)
-  geometry.translate(0, TRUNK_HEIGHT / 2 - TRUNK_BURY, 0)
+export function createTrunkGeometry(height = TRUNK_HEIGHT) {
+  const length = height + TRUNK_BURY
+  const geometry = new THREE.CylinderGeometry(1, 1, length, 40, Math.ceil(length * 8), true)
+  geometry.translate(0, length / 2 - TRUNK_BURY, 0)
   const position = geometry.attributes.position
   for (let i = 0; i < position.count; i += 1) {
     const x = position.getX(i)
@@ -198,7 +200,7 @@ export function createTrunkGeometry() {
     const angle = Math.atan2(z, x)
     const up = Math.max(y, 0)
     // Slight taper, vertical bark ridges that wander, and root flares.
-    let radius = 1 - 0.12 * Math.min(up / TRUNK_HEIGHT, 1)
+    let radius = 1 - 0.12 * Math.min(up / height, 1)
     radius *= 1 + 0.035 * Math.sin(angle * 16 + 2 * Math.sin(y * 3)) + 0.02 * Math.sin(angle * 37 + y * 9)
     if (y < ROOT_HEIGHT) {
       const low = (1 - Math.max(y, 0) / ROOT_HEIGHT) ** 2

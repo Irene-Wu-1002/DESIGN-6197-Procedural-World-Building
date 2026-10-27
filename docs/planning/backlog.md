@@ -93,6 +93,9 @@ The hidden second world and the living paths across the surface. *(Milestones 6�
   splitting into side roots; sinker roots go straight down. Pipe-model thickness tapering
   to fine tips, never above the ground, seeded per trunk, streamed one tree per frame,
   drawn with the Topic 6 levels of detail.
+- [x] **Tree crowns** — space-colonization branches above every trunk (8 instanced
+  variants with LOD), trunk shortened to where the crown starts.
+- [ ] **Leaves on the crowns** — leaf clusters at the twig tips, optional.
 - [ ] **Mycelium network** — space colonisation per region, rooted at that region's
   mushrooms **and at tree root tips** (mycorrhiza), with fixed links to neighbouring
   regions so the network continues endlessly.

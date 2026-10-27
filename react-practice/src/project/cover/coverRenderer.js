@@ -520,8 +520,23 @@ export function createCoverRenderer(scene, morphUniforms) {
 const TRUNK_VIEW = 13
 const TRUNK_CAPACITY = 256
 
+/** The height a trunk stands at: the lowest ground around it, so its root
+ * flare never floats. */
+export function trunkGround(trunk, sampler) {
+  let ground = sampler.height(trunk.x, trunk.z)
+  for (let k = 0; k < 6; k += 1) {
+    const angle = (k / 6) * Math.PI * 2
+    ground = Math.min(
+      ground,
+      sampler.height(trunk.x + Math.cos(angle) * trunk.radius * 1.4, trunk.z + Math.sin(angle) * trunk.radius * 1.4)
+    )
+  }
+  return ground
+}
+
 export function createTrunkRenderer(scene) {
-  const geometry = createTrunkGeometry()
+  let geometry = createTrunkGeometry()
+  let height = null
   const material = new THREE.MeshStandardMaterial({ color: '#3e3128', roughness: 1 })
   const mesh = new THREE.InstancedMesh(geometry, material, TRUNK_CAPACITY)
   mesh.count = 0
@@ -538,22 +553,20 @@ export function createTrunkRenderer(scene) {
 
   return {
     mesh,
-    update(trunks, sampler, focusX, focusZ, version) {
+    /** trunkHeight: the visible trunk (m), up to where the crown starts. */
+    update(trunks, sampler, focusX, focusZ, version, trunkHeight) {
+      if (trunkHeight !== height) {
+        height = trunkHeight
+        geometry.dispose()
+        geometry = createTrunkGeometry(trunkHeight)
+        mesh.geometry = geometry
+      }
       const key = `${Math.floor(focusX / TILE_SIZE)},${Math.floor(focusZ / TILE_SIZE)},${version}`
       if (key === lastKey || !trunks || !sampler) return
       lastKey = key
       const list = trunks.trunksNear(focusX, focusZ, TRUNK_VIEW).slice(0, TRUNK_CAPACITY)
       list.forEach((trunk, index) => {
-        // Sit on the lowest ground around the trunk so roots never float.
-        let ground = sampler.height(trunk.x, trunk.z)
-        for (let k = 0; k < 6; k += 1) {
-          const angle = (k / 6) * Math.PI * 2
-          ground = Math.min(
-            ground,
-            sampler.height(trunk.x + Math.cos(angle) * trunk.radius * 1.4, trunk.z + Math.sin(angle) * trunk.radius * 1.4)
-          )
-        }
-        position.set(trunk.x, ground, trunk.z)
+        position.set(trunk.x, trunkGround(trunk, sampler), trunk.z)
         quaternion.setFromAxisAngle(up, (trunk.seed % 360) * (Math.PI / 180))
         scale.set(trunk.radius, 1, trunk.radius)
         matrix.compose(position, quaternion, scale)
