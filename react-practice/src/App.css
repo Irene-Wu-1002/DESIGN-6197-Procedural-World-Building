@@ -106,7 +106,7 @@
   padding: 2px;
   border: 1px solid var(--panel-border);
   border-radius: 6px;
-  background: #181c23;
+  background: rgba(255, 255, 255, 0.05);
   cursor: pointer;
 }
 
@@ -639,7 +639,7 @@ input[type='checkbox'] {
   border-radius: 7px;
   font: inherit;
   color: var(--text);
-  background: #181c23;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .world-storage input[type='text']:focus-visible {
@@ -1287,7 +1287,7 @@ input[type='checkbox'] {
   border-radius: 7px;
   font: inherit;
   color: var(--text);
-  background: #181c23;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .noise-panel select:focus-visible {
@@ -1302,7 +1302,13 @@ input[type='checkbox'] {
   border-radius: 7px;
   font: inherit;
   color: var(--text);
-  background: #181c23;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.noise-panel select option,
+.panel select option {
+  color: var(--text);
+  background: #1d1c1a;
 }
 
 .panel select:focus-visible {
@@ -1396,7 +1402,7 @@ input[type='checkbox'] {
   border-radius: 7px;
   font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text);
-  background: #181c23;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .branch-rule input[type='text']:focus-visible {
