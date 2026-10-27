@@ -25,9 +25,9 @@ import { growRoots, growSurfaceRoots } from './roots'
  *   natural    weathered grey-brown wood, paler where thin; pale fine roots
  *   reference  woody roots brown to warm orange; fine roots glow orange
  *              near the wood and run to deep red or cool blue at the tips
- *   section    the cross-section: all glowing orange, deep amber in the
- *              thick wood to bright orange in the thin, fine roots bright
- *              orange to red or amber at the tips
+ *   section    the cross-section: softly glowing ivory, dark umber in the
+ *              thick wood to pale cream in the thin, fine roots cream to
+ *              honey or a cool sage at the tips
  */
 
 // Extra distance (m) beyond the root reach within which a trunk is wanted,
@@ -50,12 +50,12 @@ const PALETTES = {
     ],
   },
   section: {
-    thick: '#8a3e14',
-    thin: '#ff8a3a',
-    rim: '#ffb070',
+    thick: '#5c4632',
+    thin: '#c9b48e',
+    rim: '#f4e2bc',
     fine: [
-      ['#e8702c', '#a82a10'],
-      ['#f08a34', '#c0481a'],
+      ['#e6d2a6', '#a8844e'],
+      ['#dccaa0', '#7f9a8a'],
     ],
   },
   natural: {

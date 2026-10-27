@@ -35,13 +35,13 @@ import { smoothGraph } from '../../utils/branching/sweep'
 export const DEFAULT_ROOTS = {
   roots: true,
   colors: 'natural',
-  surface: 5,
-  deep: 6,
-  steepness: 0.6,
-  rootDepth: 1,
-  reach: 1.2,
+  surface: 6,
+  deep: 7,
+  steepness: 0.3,
+  rootDepth: 1.3,
+  reach: 1.7,
   branching: 0.25,
-  fine: 40,
+  fine: 65,
 }
 
 const STEP = 0.015

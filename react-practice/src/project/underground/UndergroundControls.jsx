@@ -55,7 +55,7 @@ export default function UndergroundControls({ underground, locked, onChange, set
       <ControlCard title="Tree roots">
         <EnableToggle label="Roots" checked={underground.roots} onChange={set('roots')} />
         {underground.view === 'section' ? (
-          <p className="section-note">The cross-section shows the roots glowing, as in the reference.</p>
+          <p className="section-note">The cross-section shows the roots softly glowing ivory against the dark soil.</p>
         ) : (
           <SegmentedButtons
             items={ROOT_COLORS}
