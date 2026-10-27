@@ -15,7 +15,7 @@ import * as THREE from 'three'
  *            as it is; the roots fade into it with distance (rootRenderer.js)
  *   veil     a see-through layer of topsoil in the same cut, drawn over
  *            the roots behind it: pale grey-brown and nearly opaque at the
- *            ground line, clearing over about 2 cm, so the roots show
+ *            ground line, clearing over about 3.5 cm, so the roots show
  *            through it more and more as they go down
  *
  * The cut moves with you: each frame it passes through the anchor, facing
@@ -36,11 +36,11 @@ const EDGE_BANDS = [
 ]
 // The veil: depth below the ground (m), colour and opacity.
 const VEIL_BANDS = [
-  [0.004, '#6e5e4c', 0.75],
-  [-0.002, '#625342', 0.5],
-  [-0.006, '#4f4336', 0.22],
-  [-0.012, '#3c332a', 0.06],
-  [-0.02, '#2a241e', 0],
+  [0.004, '#6e5e4c', 0.78],
+  [-0.0035, '#625342', 0.52],
+  [-0.01, '#4f4336', 0.24],
+  [-0.02, '#3c332a', 0.07],
+  [-0.035, '#2a241e', 0],
 ]
 // The curtain sits this far toward you, in front of the clipped ground edge.
 const EDGE_OFFSET = 0.003
