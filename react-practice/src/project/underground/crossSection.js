@@ -9,8 +9,8 @@ import * as THREE from 'three'
  *            away (trunks, crowns and roots stay); beyond it the forest
  *            stands as usual, with its normal sky, haze and light
  *   edge     a curtain hanging in the cut whose top follows the real
- *            ground: leaf litter, then dark humus (a solid strip, hiding
- *            the buried trunk bases), then the soil's darkness far down,
+ *            ground: leaf litter (a thin solid strip), then dark humus and
+ *            the soil's darkness far down,
  *            drawn as background (right after the sky, no depth test) so
  *            the roots draw over it and the sky above the ground line stays
  *            as it is; the roots fade into it with distance (rootRenderer.js)
@@ -32,8 +32,9 @@ const EDGE_BANDS = [
   [-0.18, '#1a120c'], // into the soil's darkness
   [-40, '#0d0906'],
 ]
-// Bands above this row are the solid strip; below it, the background.
-const SOLID_ROWS = 3
+// Bands above this row are the solid strip (just the litter edge); below
+// it, the background, so the roots show right up to the surface.
+const SOLID_ROWS = 1
 // The curtain sits this far toward you, in front of the clipped ground edge.
 const EDGE_OFFSET = 0.003
 // Rebuild the strip once the cut has moved (m) or turned (rad) this much.
