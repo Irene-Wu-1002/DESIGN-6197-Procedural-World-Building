@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { LOD_LEVELS, buildLevelGeometry, chooseLevel } from '../../utils/branching/lod'
+import { LOD_LEVELS, chooseLevel } from '../../utils/branching/lod'
+import { sweepGeometry } from '../../utils/branching/sweep'
 import { growRoots } from './roots'
 
 /**
@@ -10,20 +11,67 @@ import { growRoots } from './roots'
  * you see are wanted; missing ones are grown nearest first, one per frame,
  * and kept until you move well away. Each system is one mesh at one of the
  * Topic 6 levels of detail (utils/branching/lod.js: 100 / 35 / 10 / 3% of
- * its roots, 8 / 6 / 4 / 3 sides), picked from how big it looks on screen;
- * a level's tubes are built the first time it's needed.
+ * its woody roots, 8 / 6 / 4 / 3 sides, and 100 / 50 / 15 / 0% of its fine
+ * roots), picked from how big it looks on screen; a level's tubes are built
+ * the first time it's needed. Woody roots are smooth swept tubes
+ * (utils/branching/sweep.js) with a faint warm rim; fine roots are lines.
  *
- * The roots are natural bark-brown, darker and thicker near the trunk, with
- * a faint warm rim so they still read against the dark soil.
+ * Colours:
+ *   reference  woody roots brown to warm orange; fine roots glow orange
+ *              near the wood and run to deep red or cool blue at the tips
+ *   natural    bark-brown woody roots, pale tan fine roots
  */
 
 // Extra distance (m) beyond the root reach within which a trunk is wanted,
 // and beyond which a built one is freed.
 const WANT_MARGIN = 1
 const KEEP_MARGIN = 2.5
-const THICK = new THREE.Color('#6e4c33')
-const FINE = new THREE.Color('#dcc6a2')
 const FINE_RADIUS = 0.0006
+const FINE_SHARE = [1, 0.5, 0.15, 0]
+const PALETTES = {
+  reference: {
+    thick: '#5b3a25',
+    thin: '#c8743e',
+    rim: '#ffb070',
+    fine: [
+      ['#e08048', '#b8341f'],
+      ['#d0703c', '#4a8ee8'],
+    ],
+  },
+  natural: {
+    thick: '#6e4c33',
+    thin: '#dcc6a2',
+    rim: '#ffc58a',
+    fine: [
+      ['#b89b7a', '#e6d6b8'],
+      ['#b89b7a', '#e6d6b8'],
+    ],
+  },
+}
+const colorsOf = (name) => {
+  const palette = PALETTES[name] ?? PALETTES.reference
+  return {
+    thick: new THREE.Color(palette.thick),
+    thin: new THREE.Color(palette.thin),
+    rim: new THREE.Color(palette.rim),
+    fine: palette.fine.map((pair) => pair.map((color) => new THREE.Color(color))),
+  }
+}
+
+/** The fine roots as one line mesh, coloured along each strand. */
+function fineGeometry({ positions, tints, kinds }, palette) {
+  const colors = new Float32Array(positions.length)
+  const color = new THREE.Color()
+  for (let vertex = 0; vertex < tints.length; vertex += 1) {
+    const [from, to] = palette.fine[kinds[vertex]]
+    color.copy(from).lerp(to, tints[vertex]).toArray(colors, vertex * 3)
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geometry.computeBoundingSphere()
+  return geometry
+}
 
 const RIM_DECLARATIONS = /* glsl */ `
 uniform float uRim;
@@ -46,8 +94,9 @@ export function createRootRenderer(scene) {
 
   const rimUniforms = {
     uRim: { value: 0 },
-    uRimColor: { value: new THREE.Color('#ffc58a') },
+    uRimColor: { value: new THREE.Color() },
   }
+  const fineMaterial = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false })
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 })
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, rimUniforms)
@@ -57,15 +106,18 @@ export function createRootRenderer(scene) {
   }
   material.customProgramCacheKey = () => 'underground-roots'
 
-  // key → { trunk, roots, levels: [{ geometry, segments, triangles } | null], mesh, level }
+  // key → { trunk, roots, levels: [{ geometry, segments, triangles } | null],
+  //         mesh, lines, level }
   const systems = new Map()
   let settingsKey = null
+  let palette = colorsOf('reference')
   let pending = 0
 
   const free = (key) => {
     const system = systems.get(key)
-    group.remove(system.mesh)
+    group.remove(system.mesh, system.lines)
     system.levels.forEach((level) => level?.geometry.dispose())
+    system.lines.geometry.dispose()
     systems.delete(key)
   }
   const clear = () => [...systems.keys()].forEach(free)
@@ -73,13 +125,19 @@ export function createRootRenderer(scene) {
   const levelOf = (system, index) => {
     if (!system.levels[index]) {
       const { roots } = system
+      const { fraction, sides } = LOD_LEVELS[index]
       const thickest = roots.radii.reduce((max, radius) => Math.max(max, radius), FINE_RADIUS)
       const span = Math.log(thickest / FINE_RADIUS) || 1
-      system.levels[index] = buildLevelGeometry(roots, roots.hierarchy, 0, LOD_LEVELS[index], {
+      const count = Math.max(1, Math.ceil(roots.segments.length * fraction))
+      const keep = new Set(roots.hierarchy.importance.slice(0, count))
+      const { geometry, triangles } = sweepGeometry(roots.segments, roots.hierarchy, {
+        keep,
+        sides,
         radiusOf: (segment) => roots.radii[segment],
         colorOf: (segment, color) =>
-          color.copy(THICK).lerp(FINE, 1 - Math.log(roots.radii[segment] / FINE_RADIUS) / span),
+          color.copy(palette.thick).lerp(palette.thin, 1 - Math.log(roots.radii[segment] / FINE_RADIUS) / span),
       })
+      system.levels[index] = { geometry, segments: count, triangles }
     }
     return system.levels[index]
   }
@@ -94,10 +152,13 @@ export function createRootRenderer(scene) {
     update({ active, rim, trunks, height, anchor, camera, viewportHeight, settings, version }) {
       group.visible = active && settings.roots
       rimUniforms.uRim.value = rim
-      const key = `${version}|${settings.reach}|${settings.structural}|${settings.branching}|${settings.depthBias}|${settings.sinkers}`
+      fineMaterial.opacity = Math.min(rim, 1) * 0.85
+      const key = [version, ...Object.values(settings)].join('|')
       if (key !== settingsKey) {
         clear()
         settingsKey = key
+        palette = colorsOf(settings.colors)
+        rimUniforms.uRimColor.value.copy(palette.rim)
       }
       if (!group.visible || !trunks) {
         pending = 0
@@ -117,9 +178,11 @@ export function createRootRenderer(scene) {
       pending = missing.length
       if (missing.length) {
         const trunk = missing[0]
+        const roots = growRoots(trunk, height, settings)
         const mesh = new THREE.Mesh(undefined, material)
-        group.add(mesh)
-        systems.set(keyOf(trunk), { trunk, roots: growRoots(trunk, height, settings), levels: [], mesh, level: -1 })
+        const lines = new THREE.LineSegments(fineGeometry(roots.fine, palette), fineMaterial)
+        group.add(mesh, lines)
+        systems.set(keyOf(trunk), { trunk, roots, levels: [], mesh, lines, level: -1 })
         pending -= 1
       }
 
@@ -132,28 +195,34 @@ export function createRootRenderer(scene) {
         if (level !== system.level) {
           system.level = level
           system.mesh.geometry = levelOf(system, level).geometry
+          const { strandEnds } = system.roots.fine
+          const strands = Math.round(strandEnds.length * FINE_SHARE[level])
+          system.lines.geometry.setDrawRange(0, strands ? strandEnds[strands - 1] : 0)
         }
       }
     },
 
-    /** { trees, pending, segments, triangles, perLevel } for the panel. */
+    /** { trees, pending, segments, triangles, fine, perLevel } for the panel. */
     stats() {
       const perLevel = [0, 0, 0, 0]
       let segments = 0
       let triangles = 0
+      let fine = 0
       for (const system of systems.values()) {
         if (system.level < 0) continue
         perLevel[system.level] += 1
         segments += system.levels[system.level].segments
         triangles += system.levels[system.level].triangles
+        fine += Math.round(system.roots.fine.strandEnds.length * FINE_SHARE[system.level])
       }
-      return { trees: systems.size, pending, segments, triangles, perLevel }
+      return { trees: systems.size, pending, segments, triangles, fine, perLevel }
     },
 
     dispose() {
       clear()
       scene.remove(group)
       material.dispose()
+      fineMaterial.dispose()
     },
   }
 }

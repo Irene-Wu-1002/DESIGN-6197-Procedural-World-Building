@@ -10,5 +10,6 @@ export const DEFAULT_UNDERGROUND = {
   ...DEFAULT_ROOTS,
 }
 
-// Settings that regrow the roots (the rest only change how they're seen).
+// Settings that regrow (or recolour) the roots; the rest only change how
+// they're seen.
 export const ROOT_KEYS = Object.keys(DEFAULT_ROOTS).filter((key) => key !== 'roots')

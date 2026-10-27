@@ -4,10 +4,14 @@ const VIEWS = [
   ['surface', 'Surface'],
   ['xray', 'X-ray'],
 ]
+const ROOT_COLORS = [
+  ['reference', 'Reference'],
+  ['natural', 'Natural'],
+]
 
 /**
  * The Underground tab: the X-ray view and the tree roots.
- * stats: { trees, pending, segments, triangles, perLevel } from the roots.
+ * stats: { trees, pending, segments, triangles, fine, perLevel } from the roots.
  */
 export default function UndergroundControls({ underground, onChange, settling, stats }) {
   const set = (key) => (value) => onChange(key, value)
@@ -45,17 +49,25 @@ export default function UndergroundControls({ underground, onChange, settling, s
 
       <ControlCard title="Tree roots">
         <EnableToggle label="Roots" checked={underground.roots} onChange={set('roots')} />
+        <SegmentedButtons
+          items={ROOT_COLORS}
+          value={underground.colors}
+          onChange={set('colors')}
+          label="Root colours"
+        />
         {slider('Root reach', 'reach', 0.5, 3, 0.1, (value) => `${value.toFixed(1)} m`)}
-        {slider('Structural roots', 'structural', 3, 10, 1, (value) => value)}
+        {slider('Structural roots', 'structural', 3, 12, 1, (value) => value)}
         {slider('Branching', 'branching', 0, 0.4, 0.01, (value) => value.toFixed(2))}
         {slider('Depth bias', 'depthBias', 0, 1, 0.05, (value) => value.toFixed(2))}
         {slider('Sinker roots', 'sinkers', 0, 4, 1, (value) => value)}
+        {slider('Fine roots', 'fine', 0, 100, 5, (value) => `${value}%`)}
         <p className="section-note">
           {settling
             ? 'Regrowing roots…'
             : underground.xray
               ? `${stats.trees} trees with roots${stats.pending ? ` · ${stats.pending} growing` : ''} · ` +
                 `${stats.segments.toLocaleString()} segments · ${stats.triangles.toLocaleString()} triangles · ` +
+                `${stats.fine.toLocaleString()} fine roots · ` +
                 stats.perLevel.map((count, level) => `L${level} ${count}`).join(' ')
               : 'Roots are grown only while X-ray is on.'}
         </p>
