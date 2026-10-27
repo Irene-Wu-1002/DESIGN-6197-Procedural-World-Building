@@ -44,14 +44,24 @@ const VEIL_BANDS = [
 ]
 // The curtain sits this far toward you, in front of the clipped ground edge.
 const EDGE_OFFSET = 0.003
-// The soil's grain: crumbs of a few sizes, a little lighter or darker.
+// The soil's grain: smooth noise at a few sizes (blended between cells,
+// so no grid shows), a little lighter or darker.
 const SOIL_GRAIN = /* glsl */ `
 float soilHash(vec3 p) {
-  return fract(sin(dot(floor(p), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+}
+float soilNoise(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(mix(soilHash(i), soilHash(i + vec3(1, 0, 0)), f.x), mix(soilHash(i + vec3(0, 1, 0)), soilHash(i + vec3(1, 1, 0)), f.x), f.y),
+    mix(mix(soilHash(i + vec3(0, 0, 1)), soilHash(i + vec3(1, 0, 1)), f.x), mix(soilHash(i + vec3(0, 1, 1)), soilHash(i + vec3(1, 1, 1)), f.x), f.y),
+    f.z);
 }
 float soilGrain(vec3 p) {
-  float crumbs = 0.5 * soilHash(p * 90.0) + 0.3 * soilHash(p * 31.0) + 0.2 * soilHash(p * 9.0);
-  return 0.7 + 0.6 * crumbs;
+  float crumbs = 0.5 * soilNoise(p * 140.0) + 0.3 * soilNoise(p * 37.0) + 0.2 * soilNoise(p * 9.0);
+  return 0.75 + 0.5 * crumbs;
 }
 `
 // Rebuild the strip once the cut has moved (m) or turned (rad) this much.
