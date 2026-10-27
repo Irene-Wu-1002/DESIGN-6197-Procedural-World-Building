@@ -31,6 +31,10 @@ export const DEFAULT_WATER = {
   tableDepth: 1.5,
   // % of the standard pocket count.
   pockets: 50,
+  // The water particles (waterParticles.js): % of the standard emission,
+  // and whether to draw the vector field pushing them.
+  particles: 100,
+  showField: false,
 }
 
 const TABLE = { wavelength: 4, swing: 0.2 }

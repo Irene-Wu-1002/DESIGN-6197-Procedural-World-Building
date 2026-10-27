@@ -1,80 +1,68 @@
 import * as THREE from 'three'
 import { createWaterField } from './water'
+import { createWaterParticles } from './waterParticles'
 
 /**
- * Draws the water in the ground (water.js) while X-ray or the
- * cross-section is on:
+ * Draws the water in the ground while X-ray or the cross-section is on:
  *
- *   pockets  the saturated lenses around you, one InstancedMesh of
- *            squashed spheres: clear water, dark through the middle with
- *            a bright rim where you look across the surface (fresnel)
- *   table    in X-ray, the water table as a sheet under the point you
- *            look at, fading out toward its edge, with slow caustic ripples
- *            running over it (the cross-section draws it in the cut
- *            instead: behind the cut it would fill the whole window)
+ *   particles  the water particle system (waterParticles.js): soft round
+ *              dots added onto the dark soil, so dense clusters glow, pale
+ *              cyan when born to deep blue as they age
+ *   field      with Show field, the vector field pushing them: short lines
+ *              on a world-aligned lattice between the table and the
+ *              ground, dark blue at the tail to pale cyan at the head,
+ *              longer where the water moves faster (redrawn a few times a
+ *              second, since the swirl drifts)
  *
  * Both draw before the see-through ground (negative renderOrder), which
- * writes depth and would otherwise hide them.
- *
- * Both follow you: the sheet is rebuilt on a world-aligned grid when you
- * move a cell, the pockets when you move POCKET_MOVE. The field itself is
- * rebuilt when the ground or the settings change (field, key: for the
- * cross-section, which tints the cut with it).
- *
- * Colours follow the roots': natural (a faint grey-blue), glow (vivid
- * blue), section (teal, glowing in the dark of the cross-section).
+ * writes depth and would otherwise hide them. The water field (water.js)
+ * is rebuilt when the ground or the settings change (field, key: the
+ * cross-section draws the table's line in its cut from it).
  */
 
-const POCKET_VIEW = 7
-const POCKET_MOVE = 0.3
-const POCKET_CAPACITY = 512
-const SHEET_RADIUS = 5
-// The table is smooth (the ripples are in the shader), so a coarse grid is
-// enough: about 1,700 ground samples whenever you cross a cell.
-const SHEET_CELL = 0.25
-const PALETTES = {
-  natural: { body: '#4d6f80', rim: '#a9cfe0', sheet: '#7fa8bc', opacity: 0.22, glow: 0.6 },
-  reference: { body: '#1f5fae', rim: '#7cc8ff', sheet: '#3f98ff', opacity: 0.3, glow: 1.1 },
-  section: { body: '#1e6a78', rim: '#8ae6f0', sheet: '#4cc4d6', opacity: 0.3, glow: 1.2 },
-}
+const MAX_POINT_PIXELS = 28
+// Brightness by root palette: the natural look is a little quieter.
+const GLOW = { natural: 0.75, reference: 1, section: 1 }
+const ARROW = { spacing: 0.5, radius: 2.5, levels: 5, length: 0.2, fullSpeed: 0.35, every: 0.2 }
+const ARROW_TAIL = new THREE.Color('#1c2a8c')
+const ARROW_HEAD = new THREE.Color('#bdefff')
 
-const POCKET_DECLARATIONS = /* glsl */ `
-uniform vec3 uRimColor;
-uniform float uGlow;
-`
-const POCKET_FRAGMENT = /* glsl */ `
-{
-  float facing = abs(dot(normalize(vNormal), normalize(vViewPosition)));
-  float rim = pow(1.0 - facing, 2.5);
-  totalEmissiveRadiance += uRimColor * (0.15 + rim) * uGlow;
-  diffuseColor.a = clamp(diffuseColor.a + rim * 0.6, 0.0, 1.0);
+const POINTS_VERTEX = /* glsl */ `
+#include <common>
+#include <logdepthbuf_pars_vertex>
+#include <clipping_planes_pars_vertex>
+attribute vec3 aColor;
+attribute float aSize;
+attribute float aAlpha;
+uniform float uScale;
+varying vec3 vColor;
+varying float vAlpha;
+void main() {
+  vColor = aColor;
+  vAlpha = aAlpha;
+  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  gl_PointSize = min(aSize * uScale / -mvPosition.z, ${MAX_POINT_PIXELS.toFixed(1)});
+  gl_Position = projectionMatrix * mvPosition;
+  #include <logdepthbuf_vertex>
+  #include <clipping_planes_vertex>
 }
-#include <emissivemap_fragment>
 `
-
-const SHEET_VERTEX = /* glsl */ `
+const POINTS_FRAGMENT = /* glsl */ `
 #include <common>
-varying vec3 vWorld;
-`
-const SHEET_FRAGMENT = /* glsl */ `
-#include <common>
-uniform float uTime;
-uniform vec2 uCenter;
-uniform float uRadius;
+#include <logdepthbuf_pars_fragment>
+#include <clipping_planes_pars_fragment>
 uniform float uGlow;
-varying vec3 vWorld;
-`
-// Caustics: three slow crossing wave trains, sharpened where they meet.
-const SHEET_COLOR = /* glsl */ `
-#include <color_fragment>
-{
-  vec2 p = vWorld.xz * 9.0;
-  float t = uTime * 0.6;
-  float waves = sin(p.x + t) + sin(p.y * 1.3 - t * 0.8) + sin((p.x + p.y) * 0.7 + t * 1.3);
-  float caustic = pow(1.0 - abs(waves) / 3.0, 6.0);
-  float edge = 1.0 - smoothstep(uRadius * 0.45, uRadius, distance(vWorld.xz, uCenter));
-  diffuseColor.rgb *= 1.0 + 0.7 * caustic * uGlow;
-  diffuseColor.a *= edge * (0.35 + 0.8 * caustic);
+varying vec3 vColor;
+varying float vAlpha;
+void main() {
+  #include <clipping_planes_fragment>
+  float d = length(gl_PointCoord - 0.5);
+  // A bright core with a soft edge.
+  float alpha = smoothstep(0.5, 0.2, d) * vAlpha * uGlow;
+  if (alpha < 0.01) discard;
+  gl_FragColor = vec4(vColor * alpha, alpha);
+  #include <logdepthbuf_fragment>
+  #include <colorspace_fragment>
 }
 `
 
@@ -83,99 +71,90 @@ export function createWaterRenderer(scene) {
   group.visible = false
   scene.add(group)
 
-  // Pockets.
-  const pocketUniforms = { uRimColor: { value: new THREE.Color() }, uGlow: { value: 1 } }
-  const pocketMaterial = new THREE.MeshStandardMaterial({
+  // Particles, drawn straight from the pool's arrays.
+  const system = createWaterParticles()
+  const { pool } = system
+  const geometry = new THREE.BufferGeometry()
+  const attribute = (array, size) => new THREE.BufferAttribute(array, size).setUsage(THREE.DynamicDrawUsage)
+  geometry.setAttribute('position', attribute(pool.position, 3))
+  geometry.setAttribute('aColor', attribute(pool.color, 3))
+  geometry.setAttribute('aSize', attribute(pool.size, 1))
+  geometry.setAttribute('aAlpha', attribute(pool.alpha, 1))
+  const pointsMaterial = new THREE.ShaderMaterial({
+    uniforms: { uScale: { value: 600 }, uGlow: { value: 1 } },
+    vertexShader: POINTS_VERTEX,
+    fragmentShader: POINTS_FRAGMENT,
     transparent: true,
     depthWrite: false,
-    side: THREE.DoubleSide,
-    roughness: 0.15,
-    metalness: 0,
+    blending: THREE.AdditiveBlending,
+    clipping: true,
   })
-  pocketMaterial.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, pocketUniforms)
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${POCKET_DECLARATIONS}`)
-      .replace('#include <emissivemap_fragment>', POCKET_FRAGMENT)
-  }
-  pocketMaterial.customProgramCacheKey = () => 'water-pockets'
-  const pockets = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 24, 16), pocketMaterial, POCKET_CAPACITY)
-  pockets.count = 0
-  pockets.frustumCulled = false
-  pockets.renderOrder = -0.1
-  group.add(pockets)
+  const points = new THREE.Points(geometry, pointsMaterial)
+  points.frustumCulled = false
+  points.renderOrder = -0.1
+  group.add(points)
 
-  // The water table.
-  const side = Math.round((SHEET_RADIUS * 2) / SHEET_CELL)
-  const sheetGeometry = new THREE.PlaneGeometry(1, 1, side, side)
-  sheetGeometry.rotateX(-Math.PI / 2)
-  const sheetUniforms = {
-    uTime: { value: 0 },
-    uCenter: { value: new THREE.Vector2() },
-    uRadius: { value: SHEET_RADIUS },
-    uGlow: { value: 1 },
-  }
-  const sheetMaterial = new THREE.MeshBasicMaterial({
+  // Field arrows.
+  const across = Math.round((ARROW.radius * 2) / ARROW.spacing) + 1
+  const arrowCount = across * across * ARROW.levels
+  const arrowPositions = new Float32Array(arrowCount * 6)
+  const arrowColors = new Float32Array(arrowCount * 6)
+  const arrowGeometry = new THREE.BufferGeometry()
+  arrowGeometry.setAttribute('position', new THREE.BufferAttribute(arrowPositions, 3).setUsage(THREE.DynamicDrawUsage))
+  arrowGeometry.setAttribute('color', new THREE.BufferAttribute(arrowColors, 3).setUsage(THREE.DynamicDrawUsage))
+  const arrowMaterial = new THREE.LineBasicMaterial({
+    vertexColors: true,
     transparent: true,
+    opacity: 0.8,
     depthWrite: false,
-    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
   })
-  sheetMaterial.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, sheetUniforms)
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', SHEET_VERTEX)
-      .replace('#include <project_vertex>', '#include <project_vertex>\nvWorld = transformed;')
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', SHEET_FRAGMENT)
-      .replace('#include <color_fragment>', SHEET_COLOR)
-  }
-  sheetMaterial.customProgramCacheKey = () => 'water-table'
-  const sheet = new THREE.Mesh(sheetGeometry, sheetMaterial)
-  sheet.frustumCulled = false
-  sheet.renderOrder = -0.2
-  group.add(sheet)
+  const arrows = new THREE.LineSegments(arrowGeometry, arrowMaterial)
+  arrows.frustumCulled = false
+  arrows.renderOrder = -0.1
+  arrows.visible = false
+  group.add(arrows)
 
   let field = null
   let fieldKey = null
-  let paletteName = null
-  const pocketsAt = new THREE.Vector3(Infinity, 0, 0)
-  const sheetAt = new THREE.Vector2(Infinity, 0)
-  const matrix = new THREE.Matrix4()
-  const rotation = new THREE.Quaternion()
-  const up = new THREE.Vector3(0, 1, 0)
-  const scale = new THREE.Vector3()
-  const place = new THREE.Vector3()
-  let nearby = 0
   let tableBelow = null
+  let arrowTimer = 0
+  const flow = [0, 0, 0]
+  const head = new THREE.Color()
 
-  const buildPockets = (anchor) => {
-    const list = field.pocketsNear(anchor.x, anchor.z, POCKET_VIEW).slice(0, POCKET_CAPACITY)
-    list.forEach((pocket, index) => {
-      // Local x along (cos yaw, sin yaw), as in water.js.
-      rotation.setFromAxisAngle(up, -pocket.yaw)
-      matrix.compose(place.set(pocket.x, pocket.y, pocket.z), rotation, scale.set(pocket.rx, pocket.ry, pocket.rz))
-      pockets.setMatrixAt(index, matrix)
-    })
-    pockets.count = list.length
-    pockets.instanceMatrix.needsUpdate = true
-    nearby = list.length
-    pocketsAt.copy(anchor)
-  }
-
-  // The sheet's vertices on the world grid around the anchor.
-  const buildSheet = (cx, cz) => {
-    const positions = sheetGeometry.attributes.position
-    const originX = (cx - side / 2) * SHEET_CELL
-    const originZ = (cz - side / 2) * SHEET_CELL
-    for (let row = 0; row <= side; row += 1) {
-      for (let column = 0; column <= side; column += 1) {
-        const x = originX + column * SHEET_CELL
-        const z = originZ + row * SHEET_CELL
-        positions.setXYZ(row * (side + 1) + column, x, field.tableAt(x, z), z)
+  const buildArrows = (anchor) => {
+    const cx = Math.round(anchor.x / ARROW.spacing)
+    const cz = Math.round(anchor.z / ARROW.spacing)
+    let n = 0
+    for (let row = 0; row < across; row += 1) {
+      for (let column = 0; column < across; column += 1) {
+        const x = (cx + column - (across - 1) / 2) * ARROW.spacing
+        const z = (cz + row - (across - 1) / 2) * ARROW.spacing
+        const ground = system.groundAt(x, z) - 0.05
+        const table = system.tableAt(x, z) + 0.05
+        for (let level = 0; level < ARROW.levels; level += 1) {
+          const y = table + ((ground - table) * level) / (ARROW.levels - 1)
+          system.fieldAt(x, y, z, flow)
+          const speed = Math.hypot(flow[0], flow[1], flow[2]) || 1
+          const length = ARROW.length * Math.min(speed / ARROW.fullSpeed, 1)
+          const p = n * 6
+          arrowPositions[p] = x
+          arrowPositions[p + 1] = y
+          arrowPositions[p + 2] = z
+          arrowPositions[p + 3] = x + (flow[0] / speed) * length
+          arrowPositions[p + 4] = y + (flow[1] / speed) * length
+          arrowPositions[p + 5] = z + (flow[2] / speed) * length
+          // Fade the far lattice, so it has no hard edge.
+          const fade = 1 - Math.min(Math.hypot(x - anchor.x, z - anchor.z) / (ARROW.radius + 0.25), 1)
+          ARROW_TAIL.toArray(arrowColors, p)
+          head.copy(ARROW_HEAD).multiplyScalar(fade).toArray(arrowColors, p + 3)
+          for (let c = 0; c < 3; c += 1) arrowColors[p + c] *= fade
+          n += 1
+        }
       }
     }
-    positions.needsUpdate = true
-    sheetAt.set(cx, cz)
+    arrowGeometry.attributes.position.needsUpdate = true
+    arrowGeometry.attributes.color.needsUpdate = true
   }
 
   return {
@@ -187,65 +166,59 @@ export function createWaterRenderer(scene) {
       return fieldKey
     },
     /** The materials the cross-section clips. */
-    materials: [pocketMaterial, sheetMaterial],
+    materials: [pointsMaterial, arrowMaterial],
 
     /**
-     * Once per frame. active: X-ray or the cross-section is on; sheet:
-     * show the table's sheet (X-ray); sampler:
-     * the ground; settings: DEFAULT_WATER's keys plus wetness (Habitat %);
-     * colors: the roots' palette name; version: changes with the ground.
+     * Once per frame. active: X-ray or the cross-section is on; sampler:
+     * the ground; trunks: the trunk field; roots: { reach, rootDepth, colors };
+     * settings: DEFAULT_WATER's keys plus wetness (Habitat %); version:
+     * changes with the ground; camera, viewportHeight: for point sizes.
      */
-    update({ active, sheet: showSheet, sampler, settings, anchor, colors, time, version }) {
+    update({ active, dt, sampler, trunks, roots, settings, anchor, camera, viewportHeight, version }) {
       const on = Boolean(sampler) && settings.water
       const key = on ? [version, settings.tableDepth, settings.pockets, settings.wetness].join('|') : null
       if (key !== fieldKey) {
         fieldKey = key
         field = on ? createWaterField(sampler, settings, settings.wetness / 100) : null
-        pocketsAt.set(Infinity, 0, 0)
-        sheetAt.set(Infinity, 0)
       }
       group.visible = active && Boolean(field)
-      sheet.visible = showSheet
-      if (!field) {
-        nearby = 0
-        tableBelow = null
+      tableBelow = field ? sampler.height(anchor.x, anchor.z) - field.tableAt(anchor.x, anchor.z) : null
+      // Off or out of sight: let the particles go (they restart fresh).
+      if (!group.visible) {
+        system.update({ field: null })
         return
       }
-      tableBelow = sampler.height(anchor.x, anchor.z) - field.tableAt(anchor.x, anchor.z)
-      if (!group.visible) return
 
-      if (colors !== paletteName) {
-        paletteName = colors
-        const palette = PALETTES[colors] ?? PALETTES.natural
-        pocketMaterial.color.set(palette.body)
-        pocketMaterial.opacity = palette.opacity
-        pocketUniforms.uRimColor.value.set(palette.rim)
-        pocketUniforms.uGlow.value = palette.glow
-        sheetMaterial.color.set(palette.sheet)
-        sheetMaterial.opacity = palette.opacity
-        sheetUniforms.uGlow.value = palette.glow
+      // More water in wetter soil.
+      const rate = settings.particles * (0.5 + settings.wetness / 100)
+      system.update({ dt, field, sampler, trunks, roots, anchor, rate })
+      for (const name of ['position', 'aColor', 'aSize', 'aAlpha']) geometry.attributes[name].needsUpdate = true
+      pointsMaterial.uniforms.uScale.value = viewportHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))
+      pointsMaterial.uniforms.uGlow.value = GLOW[roots.colors] ?? 1
+
+      arrows.visible = settings.showField && system.ready
+      arrowTimer -= dt
+      if (arrows.visible && arrowTimer <= 0) {
+        arrowTimer = ARROW.every
+        buildArrows(anchor)
       }
-      sheetUniforms.uTime.value = time
-
-      if (Math.hypot(anchor.x - pocketsAt.x, anchor.z - pocketsAt.z) > POCKET_MOVE) buildPockets(anchor)
-      const cx = Math.round(anchor.x / SHEET_CELL)
-      const cz = Math.round(anchor.z / SHEET_CELL)
-      if (cx !== sheetAt.x || cz !== sheetAt.y) buildSheet(cx, cz)
-      sheetUniforms.uCenter.value.set(anchor.x, anchor.z)
     },
 
-    /** { pockets nearby, tableBelow: m from the ground to the table where you look, or null }. */
+    /** { particles alive, pockets nearby, tableBelow: m from the ground to the table where you look, or null }. */
     stats() {
-      return { pockets: nearby, tableBelow }
+      return {
+        particles: pool.alive,
+        pockets: group.visible ? system.pocketCount : 0,
+        tableBelow,
+      }
     },
 
     dispose() {
       scene.remove(group)
-      pockets.geometry.dispose()
-      pockets.dispose()
-      pocketMaterial.dispose()
-      sheetGeometry.dispose()
-      sheetMaterial.dispose()
+      geometry.dispose()
+      pointsMaterial.dispose()
+      arrowGeometry.dispose()
+      arrowMaterial.dispose()
     },
   }
 }

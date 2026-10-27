@@ -166,7 +166,7 @@ export default function MapScene({ intro }) {
   const [underground, setUnderground] = useState(DEFAULT_UNDERGROUND)
   const settledUnderground = useDebounced(underground, SETTLE_MS)
   const [rootStats, setRootStats] = useState({ trees: 0, pending: 0, segments: 0, triangles: 0, fine: 0, surfaceTrees: 0, perLevel: [0, 0, 0, 0] })
-  const [waterStats, setWaterStats] = useState({ pockets: 0, tableBelow: null })
+  const [waterStats, setWaterStats] = useState({ particles: 0, pockets: 0, tableBelow: null })
   // Simulation: settings here; the clock and its effects run in the frame
   // loop (simulationRef), and simStatus is its snapshot for the panel.
   const simulationRef = useRef(null)
@@ -509,12 +509,14 @@ export default function MapScene({ intro }) {
       coverRenderer.setHidden(xray.amount)
       waterRenderer.update({
         active: xray.amount > 0 || crossSection.amount > 0,
-        sheet: xray.amount > 0,
+        dt: delta,
         sampler: tiles.sampler,
+        trunks: tiles.trunks,
+        roots: rootSettingsRef.current,
         settings: waterSettingsRef.current,
         anchor,
-        colors: rootSettingsRef.current.colors,
-        time,
+        camera,
+        viewportHeight: mount.clientHeight,
         version: tiles.version,
       })
       crossSection.update(
@@ -803,10 +805,13 @@ export default function MapScene({ intro }) {
   useEffect(() => {
     waterSettingsRef.current = {
       ...Object.fromEntries(WATER_KEYS.map((key) => [key, settledUnderground[key]])),
+      // These change at once; the rest rebuild the water field.
       water: underground.water,
+      particles: underground.particles,
+      showField: underground.showField,
       wetness: settledHabitat.wetness,
     }
-  }, [settledUnderground, underground.water, settledHabitat.wetness])
+  }, [settledUnderground, underground.water, underground.particles, underground.showField, settledHabitat.wetness])
 
   // Habitat fields follow the settled controls (loaded tiles refresh over a
   // few frames, nearest first).
