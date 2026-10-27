@@ -26,7 +26,8 @@ import { DEFAULT_GROUND } from './terrain/heightField'
 import { createGroundMaterial } from './terrain/groundMaterial'
 import { createTileManager } from './terrain/tiles'
 import { createRootRenderer } from './underground/rootRenderer'
-import { DEFAULT_UNDERGROUND, ROOT_KEYS } from './underground/settings'
+import { DEFAULT_UNDERGROUND, ROOT_KEYS, UNDERGROUND_VIEWS } from './underground/settings'
+import { createCrossSection } from './underground/crossSection'
 import { createXray } from './underground/xray'
 import Embodiment from './viewpoints/Embodiment'
 import ViewAsPanel from './viewpoints/ViewAsPanel'
@@ -119,6 +120,7 @@ export default function MapScene({ intro }) {
   const controllerRef = useRef(null)
   const overlayRef = useRef(null)
   const xrayRef = useRef(null)
+  const crossSectionRef = useRef(null)
   // What the roots are grown from (the settled Underground settings).
   const rootSettingsRef = useRef(DEFAULT_UNDERGROUND)
   const crownSettingsRef = useRef(DEFAULT_CROWNS)
@@ -247,6 +249,8 @@ export default function MapScene({ intro }) {
     // Underground: the see-through ground and the roots under the trunks.
     const xray = createXray(scene, [material, farMaterial])
     xrayRef.current = xray
+    const crossSection = createCrossSection(scene, { renderer, materials: [material, farMaterial], cover: coverRenderer })
+    crossSectionRef.current = crossSection
     const rootRenderer = createRootRenderer(scene)
     const flyAgaric = createFlyAgaric(scene)
     flyAgaricRef.current = flyAgaric
@@ -334,7 +338,11 @@ export default function MapScene({ intro }) {
     const onKeyDown = (event) => {
       if (isTyping(event)) return
       if (event.code === 'KeyU' && !event.repeat) {
-        setUnderground((current) => ({ ...current, xray: !current.xray }))
+        // Surface → X-ray → cross-section → surface.
+        setUnderground((current) => ({
+          ...current,
+          view: UNDERGROUND_VIEWS[(UNDERGROUND_VIEWS.indexOf(current.view) + 1) % UNDERGROUND_VIEWS.length],
+        }))
         return
       }
       // Space or Enter on a focused button presses that button.
@@ -479,10 +487,12 @@ export default function MapScene({ intro }) {
       })
       xray.update(delta, anchor)
       coverRenderer.setHidden(xray.amount)
+      crossSection.update(delta, anchor, camera, (x, z) => tiles.sampler.height(x, z))
       const groundSampler = tiles.sampler
       rootRenderer.update({
-        active: xray.amount > 0,
-        rim: xray.amount,
+        active: xray.amount > 0 || crossSection.amount > 0,
+        rim: Math.max(xray.amount, 0.35 * crossSection.amount),
+        soil: crossSection.amount,
         trunks: tiles.trunks,
         height: (x, z) => groundSampler.height(x, z),
         anchor,
@@ -598,7 +608,7 @@ export default function MapScene({ intro }) {
     // For checks during development: the controller and how many tiles
     // have been built (switching viewpoints must not build any).
     if (import.meta.env.DEV) {
-      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, rootRenderer, crownRenderer }
+      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, crownRenderer }
     }
 
     return () => {
@@ -632,6 +642,8 @@ export default function MapScene({ intro }) {
       crownRenderer.dispose()
       xray.dispose()
       xrayRef.current = null
+      crossSection.dispose()
+      crossSectionRef.current = null
       rootRenderer.dispose()
       flyAgaric.dispose()
       flyAgaricRef.current = null
@@ -713,13 +725,15 @@ export default function MapScene({ intro }) {
 
   // Underground: the X-ray view and the free camera follow at once; roots
   // regrow from the settled root settings (Roots on/off is instant).
-  const { xray: xrayOn, opacity: groundOpacity, depth: undergroundDepth, guides } = underground
+  const { view: undergroundView, opacity: groundOpacity, depth: undergroundDepth, guides } = underground
+  const xrayOn = undergroundView === 'xray'
   useEffect(() => {
     xrayRef.current?.setOn(xrayOn)
+    crossSectionRef.current?.setOn(undergroundView === 'section')
     xrayRef.current?.setOpacity(groundOpacity / 100)
     xrayRef.current?.setGuides(guides)
     controllerRef.current?.setSettings({ underground: { active: xrayOn, depth: undergroundDepth / 100 } })
-  }, [xrayOn, groundOpacity, guides, undergroundDepth])
+  }, [xrayOn, undergroundView, groundOpacity, guides, undergroundDepth])
   useEffect(() => {
     crownSettingsRef.current = { ...settledCrowns, crowns: crowns.crowns }
   }, [settledCrowns, crowns.crowns])
@@ -727,8 +741,10 @@ export default function MapScene({ intro }) {
     rootSettingsRef.current = {
       ...Object.fromEntries(ROOT_KEYS.map((key) => [key, settledUnderground[key]])),
       roots: underground.roots,
+      // The cross-section always shows the glowing reference colours.
+      ...(undergroundView === 'section' ? { colors: 'reference' } : {}),
     }
-  }, [settledUnderground, underground.roots])
+  }, [settledUnderground, underground.roots, undergroundView])
 
   // Habitat fields follow the settled controls (loaded tiles refresh over a
   // few frames, nearest first).

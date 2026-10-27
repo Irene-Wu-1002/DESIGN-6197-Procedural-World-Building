@@ -215,7 +215,8 @@ const smoothstep = (edge0, edge1, value) => {
 
 /**
  * morphUniforms: the ground's morph uniforms (uMorphCenter is shared).
- * Returns { setTile, removeTile, sync, setHidden, setFadeRange, setUV, dispose }.
+ * Returns { setTile, removeTile, sync, setHidden, setClipping, setFadeRange,
+ * setUV, dispose }.
  */
 export function createCoverRenderer(scene, morphUniforms) {
   const uniforms = {
@@ -463,6 +464,10 @@ export function createCoverRenderer(scene, morphUniforms) {
     /** Shrink all cover away (0 shown – 1 gone), for the underground X-ray. */
     setHidden(value) {
       uniforms.uHide.value = value
+    },
+    /** Clipping planes for all cover (the underground cross-section), or []. */
+    setClipping(planes) {
+      for (const part of parts) part.material.clippingPlanes = planes
     },
     /** Fade small items out between these distances (m) from the viewer. */
     setFadeRange(start, end) {

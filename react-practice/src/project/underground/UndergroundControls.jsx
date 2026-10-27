@@ -3,6 +3,7 @@ import { ControlCard, EnableToggle, LabeledSlider, SegmentedButtons } from '../p
 const VIEWS = [
   ['surface', 'Surface'],
   ['xray', 'X-ray'],
+  ['section', 'Cross-section'],
 ]
 const ROOT_COLORS = [
   ['natural', 'Natural'],
@@ -31,14 +32,15 @@ export default function UndergroundControls({ underground, onChange, settling, s
   return (
     <>
       <p className="section-note">
-        X-ray turns the ground see-through to show what grows beneath it. Press <strong>U</strong> to
-        switch. The free camera can follow you underground; the butterfly and the ant look through
+        X-ray turns the ground see-through to show what grows beneath it; the cross-section cuts the
+        world in front of you, so the forest and the roots in the dark below are seen together. Press{' '}
+        <strong>U</strong> to switch. In X-ray the free camera can follow you underground; the butterfly and the ant look through
         from the surface.
       </p>
       <SegmentedButtons
         items={VIEWS}
-        value={underground.xray ? 'xray' : 'surface'}
-        onChange={(view) => onChange('xray', view === 'xray')}
+        value={underground.view}
+        onChange={(view) => onChange('view', view)}
         label="Underground view"
       />
 
@@ -50,12 +52,16 @@ export default function UndergroundControls({ underground, onChange, settling, s
 
       <ControlCard title="Tree roots">
         <EnableToggle label="Roots" checked={underground.roots} onChange={set('roots')} />
-        <SegmentedButtons
-          items={ROOT_COLORS}
-          value={underground.colors}
-          onChange={set('colors')}
-          label="Root colours"
-        />
+        {underground.view === 'section' ? (
+          <p className="section-note">The cross-section shows the roots glowing, as in the reference.</p>
+        ) : (
+          <SegmentedButtons
+            items={ROOT_COLORS}
+            value={underground.colors}
+            onChange={set('colors')}
+            label="Root colours"
+          />
+        )}
         {slider('Surface roots', 'surface', 0, 8, 1, (value) => value)}
         {slider('Deep roots', 'deep', 2, 10, 1, (value) => value)}
         {slider('Steepness', 'steepness', 0, 1, 0.05, (value) => value.toFixed(2))}
@@ -66,7 +72,7 @@ export default function UndergroundControls({ underground, onChange, settling, s
         <p className="section-note">
           {settling
             ? 'Regrowing roots…'
-            : underground.xray
+            : underground.view !== 'surface'
               ? `${stats.trees} trees with roots${stats.pending ? ` · ${stats.pending} growing` : ''} · ` +
                 `${stats.segments.toLocaleString()} segments · ${stats.triangles.toLocaleString()} triangles · ` +
                 `${stats.fine.toLocaleString()} fine roots · ` +

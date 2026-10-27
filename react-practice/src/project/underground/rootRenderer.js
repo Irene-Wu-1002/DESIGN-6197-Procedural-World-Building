@@ -84,11 +84,21 @@ function fineGeometry({ positions, tints, kinds }, palette) {
 const RIM_DECLARATIONS = /* glsl */ `
 uniform float uRim;
 uniform vec3 uRimColor;
+uniform float uSoilFade;
+uniform vec3 uSoilColor;
+uniform float uGlow;
+`
+// The cross-section: roots fade into the dark soil with distance.
+const SOIL_FRAGMENT = /* glsl */ `
+#include <fog_fragment>
+gl_FragColor.rgb = mix(gl_FragColor.rgb, uSoilColor, uSoilFade * (1.0 - exp(-length(vViewPosition) * 0.3)));
 `
 const RIM_FRAGMENT = /* glsl */ `
 {
   float facing = abs(dot(normalize(vNormal), normalize(vViewPosition)));
   totalEmissiveRadiance += uRimColor * pow(1.0 - facing, 3.0) * uRim;
+  // The cross-section: roots glow in their own colours.
+  totalEmissiveRadiance += diffuseColor.rgb * uGlow;
 }
 #include <emissivemap_fragment>
 `
@@ -104,16 +114,27 @@ export function createRootRenderer(scene) {
   const rimUniforms = {
     uRim: { value: 0 },
     uRimColor: { value: new THREE.Color() },
+    uSoilColor: { value: new THREE.Color('#1a120c') },
   }
   const fineMaterial = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false })
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 })
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, rimUniforms)
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${RIM_DECLARATIONS}`)
-      .replace('#include <emissivemap_fragment>', RIM_FRAGMENT)
+  // Two copies: the underground one fades into the soil and glows in the
+  // cross-section; the surface one keeps the forest haze, since its roots
+  // lie on the ground in plain view.
+  const makeMaterial = (name, own) => {
+    const made = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 })
+    made.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, rimUniforms, own)
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\n${RIM_DECLARATIONS}`)
+        .replace('#include <emissivemap_fragment>', RIM_FRAGMENT)
+        .replace('#include <fog_fragment>', SOIL_FRAGMENT)
+    }
+    made.customProgramCacheKey = () => name
+    return made
   }
-  material.customProgramCacheKey = () => 'underground-roots'
+  const underUniforms = { uSoilFade: { value: 0 }, uGlow: { value: 0 } }
+  const material = makeMaterial('underground-roots', underUniforms)
+  const surfaceMaterial = makeMaterial('surface-roots', { uSoilFade: { value: 0 }, uGlow: { value: 0 } })
 
   // Per layer, key → { trunk, roots, levels: [{ geometry, segments,
   // triangles } | null], mesh, lines (underground only), level }
@@ -175,9 +196,20 @@ export function createRootRenderer(scene) {
      * Once per frame.
      * active: X-ray on; rim: 0–1 glow; trunks, height(x, z): the ground's
      * trunk field and height; anchor: where you look; settings:
-     * DEFAULT_ROOTS; version: changes whenever the ground does.
+     * DEFAULT_ROOTS; version: changes whenever the ground does; soil: 0 –
+     * 1, how much the roots fade into dark soil with distance (the
+     * cross-section).
      */
-    update({ active, rim, trunks, height, anchor, camera, viewportHeight, settings, version }) {
+    update({ active, rim, soil = 0, trunks, height, anchor, camera, viewportHeight, settings, version }) {
+      underUniforms.uSoilFade.value = soil
+      underUniforms.uGlow.value = 1.3 * soil
+      // Underground in the cross-section: no forest haze on the roots (the
+      // soil fade replaces it). Switching recompiles the material once.
+      const hazed = soil < 0.5
+      if (material.fog !== hazed) {
+        material.fog = hazed
+        material.needsUpdate = true
+      }
       group.visible = active && settings.roots
       surfaceGroup.visible = settings.roots && Boolean(trunks)
       rimUniforms.uRim.value = rim
@@ -196,7 +228,7 @@ export function createRootRenderer(scene) {
       const missingSurface = stream(surfaces, surfaceGroup, trunks, anchor, SURFACE_VIEW, SURFACE_KEEP)
       if (missingSurface.length) {
         const trunk = missingSurface[0]
-        const mesh = new THREE.Mesh(undefined, material)
+        const mesh = new THREE.Mesh(undefined, surfaceMaterial)
         mesh.castShadow = true
         mesh.receiveShadow = true
         surfaceGroup.add(mesh)
@@ -258,6 +290,7 @@ export function createRootRenderer(scene) {
       clear()
       scene.remove(group, surfaceGroup)
       material.dispose()
+      surfaceMaterial.dispose()
       fineMaterial.dispose()
     },
   }

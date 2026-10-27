@@ -44,7 +44,7 @@ export const TAB_KEYS = {
   scatter: mergeKeys(Object.values(ELEMENT_KEYS)),
   paths: { paths: Object.keys(DEFAULT_PATHS) },
   // Reset Tab keeps you in the view you're in.
-  underground: { underground: Object.keys(DEFAULT_UNDERGROUND).filter((key) => key !== 'xray') },
+  underground: { underground: Object.keys(DEFAULT_UNDERGROUND).filter((key) => key !== 'view') },
   debug: { view: ['preview', 'distance'] },
 }
 
