@@ -19,8 +19,13 @@ export default function Week6Scene() {
   const sceneRef = useRef(null)
   const branchRef = useRef(null)
   const growStartRef = useRef(null)
+  // The tree grows by itself on first load and after Reset, Random Seed or a
+  // preset; slider drags show the result at once so tweaking stays quick.
+  const growNextRef = useRef(true)
   const [method, setMethod] = useState('recursive')
   const [params, setParams] = useState(DEFAULT_RECURSIVE)
+  // Generation being grown (1-based) while Grow plays, otherwise null.
+  const [growingGeneration, setGrowingGeneration] = useState(null)
 
   // Tips only toggle visibility, so they don't regrow the tree.
   const { showTips, ...growParams } = params
@@ -59,12 +64,22 @@ export default function Week6Scene() {
     scene.add(grid)
 
     let frameId
+    let shownGeneration = null
     const animate = (now) => {
       const branch = branchRef.current
       if (branch && growStartRef.current !== null) {
-        const progress = (now - growStartRef.current) / 1000 / SECONDS_PER_GENERATION
+        const progress = Math.max(0, now - growStartRef.current) / 1000 / SECONDS_PER_GENERATION
         branch.reveal(progress)
         if (progress >= branch.generations) growStartRef.current = null
+        const generation =
+          growStartRef.current === null ? null : Math.floor(progress) + 1
+        if (generation !== shownGeneration) {
+          shownGeneration = generation
+          setGrowingGeneration(generation)
+        }
+      } else if (shownGeneration !== null) {
+        shownGeneration = null
+        setGrowingGeneration(null)
       }
       controls.update()
       renderer.render(scene, camera)
@@ -101,6 +116,7 @@ export default function Week6Scene() {
     scene.add(branch.group)
     branchRef.current = branch
     growStartRef.current = null
+    if (growNextRef.current) startGrowing()
     return () => {
       scene.remove(branch.group)
       branch.dispose()
@@ -112,7 +128,21 @@ export default function Week6Scene() {
     branchRef.current?.setShowTips(showTips)
   }, [tree, showTips])
 
-  const setParam = (key, value) => setParams((current) => ({ ...current, [key]: value }))
+  const setParam = (key, value) => {
+    growNextRef.current = false
+    setParams((current) => ({ ...current, [key]: value }))
+  }
+
+  function startGrowing() {
+    branchRef.current?.reveal(0)
+    growStartRef.current = performance.now()
+  }
+
+  // Apply a change, then grow the new tree from the trunk.
+  const regrow = (update) => {
+    growNextRef.current = true
+    setParams(update)
+  }
 
   return (
     <div className="voxel-workspace">
@@ -122,14 +152,19 @@ export default function Week6Scene() {
         onMethod={setMethod}
         params={params}
         onParam={setParam}
-        onPreset={(id) => setParams((current) => ({ ...current, ...RECURSIVE_PRESETS[id].params }))}
-        onReset={() => setParams(DEFAULT_RECURSIVE)}
-        onRandomSeed={() => setParam('seed', Math.floor(Math.random() * 1000))}
-        onGrow={() => {
-          branchRef.current?.reveal(0)
-          growStartRef.current = performance.now()
+        onPreset={(id) => regrow((current) => ({ ...current, ...RECURSIVE_PRESETS[id].params }))}
+        onReset={() => regrow(DEFAULT_RECURSIVE)}
+        onRandomSeed={() =>
+          regrow((current) => ({ ...current, seed: Math.floor(Math.random() * 1000) }))
+        }
+        onGrow={startGrowing}
+        stats={{
+          segments: tree.segments.length,
+          tips: tree.tips.length,
+          capped: tree.capped,
+          generation: growingGeneration,
+          generations: tree.maxDepth + 1,
         }}
-        stats={{ segments: tree.segments.length, tips: tree.tips.length, capped: tree.capped }}
       />
     </div>
   )

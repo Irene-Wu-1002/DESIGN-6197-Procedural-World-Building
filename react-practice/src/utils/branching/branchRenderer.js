@@ -6,7 +6,8 @@ import * as THREE from 'three'
  *
  * Colour runs from bark at the trunk to leaf green at the tips, so each
  * generation reads as its own band. Segments must be ordered by depth:
- * reveal(progress) then grows the tree one generation at a time.
+ * reveal(progress) then grows the tree one generation at a time, with every
+ * branch of the growing generation extending out from its parent together.
  */
 
 const BARK = new THREE.Color('#8a5a36')
@@ -31,8 +32,13 @@ export function createBranchObject({ segments, tips, maxDepth }) {
   generationStart.push(segments.length)
   const generations = generationStart.length - 1
 
+  // The finished end points; reveal() pulls the growing ones back toward
+  // their starts and puts them back once that generation is done.
+  const fullPositions = positions.slice()
+
   const lineGeometry = new THREE.BufferGeometry()
-  lineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const positionAttribute = new THREE.BufferAttribute(positions, 3)
+  lineGeometry.setAttribute('position', positionAttribute)
   lineGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   const lines = new THREE.LineSegments(
     lineGeometry,
@@ -51,25 +57,45 @@ export function createBranchObject({ segments, tips, maxDepth }) {
   const group = new THREE.Group()
   group.add(lines, tipPoints)
 
+  let growing = null
+
+  // Move the ends of segments [from, to) to `amount` of the way along.
+  const extend = (from, to, amount) => {
+    for (let index = from; index < to; index += 1) {
+      const offset = index * 6
+      for (let axis = 0; axis < 3; axis += 1) {
+        const start = fullPositions[offset + axis]
+        positions[offset + 3 + axis] = start + (fullPositions[offset + 3 + axis] - start) * amount
+      }
+    }
+    positionAttribute.needsUpdate = true
+  }
+
   return {
     group,
     generations,
     setShowTips(show) {
       tipPoints.userData.wanted = show
-      tipPoints.visible = show && lineGeometry.drawRange.count === Infinity
+      tipPoints.visible = show && growing === null
     },
-    // progress runs 0 → generations; the fraction fills the current generation.
+    // progress runs 0 → generations; the fraction is how far the current
+    // generation has grown out of its parents.
     reveal(progress) {
-      if (progress >= generations) {
+      const generation = Math.min(Math.floor(progress), generations)
+      if (growing !== null && growing !== generation) {
+        extend(generationStart[growing], generationStart[growing + 1], 1)
+      }
+      if (generation >= generations) {
+        growing = null
         lineGeometry.setDrawRange(0, Infinity)
         tipPoints.visible = tipPoints.userData.wanted !== false
         return
       }
-      const generation = Math.floor(progress)
-      const from = generationStart[generation]
-      const to = generationStart[generation + 1]
-      const count = from + Math.round((to - from) * (progress - generation))
-      lineGeometry.setDrawRange(0, count * 2)
+      growing = generation
+      const fraction = progress - generation
+      // Ease out, so each generation shoots out and then slows as it settles.
+      extend(generationStart[generation], generationStart[generation + 1], 1 - (1 - fraction) ** 2)
+      lineGeometry.setDrawRange(0, generationStart[generation + 1] * 2)
       tipPoints.visible = false
     },
     dispose() {

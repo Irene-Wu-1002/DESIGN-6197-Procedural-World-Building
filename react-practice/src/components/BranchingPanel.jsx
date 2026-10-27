@@ -65,6 +65,14 @@ export default function BranchingPanel({
 
       <div className="performance-stats chunk-stats">
         <span>
+          <b>
+            {stats.generation === null
+              ? 'Grown'
+              : `Generation ${Math.min(stats.generation, stats.generations)} / ${stats.generations}`}
+          </b>{' '}
+          {stats.generation === null ? 'press Grow to replay' : 'growing…'}
+        </span>
+        <span>
           <b>{stats.segments.toLocaleString()}</b> segments
         </span>
         <span>
