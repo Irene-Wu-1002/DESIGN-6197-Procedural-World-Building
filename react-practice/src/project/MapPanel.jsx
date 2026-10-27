@@ -11,6 +11,7 @@ import {
 } from './panel/PanelControls'
 import { ELEMENT_KEYS, MAP_TABS, SCATTER_ELEMENTS, TAB_KEYS } from './panel/mapPanelLayout'
 import { HABITAT_FIELDS } from './habitat/habitatFields'
+import UndergroundControls from './underground/UndergroundControls'
 
 const formatPercent = (value) => `${value}%`
 
@@ -45,10 +46,13 @@ const FLOWER_DISTRIBUTIONS = [
 
 /**
  * Map tab controls, in tabs: the ground's shape, habitat, ground cover,
- * paths, and debug previews.
+ * paths, the underground, and debug previews.
  * status: { loaded, pending, refreshing, focus: [x, z], ground } from the
  * scene. habitatSettling / coverSettling: habitat or ground-cover changes
- * are still on their way to the world. onResetKeys({ ground, cover, view, habitat: [...keys] }) restores
+ * are still on their way to the world. underground / rootStats /
+ * undergroundSettling: the Underground tab's settings, the roots' numbers,
+ * and whether root changes are still on their way.
+ * onResetKeys({ ground, cover, view, habitat, paths, underground: [...keys] }) restores
  * just those settings to their defaults; onReset restores everything.
  */
 export default function MapPanel({
@@ -61,6 +65,9 @@ export default function MapPanel({
   paths,
   pathsSettling,
   zonesShowing,
+  underground,
+  undergroundSettling,
+  rootStats,
   status,
   onGroundChange,
   onViewChange,
@@ -68,6 +75,7 @@ export default function MapPanel({
   onHabitatChange,
   onPathsChange,
   onShowZones,
+  onUndergroundChange,
   onResetKeys,
   onReset,
 }) {
@@ -428,6 +436,15 @@ export default function MapPanel({
             </p>
           </ControlCard>
         </>
+      )}
+
+      {tab === 'underground' && (
+        <UndergroundControls
+          underground={underground}
+          onChange={onUndergroundChange}
+          settling={undergroundSettling}
+          stats={rootStats}
+        />
       )}
 
       {tab === 'debug' && (

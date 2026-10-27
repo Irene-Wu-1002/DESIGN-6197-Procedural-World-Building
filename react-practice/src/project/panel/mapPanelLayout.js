@@ -1,5 +1,6 @@
 import { DEFAULT_HABITAT } from '../habitat/habitatFields'
 import { DEFAULT_PATHS } from '../paths/antTrail'
+import { DEFAULT_UNDERGROUND } from '../underground/settings'
 
 // Which settings each tab and scatter element owns, so the panel can reset
 // just those. Keys are grouped by the scene state they live in.
@@ -9,6 +10,7 @@ export const MAP_TABS = [
   ['habitat', 'Habitat'],
   ['scatter', 'Scatter'],
   ['paths', 'Paths'],
+  ['underground', 'Underground'],
   ['debug', 'Debug'],
 ]
 
@@ -39,6 +41,8 @@ export const TAB_KEYS = {
   },
   scatter: mergeKeys(Object.values(ELEMENT_KEYS)),
   paths: { paths: Object.keys(DEFAULT_PATHS) },
+  // Reset Tab keeps you in the view you're in.
+  underground: { underground: Object.keys(DEFAULT_UNDERGROUND).filter((key) => key !== 'xray') },
   debug: { view: ['preview', 'distance'] },
 }
 

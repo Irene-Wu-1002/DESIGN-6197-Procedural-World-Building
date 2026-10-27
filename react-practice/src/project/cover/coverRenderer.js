@@ -50,6 +50,7 @@ attribute float aPresence;
 uniform float uPresenceLevel;
 uniform vec2 uMorphCenter;
 uniform vec2 uCoverFade;
+uniform float uHide;
 uniform float uWind;
 uniform float uTime;
 `
@@ -85,6 +86,8 @@ const FADE_VERTEX = /* glsl */ `
   vec3 coverBase = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
   transformed *= 1.0 - smoothstep(uCoverFade.x, uCoverFade.y, distance(coverBase.xz, uMorphCenter));
   transformed *= smoothstep(aPresence - 0.04, aPresence, uPresenceLevel);
+  // Underground X-ray: everything shrinks away together.
+  transformed *= 1.0 - uHide;
 #endif
 `
 
@@ -212,12 +215,14 @@ const smoothstep = (edge0, edge1, value) => {
 
 /**
  * morphUniforms: the ground's morph uniforms (uMorphCenter is shared).
- * Returns { setTile, removeTile, sync, setFadeRange, setUV, dispose }.
+ * Returns { setTile, removeTile, sync, setHidden, setFadeRange, setUV, dispose }.
  */
 export function createCoverRenderer(scene, morphUniforms) {
   const uniforms = {
     uMorphCenter: morphUniforms.uMorphCenter,
     uCoverFade: { value: new THREE.Vector2(1, 2) },
+    // 0 shown – 1 gone (the underground X-ray view).
+    uHide: { value: 0 },
     uUV: { value: 0 },
     // Flowers: 1 open – 0 closed (the day cycle closes them at night).
     uOpen: { value: 1 },
@@ -454,6 +459,10 @@ export function createCoverRenderer(scene, morphUniforms) {
     /** How open the flowers are (0 closed – 1 open). */
     setFlowerOpen(value) {
       uniforms.uOpen.value = value
+    },
+    /** Shrink all cover away (0 shown – 1 gone), for the underground X-ray. */
+    setHidden(value) {
+      uniforms.uHide.value = value
     },
     /** Fade small items out between these distances (m) from the viewer. */
     setFadeRange(start, end) {

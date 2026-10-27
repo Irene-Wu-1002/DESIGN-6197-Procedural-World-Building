@@ -42,9 +42,20 @@ export function chooseLevel(pixels, current, bias) {
 
 /**
  * One merged tube mesh for the first `fraction` of the importance order,
- * each tube `sides`-sided. Colour runs bark → leaf by step, as in the line view.
+ * each tube `sides`-sided. By default the radius follows the pipe model
+ * (twigRadius × √tips fed) and colour runs bark → leaf by step, as in the
+ * line view; options.radiusOf(index) and options.colorOf(index, color) set
+ * them per segment instead (the World's roots use both). A tube starts at
+ * its parent's radius and ends at its own, so thickness flows smoothly
+ * through every joint instead of stepping.
  */
-export function buildLevelGeometry({ segments, maxDepth }, hierarchy, twigRadius, { fraction, sides }) {
+export function buildLevelGeometry(
+  { segments, maxDepth },
+  hierarchy,
+  twigRadius,
+  { fraction, sides },
+  { radiusOf, colorOf } = {}
+) {
   const kept = hierarchy.importance.slice(0, Math.max(1, Math.ceil(segments.length * fraction)))
   const ringSize = sides
   const positions = new Float32Array(kept.length * ringSize * 2 * 3)
@@ -61,13 +72,16 @@ export function buildLevelGeometry({ segments, maxDepth }, hierarchy, twigRadius
 
   kept.forEach((segmentIndex, keptIndex) => {
     const { start, end, depth } = segments[segmentIndex]
-    const radius = twigRadius * Math.sqrt(hierarchy.tipsFed[segmentIndex])
+    const radiusAt = (index) => (radiusOf ? radiusOf(index) : twigRadius * Math.sqrt(hierarchy.tipsFed[index]))
+    const parent = hierarchy.parent[segmentIndex]
+    const ringRadii = [radiusAt(parent >= 0 ? parent : segmentIndex), radiusAt(segmentIndex)]
     axis.subVectors(end, start).normalize()
     helper.set(0, 1, 0)
     if (Math.abs(axis.y) > 0.9) helper.set(1, 0, 0)
     u.crossVectors(axis, helper).normalize()
     v.crossVectors(axis, u)
-    color.copy(BARK).lerp(LEAF, maxDepth > 0 ? depth / maxDepth : 1)
+    if (colorOf) colorOf(segmentIndex, color)
+    else color.copy(BARK).lerp(LEAF, maxDepth > 0 ? depth / maxDepth : 1)
 
     const base = keptIndex * ringSize * 2
     for (let side = 0; side < sides; side += 1) {
@@ -75,6 +89,7 @@ export function buildLevelGeometry({ segments, maxDepth }, hierarchy, twigRadius
       normal.copy(u).multiplyScalar(Math.cos(angle)).addScaledVector(v, Math.sin(angle))
       ;[start, end].forEach((center, ring) => {
         const vertex = base + ring * ringSize + side
+        const radius = ringRadii[ring]
         positions[vertex * 3] = center.x + normal.x * radius
         positions[vertex * 3 + 1] = center.y + normal.y * radius
         positions[vertex * 3 + 2] = center.z + normal.z * radius

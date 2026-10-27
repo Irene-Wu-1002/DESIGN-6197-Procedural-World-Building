@@ -159,6 +159,13 @@ Thousands of grass blades, moss strands, and pebbles are drawn as **instanced me
 - **Space colonisation** (a branching growth algorithm): growth tips move toward scattered attraction points under the soil and split as they go, like roots or hyphae. The network connects the mushrooms, linking surface and underground.
 - Shown as **lines or point clouds** with a shader pulse running along each strand, the "hidden rhythm" from *Poetics of Soil*.
 
+### 6b. Underground: X-ray view and tree roots (built)
+
+- **X-ray view** (World › Underground, key **U**): the ground materials turn transparent and double-sided down to a set opacity, ground cover shrinks away, the sky hides, and the haze becomes a soil-brown darkness without ground mist. Dashed guides at 10 / 25 / 50 cm show depth. The free camera's orbit point can sink up to 60 cm, and it may look up; the butterfly and the ant look through from the surface.
+- **Tree roots** (`project/underground/roots.js`), grown per trunk from its seed with the Topic 6 stochastic method: 3–10 structural roots leave the trunk's five flare lobes just under the surface and wander outward, mostly level with a gentle downward bias, splitting into side roots that live shorter the further out they start; 0–4 sinker roots go straight down (to about 50 cm). Thickness follows the pipe model (`utils/branching/hierarchy.js`), starting at about a third of the trunk radius and tapering to fine tips; every point is pushed down so no root pokes through the ground. Defaults give 2–3k segments and 75–130 tips per tree in under 10 ms.
+- **Streaming** (`rootRenderer.js`): only while X-ray is on, root systems for trunks within reach of the focus are grown one per frame, nearest first, and freed when far away. Each is one mesh at one of the Topic 6 LOD levels, picked by size on screen.
+- **Next:** the mycelium connects the fly agaric to root tips (Section 6), then a cutaway pit with soil-layer walls, then the ant nest's tunnels.
+
 ### 7. Shaders, light, and atmosphere
 
 - **Macro look:** strong **depth of field** (tiny focus distance) so the world reads as microscopic, like macro photography.

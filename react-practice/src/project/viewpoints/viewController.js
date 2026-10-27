@@ -99,14 +99,27 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     movements[id] ??= MOVEMENTS[VIEWPOINTS[id].movement.type]()
     return movements[id]
   }
-  const settings = { compoundEye: true, motionEffects: true, reducedMotion: false }
+  // underground: the X-ray view lets the free camera go below the surface
+  // (active) and lowers its orbit point by depth (m).
+  const settings = {
+    compoundEye: true,
+    motionEffects: true,
+    reducedMotion: false,
+    underground: { active: false, depth: 0 },
+  }
 
   let id = start.id
   let config = VIEWPOINTS[id]
   let movement = movementFor(id)
   let state = newState()
   const params = paramsOf(config)
-  const ctxFor = (forConfig) => ({ config: forConfig, world, motion: settings.motionEffects, antWorld })
+  const ctxFor = (forConfig) => ({
+    config: forConfig,
+    world,
+    motion: settings.motionEffects,
+    antWorld,
+    underground: settings.underground,
+  })
 
   state.yaw = start.yaw
   state.pitch = start.pitch ?? config.camera.startPitch
@@ -165,8 +178,13 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     const [forward, height] = forConfig.body.eye
     return out.set(s.position.x + Math.sin(s.yaw) * forward, s.position.y - height, s.position.z + Math.cos(s.yaw) * forward)
   }
-  const clampPitch = (forConfig, pitch) =>
-    Math.min(Math.max(pitch, forConfig.camera.pitchLimits[0]), forConfig.camera.pitchLimits[1])
+  // Underground, the free camera may also look up (at roots from below).
+  const UNDERGROUND_PITCH_MAX = 1.2
+  const clampPitch = (forConfig, pitch) => {
+    const [low, high] = forConfig.camera.pitchLimits
+    const up = settings.underground.active && forConfig.movement.type === 'orbit' ? UNDERGROUND_PITCH_MAX : high
+    return Math.min(Math.max(pitch, low), up)
+  }
 
   /** Third-person shot of `forConfig`'s body with its eye at `eye`. */
   const framingOf = (forConfig, eye, yaw, focus, shot) => {

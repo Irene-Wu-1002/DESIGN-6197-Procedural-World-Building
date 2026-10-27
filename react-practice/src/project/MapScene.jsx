@@ -24,6 +24,9 @@ import { createFarGround, morphRange } from './terrain/farGround'
 import { DEFAULT_GROUND } from './terrain/heightField'
 import { createGroundMaterial } from './terrain/groundMaterial'
 import { createTileManager } from './terrain/tiles'
+import { createRootRenderer } from './underground/rootRenderer'
+import { DEFAULT_UNDERGROUND, ROOT_KEYS } from './underground/settings'
+import { createXray } from './underground/xray'
 import Embodiment from './viewpoints/Embodiment'
 import ViewAsPanel from './viewpoints/ViewAsPanel'
 import { createAirLayer } from './viewpoints/airLayer'
@@ -114,6 +117,9 @@ export default function MapScene({ intro }) {
   const sunOffsetRef = useRef(sunOffsetOf(DEFAULT_HABITAT))
   const controllerRef = useRef(null)
   const overlayRef = useRef(null)
+  const xrayRef = useRef(null)
+  // What the roots are grown from (the settled Underground settings).
+  const rootSettingsRef = useRef(DEFAULT_UNDERGROUND)
   // What the tile listener needs to scatter a new tile (moss, flowers: the
   // moss patch and flower colony fields, built from the settled settings
   // below).
@@ -141,6 +147,11 @@ export default function MapScene({ intro }) {
   // Show exclusion zones: paints them for a few seconds (a counter, so a
   // second press restarts the timer).
   const [zoneFlash, setZoneFlash] = useState(0)
+  // Underground: the X-ray view changes at once; roots regrow once the
+  // root controls settle.
+  const [underground, setUnderground] = useState(DEFAULT_UNDERGROUND)
+  const settledUnderground = useDebounced(underground, SETTLE_MS)
+  const [rootStats, setRootStats] = useState({ trees: 0, pending: 0, segments: 0, triangles: 0, perLevel: [0, 0, 0, 0] })
   // Simulation: settings here; the clock and its effects run in the frame
   // loop (simulationRef), and simStatus is its snapshot for the panel.
   const simulationRef = useRef(null)
@@ -226,6 +237,10 @@ export default function MapScene({ intro }) {
     // dropped when it's freed.
     const coverRenderer = createCoverRenderer(scene, morphUniforms)
     const trunkRenderer = createTrunkRenderer(scene)
+    // Underground: the see-through ground and the roots under the trunks.
+    const xray = createXray(scene, [material, farMaterial])
+    xrayRef.current = xray
+    const rootRenderer = createRootRenderer(scene)
     const flyAgaric = createFlyAgaric(scene)
     flyAgaricRef.current = flyAgaric
     // The cover the scene draws is also what bodies collide with and climb.
@@ -311,6 +326,10 @@ export default function MapScene({ intro }) {
     // Keys: the controller decides what they mean for the current body.
     const onKeyDown = (event) => {
       if (isTyping(event)) return
+      if (event.code === 'KeyU' && !event.repeat) {
+        setUnderground((current) => ({ ...current, xray: !current.xray }))
+        return
+      }
       // Space or Enter on a focused button presses that button.
       const onControl = ['BUTTON', 'SUMMARY', 'A'].includes(event.target.tagName)
       if (onControl && (event.code === 'Space' || event.code === 'Enter')) return
@@ -439,6 +458,20 @@ export default function MapScene({ intro }) {
       coverRenderer.setUV(params.perception.uv)
       coverRenderer.sync()
       trunkRenderer.update(tiles.trunks, tiles.sampler, anchor.x, anchor.z, tiles.version)
+      xray.update(delta, anchor)
+      coverRenderer.setHidden(xray.amount)
+      const groundSampler = tiles.sampler
+      rootRenderer.update({
+        active: xray.amount > 0,
+        rim: xray.amount,
+        trunks: tiles.trunks,
+        height: (x, z) => groundSampler.height(x, z),
+        anchor,
+        camera,
+        viewportHeight: mount.clientHeight,
+        settings: rootSettingsRef.current,
+        version: tiles.version,
+      })
       sky.follow(camera)
 
       // Each body sees the same haze over a different range (higher eyes
@@ -478,6 +511,7 @@ export default function MapScene({ intro }) {
       coverRenderer.setFlowerOpen(env.flowerOpen)
       // Weather: haze and ground mist, wet ground and cover, wind, rain.
       scene.fog.set(haze * env.haze, env.mist, env.mistHeight)
+      xray.applyAtmosphere(scene, sky)
       uniforms.uWet.value = env.wetness
       coverRenderer.setWeather({ wind: env.wind, wet: env.wetness, time })
       // Season: how much of each kind shows, and the leaves' autumn share
@@ -530,6 +564,7 @@ export default function MapScene({ intro }) {
         ground: tiles.heightAt(viewer.x, viewer.z),
       })
       setSimStatus(simulation.snapshot())
+      setRootStats(rootRenderer.stats())
     }, STATUS_REFRESH_MS)
 
     const onResize = () => {
@@ -543,7 +578,7 @@ export default function MapScene({ intro }) {
     // For checks during development: the controller and how many tiles
     // have been built (switching viewpoints must not build any).
     if (import.meta.env.DEV) {
-      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere }
+      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, rootRenderer }
     }
 
     return () => {
@@ -574,6 +609,9 @@ export default function MapScene({ intro }) {
       tiles.dispose()
       coverRenderer.dispose()
       trunkRenderer.dispose()
+      xray.dispose()
+      xrayRef.current = null
+      rootRenderer.dispose()
       flyAgaric.dispose()
       flyAgaricRef.current = null
       farGround.dispose()
@@ -651,6 +689,22 @@ export default function MapScene({ intro }) {
   useEffect(() => {
     if (groundUniformsRef.current) groundUniformsRef.current.uGrain.value = grain / 100
   }, [grain])
+
+  // Underground: the X-ray view and the free camera follow at once; roots
+  // regrow from the settled root settings (Roots on/off is instant).
+  const { xray: xrayOn, opacity: groundOpacity, depth: undergroundDepth, guides } = underground
+  useEffect(() => {
+    xrayRef.current?.setOn(xrayOn)
+    xrayRef.current?.setOpacity(groundOpacity / 100)
+    xrayRef.current?.setGuides(guides)
+    controllerRef.current?.setSettings({ underground: { active: xrayOn, depth: undergroundDepth / 100 } })
+  }, [xrayOn, groundOpacity, guides, undergroundDepth])
+  useEffect(() => {
+    rootSettingsRef.current = {
+      ...Object.fromEntries(ROOT_KEYS.map((key) => [key, settledUnderground[key]])),
+      roots: underground.roots,
+    }
+  }, [settledUnderground, underground.roots])
 
   // Habitat fields follow the settled controls (loaded tiles refresh over a
   // few frames, nearest first).
@@ -782,17 +836,29 @@ export default function MapScene({ intro }) {
         zonesShowing={zoneFlash > 0}
         onPathsChange={(key, value) => setPaths((current) => ({ ...current, [key]: value }))}
         onShowZones={() => setZoneFlash((count) => count + 1)}
+        underground={underground}
+        undergroundSettling={ROOT_KEYS.some((key) => underground[key] !== settledUnderground[key])}
+        rootStats={rootStats}
+        onUndergroundChange={(key, value) => setUnderground((current) => ({ ...current, [key]: value }))}
         status={status}
         onGroundChange={(key, value) => setGround((current) => ({ ...current, [key]: value }))}
         onViewChange={(key, value) => setView((current) => ({ ...current, [key]: value }))}
         onCoverChange={(key, value) => setCover((current) => ({ ...current, [key]: value }))}
         onHabitatChange={(key, value) => setHabitat((current) => ({ ...current, [key]: value }))}
-        onResetKeys={({ ground: groundKeys, view: viewKeys, cover: coverKeys, habitat: habitatKeys, paths: pathKeys }) => {
+        onResetKeys={({
+          ground: groundKeys,
+          view: viewKeys,
+          cover: coverKeys,
+          habitat: habitatKeys,
+          paths: pathKeys,
+          underground: undergroundKeys,
+        }) => {
           if (groundKeys) setGround((current) => withDefaults(current, DEFAULT_GROUND, groundKeys))
           if (viewKeys) setView((current) => withDefaults(current, DEFAULT_VIEW, viewKeys))
           if (coverKeys) setCover((current) => withDefaults(current, DEFAULT_COVER, coverKeys))
           if (habitatKeys) setHabitat((current) => withDefaults(current, DEFAULT_HABITAT, habitatKeys))
           if (pathKeys) setPaths((current) => withDefaults(current, DEFAULT_PATHS, pathKeys))
+          if (undergroundKeys) setUnderground((current) => withDefaults(current, DEFAULT_UNDERGROUND, undergroundKeys))
         }}
         onReset={() => {
           setGround(DEFAULT_GROUND)
@@ -800,6 +866,7 @@ export default function MapScene({ intro }) {
           setCover(DEFAULT_COVER)
           setHabitat(DEFAULT_HABITAT)
           setPaths(DEFAULT_PATHS)
+          setUnderground(DEFAULT_UNDERGROUND)
         }}
       />
     </div>

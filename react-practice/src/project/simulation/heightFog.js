@@ -93,4 +93,13 @@ export class HeightFog extends THREE.Fog {
     this.near = -Math.max(haze, 1e-4)
     this.far = Math.round(Math.max(mistHeight, 0.001) * 1000) + Math.min(Math.max(mistDensity, 0), MAX_MIST) / 10
   }
+
+  /** The values set() packed: { haze, mistDensity, mistHeight }. */
+  values() {
+    return {
+      haze: -this.near,
+      mistDensity: (this.far % 1) * 10,
+      mistHeight: Math.floor(this.far) / 1000,
+    }
+  }
 }

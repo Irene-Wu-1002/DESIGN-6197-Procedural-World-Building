@@ -84,12 +84,21 @@ Seeing the same world through the ant's senses. *(Milestones 4–5)*
 
 The hidden second world and the living paths across the surface. *(Milestones 6–7)*
 
+- [x] **Underground X-ray** — World › Underground (or **U**): the ground turns to a faint
+  see-through film, cover shrinks away, the haze turns to soil-brown darkness, and depth
+  guides ring the focus at 10 / 25 / 50 cm. The free camera can sink below the surface
+  and look up.
+- [x] **Tree roots** — a root system under every nearby trunk (`project/underground/`):
+  structural roots leave the trunk's flare lobes and wander outward, mostly level,
+  splitting into side roots; sinker roots go straight down. Pipe-model thickness tapering
+  to fine tips, never above the ground, seeded per trunk, streamed one tree per frame,
+  drawn with the Topic 6 levels of detail.
 - [ ] **Mycelium network** — space colonisation per region, rooted at that region's
-  mushrooms, with fixed links to neighbouring regions so the network continues
-  endlessly.
+  mushrooms **and at tree root tips** (mycorrhiza), with fixed links to neighbouring
+  regions so the network continues endlessly.
 - [ ] **Pulse shader** — light waves running along each strand (*Poetics of Soil*).
-- [ ] **Underground cutaway** — the surface becomes translucent or is cut away to reveal
-  the network.
+- [ ] **Underground cutaway pit** — a square window dug into the ground with soil-layer
+  walls (litter, humus, subsoil): the surface and the underground in one cut.
 - [ ] **Ant tunnels** — tube meshes along tunnel paths below the ant hill (the height
   field cannot make caves).
 - [ ] **Ant agents** — ants walk the height field and prefer gentle slopes.
@@ -98,6 +107,10 @@ The hidden second world and the living paths across the surface. *(Milestones 6�
 - [ ] **Vector field** — slope and pheromone strength combined into a direction field the
   ants follow, so paths form on their own.
 - [ ] **Ride an ant** — the ant camera follows one agent along its path.
+- [ ] **Walk the tunnels** — the ant walks through the real nest tunnels in X-ray instead
+  of the fade between entrances.
+- [ ] **Underground extras** — big roots bulging the surface (added to the height field,
+  so the ant climbs them), stones in the soil, earthworms.
 
 ## P4 — Look Development and Stretch Goals
 
