@@ -123,6 +123,60 @@ Presets: **Crown tree**, **Wide canopy**, **Column / poplar**, **Mycelium** (soi
 | Character | Regular, symmetric | Plant-like, self-similar | Wild, organic | Natural crowns, fills a volume |
 | Best for the micro-world | Quick placeholders | Small plants, ferns, weeds | Roots, cracks, lightning | Tree crowns and the mycelium network |
 
+## Level of detail (LOD view)
+
+The **View** switch at the top of the panel has two modes: **Growth** (lines that grow step by step) and **LOD**. LOD draws the current tree, from any method or preset, as solid tubes and repeats it as a forest of 1 × 1 up to 9 × 9 copies. Each copy picks its own level of detail.
+
+### Defining the levels
+
+A procedural structure gets LOD by evaluating *less of the same thing*, so that a coarse level is the first part of a fine one and switching never pops in a different shape.
+
+1. **Hierarchy** ([`hierarchy.js`](../../react-practice/src/utils/branching/hierarchy.js)): a segment's parent is the one that ends where it starts. Counting how many tips each segment feeds (from the tips back to the root) gives
+   - **thickness**, from the pipe model (da Vinci's rule): radius = twig radius × √(tips fed);
+   - **importance**: segments sorted by tips fed, largest first, ties broken by step. A parent always feeds at least as many tips as its child and grows earlier, so *any first part of this order is a connected tree*. This works for all four methods.
+2. **Levels** ([`lod.js`](../../react-practice/src/utils/branching/lod.js)), built once per tree:
+
+| Level | Segments kept | Sides per tube | Tint |
+|---|---|---|---|
+| LOD 0 | 100% | 8 | green |
+| LOD 1 | 35% | 6 | yellow |
+| LOD 2 | 10% | 4 | orange |
+| LOD 3 | 3% (trunk and main limbs) | 3 | red |
+
+Fewer segments × fewer sides: from LOD 0 to LOD 3, triangles drop about 85× (e.g. the space-colonization crown: 22,080 → 252 triangles).
+
+### Choosing a level
+
+By **size on screen**, not by distance: pixels = tree height ÷ distance × screen height ÷ (2·tan(fov/2)). A tree drops a level below 400 / 150 / 50 px, scaled by **Detail bias**. A ±15% margin around each threshold (hysteresis) keeps a tree on a boundary from flickering between levels.
+
+### Drawing cheaply
+
+Each level is one **InstancedMesh** holding the copies currently at that level ([`lodForest.js`](../../react-practice/src/utils/branching/lodForest.js)), so the whole forest is four draw calls. When a copy changes level it only moves to another instance list; nothing is regenerated as the camera moves.
+
+### Controls
+
+| Control | Default | Range | Meaning |
+|---|---|---|---|
+| LOD mode | Auto | Auto · Fixed level · Off | Off keeps every copy at LOD 0, which is the cost LOD saves |
+| Fixed level | 0 | 0–3 | Used in Fixed level mode |
+| Detail bias | 1.0 | 0.25–3 | Higher keeps detail farther away |
+| Forest size | 5 × 5 | 1 · 3 · 5 · 7 · 9 per side | Copies of the current tree |
+| Twig radius | 0.012 | 0.004–0.05 | Thickness at the tips |
+| Colour by level | on | toggle | Tints each copy by its level |
+
+The readout shows FPS, draw calls and triangles for the frame (from `renderer.info`), copies per level, and the segments and triangles of one tree at each level.
+
+### Measured
+
+Space-colonization crown tree, 5 × 5 forest, default camera:
+
+| | Triangles | Draw calls (incl. grid) | Copies per level |
+|---|---|---|---|
+| LOD Auto | 135,516 | 3 | L1 23 · L2 2 |
+| LOD Off | 552,000 | 2 | L0 25 |
+
+About 4× fewer triangles at this distance, and far more when zoomed out. (FPS was measured in headless Chrome with software rendering, where it isn't meaningful; on a real GPU, compare the FPS readout with Auto vs. Off at 9 × 9.)
+
 ## Why
 
 The ant micro-world needs branching shapes at several scales: trees and fallen branches above ground, roots and the mycelium network below. Recursive branching is the simplest version of all of them and the baseline the next methods (space colonisation, L-systems) are compared against. Its weakness is already visible: the branches don't know about each other or the space around them, so they cross and crowd. Space colonisation fixes that by letting the space decide where branches grow.

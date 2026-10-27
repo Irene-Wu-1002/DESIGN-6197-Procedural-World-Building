@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import BranchingPanel from './BranchingPanel'
 import { BRANCHING_METHODS } from './branching/methods'
 import { createBranchObject } from '../utils/branching/branchRenderer'
+import { createLodForest } from '../utils/branching/lodForest'
 
 // A full growth takes about 0.45 s per step, kept between 2 and 6 seconds so
 // a 7-generation tree and a 300-iteration one both replay at a watchable pace.
@@ -18,8 +19,23 @@ const DEFAULT_PARAMS = Object.fromEntries(
 // Settings that only change what is shown, so they don't regrow the tree.
 const DISPLAY_KEYS = new Set(['showTips', 'showAttractors'])
 
+const DEFAULT_LOD = {
+  mode: 'auto',
+  level: 0,
+  bias: 1,
+  forest: 5,
+  twigRadius: 0.012,
+  colorByLevel: true,
+}
+
+// How often the FPS / draw-call readout refreshes.
+const STATS_INTERVAL_MS = 500
+const EMPTY_LOD_STATS = { fps: 0, calls: 0, triangles: 0, perLevel: [0, 0, 0, 0], levels: [] }
+
 // Topic 6: Branching System. Each method returns the same { segments, tips }
-// shape, so one renderer draws them all.
+// shape, so one renderer draws them all. The Growth view draws it as lines
+// that grow step by step; the LOD view draws it as tubes, repeated as a
+// forest whose copies each pick a level of detail.
 export default function Week6Scene() {
   const mountRef = useRef(null)
   const sceneRef = useRef(null)
@@ -30,6 +46,13 @@ export default function Week6Scene() {
   // preset; slider drags show the result at once so tweaking stays quick.
   const growNextRef = useRef(true)
   const speedRef = useRef(1)
+  const forestRef = useRef(null)
+  const lodRef = useRef(DEFAULT_LOD)
+  // Re-frame the camera on the next forest build.
+  const frameForestRef = useRef(false)
+  const [view, setView] = useState('growth')
+  const [lod, setLod] = useState(DEFAULT_LOD)
+  const [lodStats, setLodStats] = useState(EMPTY_LOD_STATS)
   const [method, setMethod] = useState('recursive')
   // Each tab keeps its own settings, so switching back loses nothing.
   const [paramsByMethod, setParamsByMethod] = useState(DEFAULT_PARAMS)
@@ -76,6 +99,12 @@ export default function Week6Scene() {
     const grid = new THREE.GridHelper(24, 24, '#39424e', '#232a33')
     scene.add(grid)
 
+    // Lines ignore lights; the LOD view's tubes need them.
+    const hemisphere = new THREE.HemisphereLight('#dfe8ff', '#3a2e22', 1.4)
+    const sun = new THREE.DirectionalLight('#ffffff', 1.8)
+    sun.position.set(5, 10, 4)
+    scene.add(hemisphere, sun)
+
     // Point the camera at a structure and back off until all of it fits,
     // keeping the current viewing direction.
     frameRef.current = (box) => {
@@ -90,6 +119,9 @@ export default function Week6Scene() {
 
     let frameId
     let shownStep = null
+    let statsSince = performance.now()
+    let framesSince = 0
+    let perLevel = [0, 0, 0, 0]
     const animate = (now) => {
       const branch = branchRef.current
       if (branch && growStartRef.current !== null) {
@@ -110,7 +142,26 @@ export default function Week6Scene() {
         setGrowingStep(null)
       }
       controls.update()
+      const forest = forestRef.current
+      if (forest) perLevel = [...forest.update(camera, mount.clientHeight, lodRef.current)]
       renderer.render(scene, camera)
+
+      // renderer.info holds the frame just drawn (it resets every render).
+      framesSince += 1
+      if (forest && now - statsSince >= STATS_INTERVAL_MS) {
+        setLodStats({
+          fps: Math.round((framesSince * 1000) / (now - statsSince)),
+          calls: renderer.info.render.calls,
+          triangles: renderer.info.render.triangles,
+          perLevel,
+          levels: forest.levels,
+        })
+        statsSince = now
+        framesSince = 0
+      } else if (!forest) {
+        statsSince = now
+        framesSince = 0
+      }
       frameId = requestAnimationFrame(animate)
     }
     frameId = requestAnimationFrame(animate)
@@ -132,6 +183,8 @@ export default function Week6Scene() {
       mount.removeChild(renderer.domElement)
       grid.geometry.dispose()
       grid.material.dispose()
+      hemisphere.dispose()
+      sun.dispose()
       renderer.dispose()
       sceneRef.current = null
       frameRef.current = null
@@ -140,6 +193,7 @@ export default function Week6Scene() {
 
   // Swap in a freshly grown tree whenever its parameters change.
   useEffect(() => {
+    if (view !== 'growth') return undefined
     const scene = sceneRef.current
     const branch = createBranchObject(tree)
     scene.add(branch.group)
@@ -154,7 +208,25 @@ export default function Week6Scene() {
       branch.dispose()
       branchRef.current = null
     }
-  }, [tree])
+  }, [tree, view])
+
+  // LOD view: the same tree as tubes, repeated as a forest.
+  useEffect(() => {
+    if (view !== 'lod') return undefined
+    const scene = sceneRef.current
+    const forest = createLodForest(tree, { twigRadius: lod.twigRadius, gridSize: lod.forest })
+    scene.add(forest.group)
+    forestRef.current = forest
+    if (frameForestRef.current || growNextRef.current) {
+      frameRef.current?.(forest.bounds)
+      frameForestRef.current = false
+    }
+    return () => {
+      scene.remove(forest.group)
+      forest.dispose()
+      forestRef.current = null
+    }
+  }, [tree, view, lod.forest, lod.twigRadius])
 
   useEffect(() => {
     branchRef.current?.setShowTips(params.showTips)
@@ -184,6 +256,21 @@ export default function Week6Scene() {
     setParams(update)
   }
 
+  const setLodParam = (key, value) => {
+    // A new forest size re-frames the camera; other LOD tweaks keep the view.
+    if (key === 'forest') frameForestRef.current = true
+    else growNextRef.current = false
+    lodRef.current = { ...lodRef.current, [key]: value }
+    setLod(lodRef.current)
+  }
+
+  const changeView = (next) => {
+    if (next === view) return
+    if (next === 'lod') frameForestRef.current = true
+    else growNextRef.current = true
+    setView(next)
+  }
+
   // Changing speed mid-growth keeps the current step instead of jumping.
   const changeSpeed = (value) => {
     if (growStartRef.current !== null) {
@@ -198,6 +285,11 @@ export default function Week6Scene() {
     <div className="voxel-workspace">
       <div className="scene" ref={mountRef} aria-label="Branching structure" />
       <BranchingPanel
+        view={view}
+        onView={changeView}
+        lod={lod}
+        onLod={setLodParam}
+        lodStats={lodStats}
         method={method}
         onMethod={(id) => {
           growNextRef.current = true

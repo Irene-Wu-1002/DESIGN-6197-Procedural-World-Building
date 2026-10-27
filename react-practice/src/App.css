@@ -1414,3 +1414,29 @@ input[type='checkbox'] {
   word-break: break-all;
   color: var(--muted);
 }
+
+/* Topic 6 LOD: one row per level with its tint swatch. */
+.lod-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.lod-levels span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lod-levels i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.lod-levels b {
+  color: var(--text);
+}
