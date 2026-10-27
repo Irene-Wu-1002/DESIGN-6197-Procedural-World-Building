@@ -16,9 +16,13 @@ import { perpendicular } from './common'
  * segment's start point is its parent's end point (the same Vector3).
  */
 
-/** Chains of segment indices, root first; continuations stay in one chain. */
-export function buildChains(segments, hierarchy) {
-  const { parent, tipsFed } = hierarchy
+/**
+ * Chains of segment indices, root first; continuations stay in one chain.
+ * weights: what makes a child the continuation (default: tips fed).
+ */
+export function buildChains(segments, hierarchy, weights = hierarchy.tipsFed) {
+  const { parent } = hierarchy
+  const tipsFed = weights
   const continuation = new Int32Array(segments.length).fill(-1)
   segments.forEach((_, index) => {
     const up = parent[index]
@@ -68,10 +72,11 @@ export function smoothGraph(segments, iterations = 2, strength = 0.5) {
  * One merged geometry of swept tubes.
  * keep: set of segment indices to draw (null = all); a chain stops at its
  * first segment not kept (importance prefixes always keep a chain's start).
- * radiusOf(segment): radius at the segment's end; colorOf(segment, color).
+ * radiusOf(segment): radius at the segment's end; colorOf(segment, color);
+ * weights: per segment, which child continues a chain (see buildChains).
  */
-export function sweepGeometry(segments, hierarchy, { keep = null, sides = 8, radiusOf, colorOf }) {
-  const chains = buildChains(segments, hierarchy)
+export function sweepGeometry(segments, hierarchy, { keep = null, sides = 8, radiusOf, colorOf, weights }) {
+  const chains = buildChains(segments, hierarchy, weights)
   const rings = []
   for (const chain of chains) {
     const kept = []

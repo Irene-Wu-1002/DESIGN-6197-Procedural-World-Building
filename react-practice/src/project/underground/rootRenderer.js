@@ -1,31 +1,39 @@
 import * as THREE from 'three'
 import { LOD_LEVELS, chooseLevel } from '../../utils/branching/lod'
 import { sweepGeometry } from '../../utils/branching/sweep'
-import { growRoots } from './roots'
+import { growRoots, growSurfaceRoots } from './roots'
 
 /**
- * Draws the root systems under the trunks near you, only while the
- * underground X-ray is on (nothing is grown or drawn otherwise).
+ * Draws the tree roots in two layers:
  *
- * Root systems stream like tiles: the trunks whose roots can reach the area
- * you see are wanted; missing ones are grown nearest first, one per frame,
- * and kept until you move well away. Each system is one mesh at one of the
- * Topic 6 levels of detail (utils/branching/lod.js: 100 / 35 / 10 / 3% of
- * its woody roots, 8 / 6 / 4 / 3 sides, and 100 / 50 / 15 / 0% of its fine
- * roots), picked from how big it looks on screen; a level's tubes are built
- * the first time it's needed. Woody roots are smooth swept tubes
- * (utils/branching/sweep.js) with a faint warm rim; fine roots are lines.
+ *   surface roots  the exposed roots running over the ground from each
+ *                  trunk's flare, for every trunk within SURFACE_VIEW of
+ *                  you, always (they're part of the normal view)
+ *   underground    the deep roots and fine roots, only while the X-ray is
+ *                  on (nothing is grown or drawn otherwise)
+ *
+ * Both stream like tiles: wanted trunks missing a system are grown nearest
+ * first, one per frame per layer, and kept until you move well away. Each
+ * system is one mesh at one of the Topic 6 levels of detail
+ * (utils/branching/lod.js: 100 / 35 / 10 / 3% of its woody roots, 8 / 6 /
+ * 4 / 3 sides, and 100 / 50 / 15 / 0% of its fine roots), picked from how
+ * big it looks on screen; a level's tubes are built the first time it's
+ * needed. Woody roots are smooth swept tubes (utils/branching/sweep.js)
+ * with a faint warm rim in X-ray; fine roots are lines.
  *
  * Colours:
+ *   natural    weathered grey-brown wood, paler where thin; pale fine roots
  *   reference  woody roots brown to warm orange; fine roots glow orange
  *              near the wood and run to deep red or cool blue at the tips
- *   natural    bark-brown woody roots, pale tan fine roots
  */
 
 // Extra distance (m) beyond the root reach within which a trunk is wanted,
 // and beyond which a built one is freed.
 const WANT_MARGIN = 1
 const KEEP_MARGIN = 2.5
+// Surface roots are drawn for trunks this close (m), freed beyond the next.
+const SURFACE_VIEW = 8
+const SURFACE_KEEP = 10
 const FINE_RADIUS = 0.0006
 const FINE_SHARE = [1, 0.5, 0.15, 0]
 const PALETTES = {
@@ -39,12 +47,12 @@ const PALETTES = {
     ],
   },
   natural: {
-    thick: '#6e4c33',
-    thin: '#dcc6a2',
-    rim: '#ffc58a',
+    thick: '#5e4c3d',
+    thin: '#b8a184',
+    rim: '#ffd2a0',
     fine: [
-      ['#b89b7a', '#e6d6b8'],
-      ['#b89b7a', '#e6d6b8'],
+      ['#a08668', '#d8c6a8'],
+      ['#8f7a62', '#c9b79b'],
     ],
   },
 }
@@ -90,7 +98,8 @@ const keyOf = (trunk) => `${trunk.x.toFixed(4)},${trunk.z.toFixed(4)}`
 export function createRootRenderer(scene) {
   const group = new THREE.Group()
   group.visible = false
-  scene.add(group)
+  const surfaceGroup = new THREE.Group()
+  scene.add(group, surfaceGroup)
 
   const rimUniforms = {
     uRim: { value: 0 },
@@ -106,21 +115,39 @@ export function createRootRenderer(scene) {
   }
   material.customProgramCacheKey = () => 'underground-roots'
 
-  // key → { trunk, roots, levels: [{ geometry, segments, triangles } | null],
-  //         mesh, lines, level }
+  // Per layer, key → { trunk, roots, levels: [{ geometry, segments,
+  // triangles } | null], mesh, lines (underground only), level }
   const systems = new Map()
+  const surfaces = new Map()
   let settingsKey = null
-  let palette = colorsOf('reference')
+  let palette = colorsOf('natural')
   let pending = 0
 
-  const free = (key) => {
-    const system = systems.get(key)
-    group.remove(system.mesh, system.lines)
+  const freeFrom = (layer, layerGroup, key) => {
+    const system = layer.get(key)
+    layerGroup.remove(system.mesh)
     system.levels.forEach((level) => level?.geometry.dispose())
-    system.lines.geometry.dispose()
-    systems.delete(key)
+    if (system.lines) {
+      layerGroup.remove(system.lines)
+      system.lines.geometry.dispose()
+    }
+    layer.delete(key)
   }
-  const clear = () => [...systems.keys()].forEach(free)
+  const clear = () => {
+    ;[...systems.keys()].forEach((key) => freeFrom(systems, group, key))
+    ;[...surfaces.keys()].forEach((key) => freeFrom(surfaces, surfaceGroup, key))
+  }
+  // Free systems beyond `keep` of the anchor; return the wanted trunks
+  // (within `want`) still missing one, nearest first.
+  const stream = (layer, layerGroup, trunks, anchor, want, keep) => {
+    for (const [key, system] of layer) {
+      if (Math.hypot(system.trunk.x - anchor.x, system.trunk.z - anchor.z) > keep) freeFrom(layer, layerGroup, key)
+    }
+    return trunks
+      .trunksNear(anchor.x, anchor.z, want)
+      .filter((trunk) => !layer.has(keyOf(trunk)))
+      .sort((a, b) => Math.hypot(a.x - anchor.x, a.z - anchor.z) - Math.hypot(b.x - anchor.x, b.z - anchor.z))
+  }
 
   const levelOf = (system, index) => {
     if (!system.levels[index]) {
@@ -133,6 +160,7 @@ export function createRootRenderer(scene) {
       const { geometry, triangles } = sweepGeometry(roots.segments, roots.hierarchy, {
         keep,
         sides,
+        weights: roots.radii,
         radiusOf: (segment) => roots.radii[segment],
         colorOf: (segment, color) =>
           color.copy(palette.thick).lerp(palette.thin, 1 - Math.log(roots.radii[segment] / FINE_RADIUS) / span),
@@ -151,6 +179,7 @@ export function createRootRenderer(scene) {
      */
     update({ active, rim, trunks, height, anchor, camera, viewportHeight, settings, version }) {
       group.visible = active && settings.roots
+      surfaceGroup.visible = settings.roots && Boolean(trunks)
       rimUniforms.uRim.value = rim
       fineMaterial.opacity = Math.min(rim, 1) * 0.85
       const key = [version, ...Object.values(settings)].join('|')
@@ -160,21 +189,24 @@ export function createRootRenderer(scene) {
         palette = colorsOf(settings.colors)
         rimUniforms.uRimColor.value.copy(palette.rim)
       }
-      if (!group.visible || !trunks) {
-        pending = 0
-        return
+      pending = 0
+      if (!surfaceGroup.visible) return
+
+      // Surface roots: always, for the trunks around you.
+      const missingSurface = stream(surfaces, surfaceGroup, trunks, anchor, SURFACE_VIEW, SURFACE_KEEP)
+      if (missingSurface.length) {
+        const trunk = missingSurface[0]
+        const mesh = new THREE.Mesh(undefined, material)
+        mesh.castShadow = true
+        mesh.receiveShadow = true
+        surfaceGroup.add(mesh)
+        surfaces.set(keyOf(trunk), { trunk, roots: growSurfaceRoots(trunk, height, settings), levels: [], mesh, level: -1 })
       }
 
-      // Free systems you've left behind; grow the nearest missing one.
-      for (const [systemKey, system] of systems) {
-        if (Math.hypot(system.trunk.x - anchor.x, system.trunk.z - anchor.z) > settings.reach + KEEP_MARGIN) {
-          free(systemKey)
-        }
-      }
-      const missing = trunks
-        .trunksNear(anchor.x, anchor.z, settings.reach + WANT_MARGIN)
-        .filter((trunk) => !systems.has(keyOf(trunk)))
-        .sort((a, b) => Math.hypot(a.x - anchor.x, a.z - anchor.z) - Math.hypot(b.x - anchor.x, b.z - anchor.z))
+      // Underground: only in X-ray.
+      const missing = group.visible
+        ? stream(systems, group, trunks, anchor, settings.reach + WANT_MARGIN, settings.reach + KEEP_MARGIN)
+        : []
       pending = missing.length
       if (missing.length) {
         const trunk = missing[0]
@@ -188,13 +220,14 @@ export function createRootRenderer(scene) {
 
       // Each system's level from how big it looks: its reach seen from here.
       const pixelsPerUnit = viewportHeight / (2 * Math.tan((camera.fov * Math.PI) / 360))
-      for (const system of systems.values()) {
+      for (const system of [...surfaces.values(), ...(group.visible ? systems.values() : [])]) {
         const distance = Math.max(camera.position.distanceTo(system.roots.center), 0.05)
         const pixels = ((settings.reach * 2) / distance) * pixelsPerUnit
         const level = chooseLevel(pixels, Math.max(system.level, 0), 1)
         if (level !== system.level) {
           system.level = level
           system.mesh.geometry = levelOf(system, level).geometry
+          if (!system.lines) continue
           const { strandEnds } = system.roots.fine
           const strands = Math.round(strandEnds.length * FINE_SHARE[level])
           system.lines.geometry.setDrawRange(0, strands ? strandEnds[strands - 1] : 0)
@@ -202,7 +235,10 @@ export function createRootRenderer(scene) {
       }
     },
 
-    /** { trees, pending, segments, triangles, fine, perLevel } for the panel. */
+    /**
+     * The underground layer's { trees, pending, segments, triangles, fine,
+     * perLevel }, plus surfaceTrees, for the panel.
+     */
     stats() {
       const perLevel = [0, 0, 0, 0]
       let segments = 0
@@ -215,12 +251,12 @@ export function createRootRenderer(scene) {
         triangles += system.levels[system.level].triangles
         fine += Math.round(system.roots.fine.strandEnds.length * FINE_SHARE[system.level])
       }
-      return { trees: systems.size, pending, segments, triangles, fine, perLevel }
+      return { trees: systems.size, surfaceTrees: surfaces.size, pending, segments, triangles, fine, perLevel }
     },
 
     dispose() {
       clear()
-      scene.remove(group)
+      scene.remove(group, surfaceGroup)
       material.dispose()
       fineMaterial.dispose()
     },

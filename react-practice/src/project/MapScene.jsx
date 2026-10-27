@@ -157,7 +157,7 @@ export default function MapScene({ intro }) {
   // root controls settle.
   const [underground, setUnderground] = useState(DEFAULT_UNDERGROUND)
   const settledUnderground = useDebounced(underground, SETTLE_MS)
-  const [rootStats, setRootStats] = useState({ trees: 0, pending: 0, segments: 0, triangles: 0, fine: 0, perLevel: [0, 0, 0, 0] })
+  const [rootStats, setRootStats] = useState({ trees: 0, pending: 0, segments: 0, triangles: 0, fine: 0, surfaceTrees: 0, perLevel: [0, 0, 0, 0] })
   // Simulation: settings here; the clock and its effects run in the frame
   // loop (simulationRef), and simStatus is its snapshot for the panel.
   const simulationRef = useRef(null)

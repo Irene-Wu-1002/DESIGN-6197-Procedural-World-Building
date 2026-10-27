@@ -5,13 +5,14 @@ const VIEWS = [
   ['xray', 'X-ray'],
 ]
 const ROOT_COLORS = [
-  ['reference', 'Reference'],
   ['natural', 'Natural'],
+  ['reference', 'Glow'],
 ]
 
 /**
  * The Underground tab: the X-ray view and the tree roots.
- * stats: { trees, pending, segments, triangles, fine, perLevel } from the roots.
+ * stats: { trees, surfaceTrees, pending, segments, triangles, fine, perLevel }
+ * from the roots.
  */
 export default function UndergroundControls({ underground, onChange, settling, stats }) {
   const set = (key) => (value) => onChange(key, value)
@@ -43,8 +44,8 @@ export default function UndergroundControls({ underground, onChange, settling, s
 
       <ControlCard title="X-ray">
         {slider('Ground opacity', 'opacity', 0, 60, 1, (value) => `${value}%`)}
-        {slider('Depth (free view)', 'depth', 0, 60, 1, (value) => `${value} cm`)}
-        <EnableToggle label="Depth guides (10 · 25 · 50 cm)" checked={underground.guides} onChange={set('guides')} />
+        {slider('Depth (free view)', 'depth', 0, 100, 1, (value) => `${value} cm`)}
+        <EnableToggle label="Depth guides (10 · 25 · 50 · 100 cm)" checked={underground.guides} onChange={set('guides')} />
       </ControlCard>
 
       <ControlCard title="Tree roots">
@@ -55,11 +56,12 @@ export default function UndergroundControls({ underground, onChange, settling, s
           onChange={set('colors')}
           label="Root colours"
         />
-        {slider('Root reach', 'reach', 0.5, 3, 0.1, (value) => `${value.toFixed(1)} m`)}
-        {slider('Structural roots', 'structural', 3, 12, 1, (value) => value)}
-        {slider('Branching', 'branching', 0, 0.4, 0.01, (value) => value.toFixed(2))}
-        {slider('Depth bias', 'depthBias', 0, 1, 0.05, (value) => value.toFixed(2))}
-        {slider('Sinker roots', 'sinkers', 0, 4, 1, (value) => value)}
+        {slider('Surface roots', 'surface', 0, 8, 1, (value) => value)}
+        {slider('Deep roots', 'deep', 2, 10, 1, (value) => value)}
+        {slider('Steepness', 'steepness', 0, 1, 0.05, (value) => value.toFixed(2))}
+        {slider('Root depth', 'rootDepth', 0.4, 1.5, 0.1, (value) => `${value.toFixed(1)} m`)}
+        {slider('Root reach', 'reach', 0.5, 2.5, 0.1, (value) => `${value.toFixed(1)} m`)}
+        {slider('Branching', 'branching', 0, 0.6, 0.01, (value) => value.toFixed(2))}
         {slider('Fine roots', 'fine', 0, 100, 5, (value) => `${value}%`)}
         <p className="section-note">
           {settling
@@ -69,7 +71,7 @@ export default function UndergroundControls({ underground, onChange, settling, s
                 `${stats.segments.toLocaleString()} segments · ${stats.triangles.toLocaleString()} triangles · ` +
                 `${stats.fine.toLocaleString()} fine roots · ` +
                 stats.perLevel.map((count, level) => `L${level} ${count}`).join(' ')
-              : 'Roots are grown only while X-ray is on.'}
+              : `${stats.surfaceTrees} trees with surface roots. The roots underground are grown only while X-ray is on.`}
         </p>
       </ControlCard>
     </>

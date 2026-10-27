@@ -9,7 +9,7 @@ import * as THREE from 'three'
  *               too), down to the chosen opacity
  *   atmosphere  the sky is hidden and the haze turns to a soil-brown
  *               darkness with no ground mist, so depth reads as darkness
- *   guides      dashed rings 10, 25 and 50 cm under the point you look at
+ *   guides      dashed rings 10, 25, 50 and 100 cm under the point you look at
  *
  * Cover shrinking away and the roots' rim glow read `amount` from update().
  */
@@ -20,7 +20,7 @@ const SOIL = new THREE.Color('#1c140e')
 // sixth gone 3 m away, so roots across the view and the crown above stay
 // readable.
 const SOIL_HAZE = 0.14
-const GUIDE_DEPTHS = [0.1, 0.25, 0.5]
+const GUIDE_DEPTHS = [0.1, 0.25, 0.5, 1]
 const GUIDE_RADIUS = 0.3
 
 function createGuides() {
