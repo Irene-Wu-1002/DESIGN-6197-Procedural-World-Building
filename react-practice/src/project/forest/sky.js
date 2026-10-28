@@ -2,19 +2,19 @@ import * as THREE from 'three'
 
 /**
  * Forest sky: a dome around the camera with a vertical gradient, from the
- * dark green underside of the canopy overhead to soft, misty light at the
- * horizon, plus a faint glow where the sun breaks through. The fog uses the
+ * dark underside of the canopy overhead to warm golden haze at the
+ * horizon, plus a glow where the sun breaks through. The fog uses the
  * horizon colour, so distant ground melts into the same haze.
  *
  * Drawn first, without depth, so it sits behind everything at any scale.
  */
 
 export const FOREST_COLORS = {
-  // Dim and green overhead, brighter and warmer near the horizon.
-  canopy: '#16211a',
-  middle: '#2f3b2c',
-  horizon: '#6c765c',
-  sunGlow: '#c9b98a',
+  // Dark warm brown-green overhead, olive, then golden haze at the horizon.
+  canopy: '#2b2a1e',
+  middle: '#454f2d',
+  horizon: '#9a8a4f',
+  sunGlow: '#f2c46e',
 }
 
 const VERTEX = /* glsl */ `
@@ -37,8 +37,10 @@ const FRAGMENT = /* glsl */ `
     // Below the horizon stays at the horizon colour (hidden by ground/fog).
     vec3 color = mix(uHorizon, uMiddle, smoothstep(0.0, 0.25, up));
     color = mix(color, uCanopy, smoothstep(0.25, 0.85, up));
-    float glow = pow(max(dot(normalize(vDirection), uSunDirection), 0.0), 8.0);
-    color = mix(color, uSunGlow, glow * 0.35);
+    // A wide soft halo plus a brighter core where the sun breaks through.
+    float facing = max(dot(normalize(vDirection), uSunDirection), 0.0);
+    float glow = 0.45 * pow(facing, 3.0) + 0.35 * pow(facing, 16.0);
+    color = mix(color, uSunGlow, glow);
     gl_FragColor = vec4(color, 1.0);
     #include <colorspace_fragment>
   }
