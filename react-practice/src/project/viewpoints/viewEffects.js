@@ -4,6 +4,9 @@ import * as THREE from 'three'
  * Per-species vision as one light full-screen pass. The scene renders into
  * a multisampled target, then a single shader applies, in order:
  *   compound eye  hexagonal facets toward the edges, clear in the centre
+ *   forest grade  cooler, darker shade and warm sunlit highlights, browns
+ *                 toward forest green, a little less saturation and more
+ *                 contrast (the World's own look, under every preset)
  *   colour        saturation, contrast, tint
  *   ultraviolet   pale, bright surfaces (petals, spores) glow violet
  *   vignette
@@ -12,14 +15,24 @@ import * as THREE from 'three'
  *
  * Presets are plain numbers, so blending between viewpoints only changes
  * uniforms: the shader is compiled once, at start-up. When nothing is
- * active (Free, no fade) the pass is skipped and the scene renders
- * straight to the screen.
+ * active (no grade, Free, no fade) the pass is skipped and the scene
+ * renders straight to the screen.
  */
 
 export const EFFECT_PRESETS = {
   natural: { saturation: 1, contrast: 1, tint: [1, 1, 1], uv: 0, compound: 0, vignette: 0 },
   ultraviolet: { saturation: 1.22, contrast: 1.05, tint: [0.98, 1, 1.06], uv: 1, compound: 0, vignette: 0.18 },
   compound: { saturation: 0.85, contrast: 1.08, tint: [1.04, 1.01, 0.92], uv: 0, compound: 1, vignette: 0.4 },
+}
+
+// The forest grade at full strength.
+const GRADE = {
+  shadowTint: [0.86, 0.97, 0.95],
+  highlightTint: [1.07, 1.02, 0.86],
+  // How far dull browns move toward olive green (0–1).
+  green: 0.3,
+  saturation: 0.9,
+  contrast: 1.12,
 }
 
 // Facet size in CSS pixels, and the clear centre's radius (share of the
@@ -49,7 +62,38 @@ uniform float uCompound;
 uniform float uVignette;
 uniform float uPrevMix;
 uniform float uDark;
+uniform float uGrade;
+uniform vec3 uShadowTint;
+uniform vec3 uHighlightTint;
+uniform float uGreen;
+uniform float uGradeSaturation;
+uniform float uGradeContrast;
 varying vec2 vUv;
+
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+// The forest grade, on linear colour.
+vec3 forestGrade(vec3 c) {
+  float l = dot(c, LUMA);
+  float shade = 1.0 - smoothstep(0.0, 0.18, l);
+  float lit = smoothstep(0.2, 0.7, l);
+  // Dull browns (red ahead of green, but not by as much as a red cap or an
+  // orange wing) lean toward olive, except where the sun lights them.
+  float lead = (c.r - c.g) / max(c.r, 1e-4);
+  float brown = smoothstep(0.08, 0.3, lead) * (1.0 - smoothstep(0.45, 0.65, lead));
+  float shift = uGreen * brown * (1.0 - lit) * (c.r - c.g);
+  c.r -= shift;
+  c.g += 0.35 * shift;
+  c *= mix(vec3(1.0), uShadowTint, shade);
+  c *= mix(vec3(1.0), uHighlightTint, lit);
+  c = mix(vec3(dot(c, LUMA)), c, uGradeSaturation);
+  // Contrast around the mid-tones in a perceptual (square-root) space,
+  // eased in from black so the deepest shade keeps its detail.
+  vec3 p = sqrt(max(c, 0.0));
+  vec3 pivot = vec3(0.42);
+  p = mix(p, (p - pivot) * uGradeContrast + pivot, smoothstep(0.0, 0.3, p));
+  return p * p;
+}
 
 // Nearest hexagon centre for a point measured in facet units.
 vec2 hexOffset(vec2 p) {
@@ -64,6 +108,7 @@ void main() {
   vec2 centered = (vUv - 0.5) * vec2(uResolution.x / uResolution.y, 1.0);
   float radius = length(centered) * 2.0;
   vec3 color = texture2D(tScene, vUv).rgb;
+  color = mix(color, forestGrade(color), uGrade);
 
   float facets = uCompound * 0.85 * smoothstep(uClear, uClear + 0.7, radius);
   if (facets > 0.001) {
@@ -78,7 +123,7 @@ void main() {
     color = mix(color, facet, facets);
   }
 
-  float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  float luma = dot(color, LUMA);
   color = mix(vec3(luma), color, uSaturation);
   color = (color - 0.18) * uContrast + 0.18;
   color *= uTint;
@@ -136,6 +181,12 @@ export function createViewEffects(renderer) {
       uVignette: { value: 0 },
       uPrevMix: { value: 0 },
       uDark: { value: 0 },
+      uGrade: { value: 1 },
+      uShadowTint: { value: new THREE.Vector3().fromArray(GRADE.shadowTint) },
+      uHighlightTint: { value: new THREE.Vector3().fromArray(GRADE.highlightTint) },
+      uGreen: { value: GRADE.green },
+      uGradeSaturation: { value: GRADE.saturation },
+      uGradeContrast: { value: GRADE.contrast },
     },
     vertexShader: VERTEX,
     fragmentShader: FRAGMENT,
@@ -149,7 +200,8 @@ export function createViewEffects(renderer) {
   quadScene.add(quad)
   const u = material.uniforms
 
-  const setValues = (values, { prevMix = 0, dark = 0 } = {}) => {
+  const setValues = (values, { prevMix = 0, dark = 0, grade = 1 } = {}) => {
+    u.uGrade.value = grade
     u.uSaturation.value = values.saturation
     u.uContrast.value = values.contrast
     u.uTint.value.fromArray(values.tint)
@@ -192,18 +244,21 @@ export function createViewEffects(renderer) {
     },
 
     /** Copy what the given view looks like now (for a crossfade). */
-    capture(scene, camera, values, { dark = 0 } = {}) {
-      setValues(values, { dark })
+    capture(scene, camera, values, { dark = 0, grade = 1 } = {}) {
+      setValues(values, { dark, grade })
       renderPass(scene, camera, prevTarget)
     },
 
-    /** values: blended preset; prevMix: 0–1 of the captured frame; dark: 0–1. */
-    render(scene, camera, values, { prevMix = 0, dark = 0 } = {}) {
-      if (prevMix < 0.001 && dark < 0.001 && isNatural(values)) {
+    /**
+     * values: blended preset; prevMix: 0–1 of the captured frame; dark: 0–1;
+     * grade: 0–1 of the forest grade.
+     */
+    render(scene, camera, values, { prevMix = 0, dark = 0, grade = 1 } = {}) {
+      if (prevMix < 0.001 && dark < 0.001 && grade < 0.001 && isNatural(values)) {
         renderer.render(scene, camera)
         return false
       }
-      setValues(values, { prevMix, dark })
+      setValues(values, { prevMix, dark, grade })
       renderPass(scene, camera, null)
       return true
     },

@@ -270,6 +270,9 @@ export default function MapScene({ intro }) {
       cover: coverRenderer,
     })
     crossSectionRef.current = crossSection
+    // The forest colour grade, eased out when looking underground so roots
+    // and water keep their own colours.
+    const gradeOf = () => 1 - Math.max(xray.amount, crossSection.amount)
     const rootRenderer = createRootRenderer(scene)
     const flyAgaric = createFlyAgaric(scene)
     flyAgaricRef.current = flyAgaric
@@ -325,7 +328,7 @@ export default function MapScene({ intro }) {
       hooks: {
         onUi: setViewUi,
         capture: () => {
-          if (latestFrame) effects.capture(scene, camera, latestFrame.effects, { dark: latestFrame.dark })
+          if (latestFrame) effects.capture(scene, camera, latestFrame.effects, { dark: latestFrame.dark, grade: gradeOf() })
         },
       },
     })
@@ -660,7 +663,7 @@ export default function MapScene({ intro }) {
         .addScaledVector(env.sunDirection, SUN_DISTANCE * sunScaleFor(params.shadowReach))
 
       if (!warmed && tiles.stats().loaded > 0) warmUp()
-      effects.render(scene, camera, frame.effects, { prevMix: frame.prevMix, dark: frame.dark })
+      effects.render(scene, camera, frame.effects, { prevMix: frame.prevMix, dark: frame.dark, grade: gradeOf() })
       writeOverlay(frame.embodiment)
       frameId = requestAnimationFrame(animate)
     }
