@@ -74,8 +74,11 @@ export function smoothGraph(segments, iterations = 2, strength = 0.5) {
  * first segment not kept (importance prefixes always keep a chain's start).
  * radiusOf(segment): radius at the segment's end; colorOf(segment, color);
  * weights: per segment, which child continues a chain (see buildChains).
+ * orderOf(segment): optional, when it grew (0 – 1); written per vertex as
+ * aOrder = (order, ring radius), so a shader can grow the tubes (shrink
+ * each ring onto its axis along the normal until its turn comes).
  */
-export function sweepGeometry(segments, hierarchy, { keep = null, sides = 8, radiusOf, colorOf, weights }) {
+export function sweepGeometry(segments, hierarchy, { keep = null, sides = 8, radiusOf, colorOf, weights, orderOf }) {
   const chains = buildChains(segments, hierarchy, weights)
   const rings = []
   for (const chain of chains) {
@@ -98,6 +101,7 @@ export function sweepGeometry(segments, hierarchy, { keep = null, sides = 8, rad
   const positions = new Float32Array(vertexCount * 3)
   const normals = new Float32Array(vertexCount * 3)
   const colors = new Float32Array(vertexCount * 3)
+  const orders = orderOf ? new Float32Array(vertexCount * 2) : null
   const indices = new Uint32Array(indexCount)
 
   const tangent = new THREE.Vector3()
@@ -140,6 +144,10 @@ export function sweepGeometry(segments, hierarchy, { keep = null, sides = 8, rad
         positions[vertex * 3 + 2] = point.z + radial.z * radius
         radial.toArray(normals, vertex * 3)
         color.toArray(colors, vertex * 3)
+        if (orders) {
+          orders[vertex * 2] = orderOf(segment)
+          orders[vertex * 2 + 1] = radius
+        }
         vertex += 1
       }
     }
@@ -161,6 +169,7 @@ export function sweepGeometry(segments, hierarchy, { keep = null, sides = 8, rad
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  if (orders) geometry.setAttribute('aOrder', new THREE.BufferAttribute(orders, 2))
   geometry.setIndex(new THREE.BufferAttribute(indices, 1))
   geometry.computeBoundingSphere()
   return { geometry, triangles: indexCount / 3 }

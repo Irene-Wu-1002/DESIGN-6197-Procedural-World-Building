@@ -28,6 +28,7 @@ import { createTileManager } from './terrain/tiles'
 import { createRootRenderer } from './underground/rootRenderer'
 import { DEFAULT_UNDERGROUND, ROOT_KEYS, UNDERGROUND_VIEWS, WATER_KEYS } from './underground/settings'
 import { createWaterRenderer } from './underground/waterRenderer'
+import { createTreeWater } from './underground/treeWater'
 import { DEFAULT_WATER } from './underground/water'
 import { createCrossSection } from './underground/crossSection'
 import { createXray } from './underground/xray'
@@ -125,6 +126,7 @@ export default function MapScene({ intro }) {
   const overlayRef = useRef(null)
   const xrayRef = useRef(null)
   const crossSectionRef = useRef(null)
+  const treeWaterRef = useRef(null)
   // What the roots are grown from (the settled Underground settings).
   const rootSettingsRef = useRef(DEFAULT_UNDERGROUND)
   // The water in the ground: its settings and the Habitat wetness.
@@ -257,6 +259,9 @@ export default function MapScene({ intro }) {
     const xray = createXray(scene, [material, farMaterial])
     xrayRef.current = xray
     const waterRenderer = createWaterRenderer(scene)
+    // What the water does for each tree: its supply, crown growth and leaves.
+    const treeWater = createTreeWater()
+    treeWaterRef.current = treeWater
     const crossSection = createCrossSection(scene, {
       renderer,
       materials: [material, farMaterial, ...waterRenderer.materials],
@@ -460,6 +465,10 @@ export default function MapScene({ intro }) {
     let holeRadius = 0
     let lastTime = performance.now()
     let time = 0
+    // Last frame's wet weather and autumn share, for the trees (the
+    // simulation runs after the crowns).
+    let liveWetness = 0
+    let liveAutumn = 0
     let frameId
     const animate = () => {
       const now = performance.now()
@@ -495,6 +504,18 @@ export default function MapScene({ intro }) {
       const crownSettings = crownSettingsRef.current
       trunkRenderer.update(tiles.trunks, tiles.sampler, anchor.x, anchor.z, tiles.version, crownSettings.crownStart)
       const trunkSampler = tiles.sampler
+      const roots = rootSettingsRef.current
+      treeWater.update({
+        dt: delta,
+        field: waterRenderer.field,
+        key: `${waterRenderer.key}|${roots.reach}|${roots.rootDepth}`,
+        trunks: tiles.trunks,
+        roots,
+        anchor,
+        wetness: liveWetness,
+        autumn: liveAutumn,
+        speed: crownSettings.growthSpeed,
+      })
       crownRenderer.update({
         trunks: tiles.trunks,
         ground: (trunk) => trunkGround(trunk, trunkSampler),
@@ -504,6 +525,8 @@ export default function MapScene({ intro }) {
         viewportHeight: mount.clientHeight,
         settings: crownSettings,
         version: tiles.version,
+        trees: treeWater,
+        autumn: liveAutumn,
       })
       xray.update(delta, anchor)
       coverRenderer.setHidden(xray.amount)
@@ -581,6 +604,8 @@ export default function MapScene({ intro }) {
       scene.fog.set(haze * env.haze, env.mist, env.mistHeight)
       xray.applyAtmosphere(scene, sky)
       uniforms.uWet.value = env.wetness
+      liveWetness = env.wetness
+      liveAutumn = env.autumn.value * env.autumn.weight
       coverRenderer.setWeather({ wind: env.wind, wet: env.wetness, time })
       // Season: how much of each kind shows, and the leaves' autumn share
       // (the Scatter setting, blended toward the season's).
@@ -634,7 +659,7 @@ export default function MapScene({ intro }) {
       setSimStatus(simulation.snapshot())
       setRootStats(rootRenderer.stats())
       setWaterStats(waterRenderer.stats())
-      setCrownStats(crownRenderer.stats())
+      setCrownStats({ ...crownRenderer.stats(), tree: treeWater.nearest(viewer.x, viewer.z) })
     }, STATUS_REFRESH_MS)
 
     const onResize = () => {
@@ -685,6 +710,7 @@ export default function MapScene({ intro }) {
       xrayRef.current = null
       crossSection.dispose()
       crossSectionRef.current = null
+      treeWaterRef.current = null
       rootRenderer.dispose()
       waterRenderer.dispose()
       flyAgaric.dispose()
@@ -784,8 +810,9 @@ export default function MapScene({ intro }) {
     controllerRef.current?.setSettings({ underground: { active: xrayOn, depth: undergroundDepth / 100 } })
   }, [xrayOn, undergroundView, groundOpacity, guides, undergroundDepth])
   useEffect(() => {
-    crownSettingsRef.current = { ...settledCrowns, crowns: crowns.crowns }
-  }, [settledCrowns, crowns.crowns])
+    // Showing branches and leaves and the growth speed change at once.
+    crownSettingsRef.current = { ...settledCrowns, crowns: crowns.crowns, leaves: crowns.leaves, growthSpeed: crowns.growthSpeed }
+  }, [settledCrowns, crowns.crowns, crowns.leaves, crowns.growthSpeed])
   useEffect(() => {
     rootSettingsRef.current = {
       ...Object.fromEntries(ROOT_KEYS.map((key) => [key, settledUnderground[key]])),
@@ -947,6 +974,7 @@ export default function MapScene({ intro }) {
         crownsSettling={['crownStart', 'crownSize', 'branchDensity'].some((key) => crowns[key] !== settledCrowns[key])}
         crownStats={crownStats}
         onCrownsChange={(key, value) => setCrowns((current) => ({ ...current, [key]: value }))}
+        onRegrow={() => treeWaterRef.current?.regrow()}
         underground={freeView ? underground : { ...underground, view: 'surface' }}
         undergroundLocked={!freeView}
         undergroundSettling={ROOT_KEYS.some((key) => underground[key] !== settledUnderground[key])}

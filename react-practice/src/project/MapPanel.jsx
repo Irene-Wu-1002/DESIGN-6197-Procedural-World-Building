@@ -14,6 +14,8 @@ import { HABITAT_FIELDS } from './habitat/habitatFields'
 import UndergroundControls from './underground/UndergroundControls'
 
 const formatPercent = (value) => `${value}%`
+// A 0 – 1 share as a whole percent.
+const percent = (share) => `${Math.round(share * 100)}%`
 
 // Full names for the scatter cards (the picker buttons use short ones).
 const ELEMENT_TITLES = {
@@ -54,7 +56,9 @@ const FLOWER_DISTRIBUTIONS = [
  * settings, whether its views are locked to the surface (outside the free
  * view), the roots' and the water's numbers, and whether root changes are
  * still on their way. crowns / crownStats /
- * crownsSettling: the same for the tree crowns (Habitat tab).
+ * crownsSettling: the same for the tree crowns (Habitat tab); crownStats.tree
+ * is the water and growth of the tree nearest you, and onRegrow cuts every
+ * crown back to a seedling's for the water to grow again.
  * onResetKeys({ ground, cover, view, habitat, paths, underground, crowns: [...keys] }) restores
  * just those settings to their defaults; onReset restores everything.
  */
@@ -85,6 +89,7 @@ export default function MapPanel({
   onShowZones,
   onUndergroundChange,
   onCrownsChange,
+  onRegrow,
   onResetKeys,
   onReset,
 }) {
@@ -367,6 +372,7 @@ export default function MapPanel({
           {ground.trunks && (
             <ControlCard title="Tree crowns">
               <EnableToggle label="Branches" checked={crowns.crowns} onChange={(on) => onCrownsChange('crowns', on)} />
+              <EnableToggle label="Leaves" checked={crowns.leaves} onChange={(on) => onCrownsChange('leaves', on)} />
               <LabeledSlider
                 label="Crown starts at"
                 value={crowns.crownStart}
@@ -394,8 +400,27 @@ export default function MapPanel({
               <p className="section-note">
                 {crownsSettling
                   ? 'Regrowing crowns…'
-                  : `${crownStats.trees} crowns · ${crownStats.triangles.toLocaleString()} triangles · ` +
+                  : `${crownStats.trees} crowns · ${(crownStats.leaves ?? 0).toLocaleString()} leaves · ` +
+                    `${crownStats.triangles.toLocaleString()} triangles · ` +
                     crownStats.perLevel.map((count, level) => `L${level} ${count}`).join(' ')}
+              </p>
+              <LabeledSlider
+                label="Growth speed"
+                value={crowns.growthSpeed}
+                min={0}
+                max={400}
+                step={10}
+                format={formatPercent}
+                onChange={(value) => onCrownsChange('growthSpeed', value)}
+              />
+              <ResetButton small label="Regrow from seedlings" onReset={onRegrow} />
+              <p className="section-note">
+                {crownStats.tree
+                  ? `Nearest tree: water ${percent(crownStats.tree.supply)} (table ${percent(crownStats.tree.table)} · ` +
+                    `pockets ${percent(crownStats.tree.pockets)} · surface ${percent(crownStats.tree.surface)}) · ` +
+                    `crown ${percent(crownStats.tree.growth)} grown · leaves ${percent(crownStats.tree.leaves)}.`
+                  : 'Turn on water in the ground (Underground tab) to let water grow the crowns.'}{' '}
+                Water the roots reach decides how big a crown grows and how full its leaves are.
               </p>
             </ControlCard>
           )}

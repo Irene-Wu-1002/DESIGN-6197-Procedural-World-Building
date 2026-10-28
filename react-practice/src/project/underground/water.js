@@ -9,7 +9,8 @@ import { hash } from '../terrain/heightField'
  *   water table  where the soil turns saturated: a slow, smooth surface
  *                about Table depth under the broad slopes (it follows
  *                their gentle shape, not the bumps and pebbles), wandering
- *                up and down by a fifth over a few metres
+ *                up and down by 30% over several metres, so some trees
+ *                reach it and some don't
  *   pockets      lenses of saturated soil between the surface and the
  *                table, hashed from 60 cm cells (none at Pockets 0%)
  *   soil water   0 dry – 1 saturated at any point: the surface moisture
@@ -37,7 +38,7 @@ export const DEFAULT_WATER = {
   showField: false,
 }
 
-const TABLE = { wavelength: 4, swing: 0.2 }
+const TABLE = { wavelength: 6, swing: 0.3 }
 const POCKET = {
   cell: 0.6,
   // Chance of a pocket per cell at Pockets 100%.
@@ -55,7 +56,7 @@ const POCKET_REACH = POCKET.radius[1] * POCKET.width[1] * 1.3
 const SURFACE_FADE = 0.3
 // Capillary fringe: how far above the table the soil starts getting wetter,
 // and how wet it is at the table.
-const FRINGE = 0.35
+const FRINGE = 0.5
 const FRINGE_WET = 0.92
 const SALT = { table: 21, pocket: 4000 }
 
