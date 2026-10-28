@@ -33,13 +33,13 @@ export const DEFAULT_PATHS = {
   // how many, simulation speed (×), scent half-life (s), diffusion (%),
   // sensor angle (°) and distance (cm), wander and slope avoidance (%).
   antAgents: true,
-  colonySize: 150,
-  simSpeed: 4,
+  colonySize: 50,
+  simSpeed: 1,
   scentHalfLife: 40,
-  diffusion: 5,
-  sensorAngle: 35,
+  diffusion: 35,
+  sensorAngle: 40,
   sensorDistance: 2.5,
-  wander: 40,
+  wander: 25,
   slopeAvoidance: 50,
   // Exclusion zones (cm): beyond the mound's edge, around the agaric's
   // stem, around the start view, beyond the trail's edge, around tunnel
