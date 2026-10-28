@@ -414,6 +414,7 @@ export default function MapPanel({
                 onChange={(value) => onCrownsChange('growthSpeed', value)}
               />
               <ResetButton small label="Regrow from seedlings" onReset={onRegrow} />
+              <EnableToggle label="Sap flow (roots to leaves)" checked={crowns.sap} onChange={(on) => onCrownsChange('sap', on)} />
               <p className="section-note">
                 {crownStats.tree
                   ? `Nearest tree: water ${percent(crownStats.tree.supply)} (table ${percent(crownStats.tree.table)} · ` +
@@ -421,6 +422,7 @@ export default function MapPanel({
                     `crown ${percent(crownStats.tree.growth)} grown · leaves ${percent(crownStats.tree.leaves)}.`
                   : 'Turn on water in the ground (Underground tab) to let water grow the crowns.'}{' '}
                 Water the roots reach decides how big a crown grows and how full its leaves are.
+                {crowns.sap && crownStats.tree ? ` ${(crownStats.sap ?? 0).toLocaleString()} sap particles rising.` : ''}
               </p>
             </ControlCard>
           )}

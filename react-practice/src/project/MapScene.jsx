@@ -29,6 +29,7 @@ import { createRootRenderer } from './underground/rootRenderer'
 import { DEFAULT_UNDERGROUND, ROOT_KEYS, UNDERGROUND_VIEWS, WATER_KEYS } from './underground/settings'
 import { createWaterRenderer } from './underground/waterRenderer'
 import { createTreeWater } from './underground/treeWater'
+import { createSapFlow } from './underground/sapFlow'
 import { DEFAULT_WATER } from './underground/water'
 import { createCrossSection } from './underground/crossSection'
 import { createXray } from './underground/xray'
@@ -262,6 +263,7 @@ export default function MapScene({ intro }) {
     // What the water does for each tree: its supply, crown growth and leaves.
     const treeWater = createTreeWater()
     treeWaterRef.current = treeWater
+    const sapFlow = createSapFlow(scene)
     const crossSection = createCrossSection(scene, {
       renderer,
       materials: [material, farMaterial, ...waterRenderer.materials],
@@ -535,6 +537,7 @@ export default function MapScene({ intro }) {
         dt: delta,
         sampler: tiles.sampler,
         trunks: tiles.trunks,
+        trees: treeWater,
         roots: rootSettingsRef.current,
         settings: waterSettingsRef.current,
         anchor,
@@ -550,6 +553,20 @@ export default function MapScene({ intro }) {
         waterRenderer.field && { field: waterRenderer.field, key: waterRenderer.key }
       )
       trunkRenderer.setCutBuried(crossSection.active)
+      sapFlow.update({
+        dt: delta,
+        on: crownSettings.sap && crownSettings.crowns,
+        trunks: tiles.trunks,
+        trees: treeWater,
+        crowns: crownRenderer,
+        roots,
+        anchor,
+        ground: (trunk) => trunkGround(trunk, trunkSampler),
+        underground: xray.amount > 0 || crossSection.amount > 0,
+        camera,
+        viewportHeight: mount.clientHeight,
+        version: [tiles.version, crownSettings.crownStart, crownSettings.crownSize, crownSettings.branchDensity].join('|'),
+      })
       const groundSampler = tiles.sampler
       rootRenderer.update({
         active: xray.amount > 0 || crossSection.amount > 0,
@@ -659,7 +676,7 @@ export default function MapScene({ intro }) {
       setSimStatus(simulation.snapshot())
       setRootStats(rootRenderer.stats())
       setWaterStats(waterRenderer.stats())
-      setCrownStats({ ...crownRenderer.stats(), tree: treeWater.nearest(viewer.x, viewer.z) })
+      setCrownStats({ ...crownRenderer.stats(), tree: treeWater.nearest(viewer.x, viewer.z), sap: sapFlow.alive })
     }, STATUS_REFRESH_MS)
 
     const onResize = () => {
@@ -713,6 +730,7 @@ export default function MapScene({ intro }) {
       treeWaterRef.current = null
       rootRenderer.dispose()
       waterRenderer.dispose()
+      sapFlow.dispose()
       flyAgaric.dispose()
       flyAgaricRef.current = null
       farGround.dispose()
@@ -810,9 +828,15 @@ export default function MapScene({ intro }) {
     controllerRef.current?.setSettings({ underground: { active: xrayOn, depth: undergroundDepth / 100 } })
   }, [xrayOn, undergroundView, groundOpacity, guides, undergroundDepth])
   useEffect(() => {
-    // Showing branches and leaves and the growth speed change at once.
-    crownSettingsRef.current = { ...settledCrowns, crowns: crowns.crowns, leaves: crowns.leaves, growthSpeed: crowns.growthSpeed }
-  }, [settledCrowns, crowns.crowns, crowns.leaves, crowns.growthSpeed])
+    // Showing branches, leaves and sap and the growth speed change at once.
+    crownSettingsRef.current = {
+      ...settledCrowns,
+      crowns: crowns.crowns,
+      leaves: crowns.leaves,
+      growthSpeed: crowns.growthSpeed,
+      sap: crowns.sap,
+    }
+  }, [settledCrowns, crowns.crowns, crowns.leaves, crowns.growthSpeed, crowns.sap])
   useEffect(() => {
     rootSettingsRef.current = {
       ...Object.fromEntries(ROOT_KEYS.map((key) => [key, settledUnderground[key]])),

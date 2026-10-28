@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { createWaterField } from './water'
 import { createWaterParticles } from './waterParticles'
+import { createGlowPoints } from './glowPoints'
 
 /**
  * Draws the water in the ground while X-ray or the cross-section is on:
@@ -20,51 +21,11 @@ import { createWaterParticles } from './waterParticles'
  * cross-section draws the table's line in its cut from it).
  */
 
-const MAX_POINT_PIXELS = 28
 // Brightness by root palette: the natural look is a little quieter.
 const GLOW = { natural: 0.75, reference: 1, section: 1 }
 const ARROW = { spacing: 0.5, radius: 2.5, levels: 5, length: 0.2, fullSpeed: 0.35, every: 0.2 }
 const ARROW_TAIL = new THREE.Color('#1c2a8c')
 const ARROW_HEAD = new THREE.Color('#bdefff')
-
-const POINTS_VERTEX = /* glsl */ `
-#include <common>
-#include <logdepthbuf_pars_vertex>
-#include <clipping_planes_pars_vertex>
-attribute vec3 aColor;
-attribute float aSize;
-attribute float aAlpha;
-uniform float uScale;
-varying vec3 vColor;
-varying float vAlpha;
-void main() {
-  vColor = aColor;
-  vAlpha = aAlpha;
-  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-  gl_PointSize = min(aSize * uScale / -mvPosition.z, ${MAX_POINT_PIXELS.toFixed(1)});
-  gl_Position = projectionMatrix * mvPosition;
-  #include <logdepthbuf_vertex>
-  #include <clipping_planes_vertex>
-}
-`
-const POINTS_FRAGMENT = /* glsl */ `
-#include <common>
-#include <logdepthbuf_pars_fragment>
-#include <clipping_planes_pars_fragment>
-uniform float uGlow;
-varying vec3 vColor;
-varying float vAlpha;
-void main() {
-  #include <clipping_planes_fragment>
-  float d = length(gl_PointCoord - 0.5);
-  // A bright core with a soft edge.
-  float alpha = smoothstep(0.5, 0.2, d) * vAlpha * uGlow;
-  if (alpha < 0.01) discard;
-  gl_FragColor = vec4(vColor * alpha, alpha);
-  #include <logdepthbuf_fragment>
-  #include <colorspace_fragment>
-}
-`
 
 export function createWaterRenderer(scene) {
   const group = new THREE.Group()
@@ -74,25 +35,9 @@ export function createWaterRenderer(scene) {
   // Particles, drawn straight from the pool's arrays.
   const system = createWaterParticles()
   const { pool } = system
-  const geometry = new THREE.BufferGeometry()
-  const attribute = (array, size) => new THREE.BufferAttribute(array, size).setUsage(THREE.DynamicDrawUsage)
-  geometry.setAttribute('position', attribute(pool.position, 3))
-  geometry.setAttribute('aColor', attribute(pool.color, 3))
-  geometry.setAttribute('aSize', attribute(pool.size, 1))
-  geometry.setAttribute('aAlpha', attribute(pool.alpha, 1))
-  const pointsMaterial = new THREE.ShaderMaterial({
-    uniforms: { uScale: { value: 600 }, uGlow: { value: 1 } },
-    vertexShader: POINTS_VERTEX,
-    fragmentShader: POINTS_FRAGMENT,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    clipping: true,
-  })
-  const points = new THREE.Points(geometry, pointsMaterial)
-  points.frustumCulled = false
-  points.renderOrder = -0.1
-  group.add(points)
+  const points = createGlowPoints(pool)
+  points.object.renderOrder = -0.1
+  group.add(points.object)
 
   // Field arrows.
   const across = Math.round((ARROW.radius * 2) / ARROW.spacing) + 1
@@ -166,15 +111,16 @@ export function createWaterRenderer(scene) {
       return fieldKey
     },
     /** The materials the cross-section clips. */
-    materials: [pointsMaterial, arrowMaterial],
+    materials: [points.material, arrowMaterial],
 
     /**
      * Once per frame. active: X-ray or the cross-section is on; sampler:
-     * the ground; trunks: the trunk field; roots: { reach, rootDepth, colors };
+     * the ground; trunks: the trunk field; trees: the tree water states
+     * (treeWater.js; thirsty trees pull harder); roots: { reach, rootDepth, colors };
      * settings: DEFAULT_WATER's keys plus wetness (Habitat %); version:
      * changes with the ground; camera, viewportHeight: for point sizes.
      */
-    update({ active, dt, sampler, trunks, roots, settings, anchor, camera, viewportHeight, version }) {
+    update({ active, dt, sampler, trunks, trees, roots, settings, anchor, camera, viewportHeight, version }) {
       const on = Boolean(sampler) && settings.water
       const key = on ? [version, settings.tableDepth, settings.pockets, settings.wetness].join('|') : null
       if (key !== fieldKey) {
@@ -191,10 +137,8 @@ export function createWaterRenderer(scene) {
 
       // More water in wetter soil.
       const rate = settings.particles * (0.5 + settings.wetness / 100)
-      system.update({ dt, field, sampler, trunks, roots, anchor, rate })
-      for (const name of ['position', 'aColor', 'aSize', 'aAlpha']) geometry.attributes[name].needsUpdate = true
-      pointsMaterial.uniforms.uScale.value = viewportHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))
-      pointsMaterial.uniforms.uGlow.value = GLOW[roots.colors] ?? 1
+      system.update({ dt, field, sampler, trunks, roots, anchor, rate, demandOf: (trunk) => trees?.demandOf(trunk) ?? 1 })
+      points.update(camera, viewportHeight, GLOW[roots.colors] ?? 1)
 
       arrows.visible = settings.showField && system.ready
       arrowTimer -= dt
@@ -215,8 +159,7 @@ export function createWaterRenderer(scene) {
 
     dispose() {
       scene.remove(group)
-      geometry.dispose()
-      pointsMaterial.dispose()
+      points.dispose()
       arrowGeometry.dispose()
       arrowMaterial.dispose()
     },

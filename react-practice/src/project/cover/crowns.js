@@ -28,6 +28,10 @@ import { LEAF_COLORS } from './coverRules'
  * their stalks, and yellow the leaves of thirsty trees and in autumn. The
  * shadows follow the same growth. Nothing is rebuilt as trees grow.
  *
+ * Each variant also keeps SAP_PATHS paths from the crown's base out to
+ * twig tips (for the sap, underground/sapFlow.js); pathsOf(trunk) gives a
+ * drawn tree's paths in the world.
+ *
  * Each trunk picks a variant from its seed and turns it by the same angle
  * as its trunk mesh, scaled by its radius, so every tree differs a little.
  * Every variant is drawn at the four Topic 6 levels of detail, each one
@@ -47,6 +51,8 @@ export const DEFAULT_CROWNS = {
   // How fast water grows the crowns (% of the standard rate,
   // underground/treeWater.js).
   growthSpeed: 100,
+  // Sap rising from the roots to the leaves (underground/sapFlow.js).
+  sap: false,
 }
 
 const VARIANTS = 8
@@ -73,6 +79,7 @@ const LEAF_RANK_TOP = 0.88
 const GROW_FRONT = 0.05
 const LEAF_FRONT = 0.12
 const DRY_LEAF = new THREE.Color('#a8893f')
+const SAP_PATHS = 48
 const BARK = new THREE.Color('#3e3128')
 const TWIG = new THREE.Color('#6b5848')
 // Crowns are big on screen even far away; scale the LOD thresholds up.
@@ -170,6 +177,28 @@ function placeLeaves({ segments, hierarchy, maxDepth }, seed) {
     ;[leaves[k], leaves[j]] = [leaves[j], leaves[k]]
   }
   return leaves
+}
+
+/**
+ * Paths from the crown's base to SAP_PATHS random twig tips: { points
+ * (Float32Array x, y, z, local), order (when the tip grew, as aOrder) }.
+ */
+function tracePaths({ segments, hierarchy, maxDepth }, seed) {
+  const random = createRandom(seed * 17 + 3)
+  const tips = segments.map((_, index) => index).filter((index) => hierarchy.tipsFed[index] === 1)
+  const paths = []
+  for (let k = 0; k < SAP_PATHS && tips.length; k += 1) {
+    const tip = tips[Math.floor(random() * tips.length)]
+    const chain = []
+    for (let index = tip; index >= 0; index = hierarchy.parent[index]) chain.push(index)
+    chain.reverse()
+    const points = [segments[chain[0]].start, ...chain.map((index) => segments[index].end)]
+    paths.push({
+      points: Float32Array.from(points.flatMap((point) => [point.x, point.y, point.z])),
+      order: (segments[tip].depth / maxDepth) * (1 - GROW_FRONT * 2),
+    })
+  }
+  return paths
 }
 
 /** The leaves at one level of detail: the first `share`, scaled up to keep the weight. */
@@ -307,6 +336,16 @@ export function createCrownRenderer(scene) {
   let settingsKey = null
   let listKey = null
   let list = []
+  // The drawn trees by trunk position, for pathsOf.
+  const byTrunk = new Map()
+  const trunkKey = (trunk) => `${trunk.x.toFixed(4)},${trunk.z.toFixed(4)}`
+  // A tree's place: its crown base, turned by its seed, scaled by its radius.
+  const frameOf = (trunk, base, out) => {
+    position.set(trunk.x, base, trunk.z)
+    quaternion.setFromAxisAngle(up, (trunk.seed % 360) * (Math.PI / 180))
+    scale.setScalar(trunk.radius / REFERENCE_RADIUS)
+    return out.compose(position, quaternion, scale)
+  }
 
   const clear = () => {
     for (const variant of variants) {
@@ -336,6 +375,7 @@ export function createCrownRenderer(scene) {
     const leafLevels = LEAF_SHARE.map((share) => leafGeometry(leaves, share))
     variants[index] = {
       height: crown.height,
+      sapPaths: tracePaths(crown, index),
       meshes: levels.map(({ geometry }) => instanced(geometry, material, true)),
       leafMeshes: leafLevels.map(({ geometry }) => instanced(geometry, leafMaterial, false)),
       triangles: levels.map((level) => level.triangles),
@@ -379,6 +419,8 @@ export function createCrownRenderer(scene) {
           .trunksNear(focusX, focusZ, VIEW)
           .slice(0, CAPACITY)
           .map((trunk) => ({ trunk, base: ground(trunk) + settings.crownStart - OVERLAP, level: 0 }))
+        byTrunk.clear()
+        for (const item of list) byTrunk.set(trunkKey(item.trunk), item)
       }
       // Grow the variant the nearest tree still waits for.
       const waiting = list.find(({ trunk }) => !variants[trunk.seed % VARIANTS])
@@ -407,10 +449,7 @@ export function createCrownRenderer(scene) {
         item.level = chooseLevel(pixels, item.level, DETAIL_BIAS)
         const mesh = variant.meshes[item.level]
         if (mesh.count >= CAPACITY) continue
-        position.set(trunk.x, base, trunk.z)
-        quaternion.setFromAxisAngle(up, (trunk.seed % 360) * (Math.PI / 180))
-        scale.setScalar(size)
-        matrix.compose(position, quaternion, scale)
+        frameOf(trunk, base, matrix)
         const state = trees?.stateOf(trunk) ?? FULL
         place(mesh, state)
         if (settings.leaves) {
@@ -428,6 +467,27 @@ export function createCrownRenderer(scene) {
         })
       }
       drawn = { trees: count, triangles: triangles + leafTriangles, leaves: leafTriangles / 2, perLevel }
+    },
+
+    /**
+     * A drawn tree's sap paths in the world: { base (the crown's base,
+     * Vector3), paths: [{ points (Float32Array x, y, z), order }] }, or
+     * null (not drawn, or its variant isn't grown yet).
+     */
+    pathsOf(trunk) {
+      const item = byTrunk.get(trunkKey(trunk))
+      const variant = item && variants[trunk.seed % VARIANTS]
+      if (!variant || !group.visible) return null
+      const frame = frameOf(trunk, item.base, new THREE.Matrix4())
+      const point = new THREE.Vector3()
+      return {
+        base: new THREE.Vector3(trunk.x, item.base, trunk.z),
+        paths: variant.sapPaths.map(({ points, order }) => {
+          const world = new Float32Array(points.length)
+          for (let k = 0; k < points.length; k += 3) point.fromArray(points, k).applyMatrix4(frame).toArray(world, k)
+          return { points: world, order }
+        }),
+      }
     },
 
     /** { trees, triangles, leaves (cards), perLevel } drawn last frame. */

@@ -11,7 +11,8 @@ import { createRandom } from '../../utils/distributions'
  *   field      the velocity the water wants at any point, the sum of
  *                rise   capillary rise: up, strongest just above the table
  *                sinks  each tree's root zone (trunk, Root reach, Root
- *                       depth) pulls water toward it, harder up close
+ *                       depth) pulls water toward it, harder up close and
+ *                       the thirstier the tree (its demand, treeWater.js)
  *                swirl  two octaves of ABC flow (Arnold–Beltrami–
  *                       Childress), a divergence-free field, drifting with
  *                       time: organic curls without bunching up
@@ -116,7 +117,7 @@ export function createWaterParticles() {
       const dy = sink.y - y
       const dz = sink.z - z
       const distance = Math.hypot(dx, dy, dz) || 1
-      const pull = SINK.speed * (1 - smoothstep(0, sink.range, distance)) ** 2
+      const pull = SINK.speed * sink.demand * (1 - smoothstep(0, sink.range, distance)) ** 2
       out[0] += (dx / distance) * pull
       out[1] += (dy / distance) * pull
       out[2] += (dz / distance) * pull
@@ -179,9 +180,10 @@ export function createWaterParticles() {
     /**
      * Once per frame while shown. field: water.js (null clears);
      * sampler: the ground; trunks: the trunk field; roots: { reach,
-     * rootDepth }; anchor: where you look; rate: Particles %.
+     * rootDepth }; anchor: where you look; rate: Particles %;
+     * demandOf(trunk): how hard the tree draws water (default 1).
      */
-    update({ dt, field, sampler, trunks, roots, anchor, rate }) {
+    update({ dt, field, sampler, trunks, roots, anchor, rate, demandOf = () => 1 }) {
       if (field !== gridField) {
         pool.clear()
         gridField = null
@@ -201,6 +203,7 @@ export function createWaterParticles() {
         z: trunk.z,
         range: roots.reach * SINK.range,
         soak: roots.reach * SINK.soak,
+        demand: demandOf(trunk),
       }))
 
       owed += RATE * (rate / 100) * dt

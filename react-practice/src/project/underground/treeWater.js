@@ -20,6 +20,9 @@
  *            the supply within a few seconds (days, in the tree's time),
  *            and drops in autumn whatever the water
  *   dryness  0 – 1, how far the leaves have yellowed from thirst
+ *   demand   how hard the tree draws water (about 0.3 – 1.6): leaves
+ *            transpire, so fuller crowns draw more, and a crown still
+ *            short of what its water could hold up draws extra to grow
  *
  * Trees start grown to what their water holds up (the forest looks
  * settled). Regrow cuts every crown back to a seedling's and starts the
@@ -150,6 +153,14 @@ export function createTreeWater() {
     /** The state of a trunk's tree ({ supply, growth, leaves, dryness }), or null. */
     stateOf(trunk) {
       return states.get(keyOf(trunk)) ?? null
+    },
+
+    /** How hard a trunk's tree draws water (1 for trees without a state). */
+    demandOf(trunk) {
+      const state = states.get(keyOf(trunk))
+      if (!state) return 1
+      const top = crownMax(state.supply)
+      return 0.3 + 0.7 * state.leaves + 0.6 * clamp01(((top - state.growth) / top) * 2)
     },
 
     /** Cut every crown back to a seedling's and let the water grow them again. */
