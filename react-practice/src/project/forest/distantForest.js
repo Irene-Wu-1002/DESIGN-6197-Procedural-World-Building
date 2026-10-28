@@ -26,7 +26,7 @@ const SALT = 4243
 // Room kept around a real trunk (m).
 const ROOM = 1.1
 const TRUNK_HEIGHT = 5.5
-const SHADE = { trunk: '#2f2a22', crown: '#26331f', brightness: [0.65, 1.15] }
+const SHADE = { trunk: '#5a4c3e', crown: '#3a4a2c', brightness: [0.65, 1.15] }
 
 const FADE_VERTEX = /* glsl */ `
 #include <common>

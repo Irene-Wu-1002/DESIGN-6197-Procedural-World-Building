@@ -542,7 +542,7 @@ export function trunkGround(trunk, sampler) {
 export function createTrunkRenderer(scene) {
   let geometry = createTrunkGeometry()
   let height = null
-  const material = new THREE.MeshStandardMaterial({ color: '#3e3128', roughness: 1 })
+  const material = new THREE.MeshStandardMaterial({ color: '#6e5d4b', roughness: 1 })
   // The cross-section cuts the buried base away (below where the trunk
   // stands), so the roots show under it.
   const buried = { value: 0 }

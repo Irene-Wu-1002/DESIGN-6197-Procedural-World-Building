@@ -5,8 +5,9 @@ import * as THREE from 'three'
  * a multisampled target, then a single shader applies, in order:
  *   compound eye  hexagonal facets toward the edges, clear in the centre
  *   forest grade  cooler, darker shade and warm sunlit highlights, browns
- *                 toward forest green, a little less saturation and more
- *                 contrast (the World's own look, under every preset)
+ *                 toward forest green, a little less saturation, more
+ *                 contrast and a soft shoulder so sun patches never clip
+ *                 (the World's own look, under every preset)
  *   colour        saturation, contrast, tint
  *   ultraviolet   pale, bright surfaces (petals, spores) glow violet
  *   vignette
@@ -27,7 +28,7 @@ export const EFFECT_PRESETS = {
 
 // The forest grade at full strength.
 const GRADE = {
-  shadowTint: [0.86, 0.97, 0.95],
+  shadowTint: [0.93, 0.98, 0.97],
   highlightTint: [1.07, 1.02, 0.86],
   // How far dull browns move toward olive green (0–1).
   green: 0.3,
@@ -71,6 +72,7 @@ uniform float uGradeContrast;
 varying vec2 vUv;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+const float GRADE_KNEE = 0.8;
 
 // The forest grade, on linear colour.
 vec3 forestGrade(vec3 c) {
@@ -92,7 +94,11 @@ vec3 forestGrade(vec3 c) {
   vec3 p = sqrt(max(c, 0.0));
   vec3 pivot = vec3(0.42);
   p = mix(p, (p - pivot) * uGradeContrast + pivot, smoothstep(0.0, 0.3, p));
-  return p * p;
+  c = p * p;
+  // Soft shoulder: above the knee, highlights ease toward white instead of
+  // clipping flat.
+  vec3 over = max(c - GRADE_KNEE, 0.0);
+  return min(c, GRADE_KNEE) + over / (1.0 + over / (1.0 - GRADE_KNEE));
 }
 
 // Nearest hexagon centre for a point measured in facet units.

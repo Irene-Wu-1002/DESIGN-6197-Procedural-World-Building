@@ -7,8 +7,8 @@ import * as THREE from 'three'
  * and stays sharp up close. It fades out where a pixel covers several
  * grains, so it never shimmers in the distance.
  *
- * It also paints still, dappled sunlight from the canopy (uDapple, 0–1),
- * and wet soil (uWet, 0–1: darker and glossier, from rain or season).
+ * It also shows wet soil (uWet, 0–1: darker and glossier, from rain or
+ * season). Dappled sunlight comes from the light itself (canopyLight.js).
  */
 
 const VERTEX_DECLARATIONS = /* glsl */ `
@@ -17,9 +17,7 @@ varying vec3 vGrainPosition;
 
 const FRAGMENT_DECLARATIONS = /* glsl */ `
 uniform float uGrain;
-uniform float uDapple;
 uniform float uWet;
-uniform vec3 uSunDirection;
 varying vec3 vGrainPosition;
 
 float grainHash(vec2 p) {
@@ -43,14 +41,6 @@ float grainNoise(vec2 p) {
 // Two scales of grain: ~2 mm and ~0.7 mm (frequencies per metre).
 float grainField(vec2 p) {
   return grainNoise(p * 500.0) * 0.65 + grainNoise(p * 1400.0) * 0.35;
-}
-
-// Sun patches through the canopy: noise projected along the sun direction
-// (so bumps catch it like real light), ~20 cm and ~7 cm blobs, soft edges.
-float dappleField(vec3 world) {
-  vec2 p = world.xz - uSunDirection.xz / max(uSunDirection.y, 0.2) * world.y;
-  float n = grainNoise(p * 5.0 + 17.0) * 0.6 + grainNoise(p * 14.0 - 31.0) * 0.4;
-  return smoothstep(0.48, 0.66, n);
 }
 `
 
@@ -81,9 +71,6 @@ const GRAIN_COLOR = /* glsl */ `
   float footprint = length(fwidth(p)) * 500.0;
   float strength = uGrain * (1.0 - smoothstep(0.5, 1.5, footprint));
   diffuseColor.rgb *= 1.0 + (grainField(p) - 0.5) * 0.35 * strength;
-  // Dappled light: shaded under leaves, brighter in the sun patches.
-  float sunPatch = dappleField(vGrainPosition);
-  diffuseColor.rgb *= mix(1.0 - 0.45 * uDapple, 1.0 + 0.55 * uDapple, sunPatch);
   // Wet soil is darker.
   diffuseColor.rgb *= 1.0 - 0.38 * uWet;
 }
@@ -186,12 +173,10 @@ ${MORPH_POSITION}`
  * uHoleRadius) where the tiles are, so the coarse far ground can never poke
  * through the detailed ground.
  */
-export function createGroundMaterial(sunDirection) {
+export function createGroundMaterial() {
   const uniforms = {
     uGrain: { value: 1 },
-    uDapple: { value: 0.6 },
     uWet: { value: 0 },
-    uSunDirection: { value: sunDirection.clone().normalize() },
   }
   const morphUniforms = {
     ...uniforms,

@@ -11,6 +11,7 @@ import { createMossField } from './cover/mossField'
 import { scatterTile } from './cover/scatterTile'
 import { FOREST_COLORS, createForestSky } from './forest/sky'
 import { createDistantForest } from './forest/distantForest'
+import { installCanopyLight, setCanopyLight } from './forest/canopyLight'
 import { DEFAULT_HABITAT, sunDirectionOf } from './habitat/habitatFields'
 import { DEFAULT_PATHS, createAntTrail } from './paths/antTrail'
 import { createExclusions } from './paths/exclusionZones'
@@ -58,7 +59,9 @@ import './viewpoints/viewpoints.css'
 
 // haze and dapple are 0–100 (%).
 // distance: tiles loaded around you (detail fades out toward the edge).
-const DEFAULT_VIEW = { distance: 4, preview: 'off', haze: 50, dapple: 60 }
+// The canopy's leaf layer (for sun flecks), this far (m) above where crowns start.
+const CANOPY_ABOVE_CROWN_START = 1.9
+const DEFAULT_VIEW = { distance: 4, preview: 'off', haze: 50, dapple: 80 }
 // Exponential fog density (per metre) at 0% and 100% haze. At 50% the haze
 // is half-way to the sky colour about 3 m away and complete by ~10 m, well
 // before the far ground ends. Each viewpoint scales it (viewpointConfig.js).
@@ -87,6 +90,7 @@ const COVER_FADE = [-0.06, 0.1]
 
 // Fog that thins with height (the simulation's ground mist).
 installHeightFog()
+installCanopyLight()
 
 const isTyping = (event) => ['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)
 const prefersReducedMotion = () =>
@@ -114,7 +118,7 @@ function useDebounced(value, delay) {
 export default function MapScene({ intro }) {
   const mountRef = useRef(null)
   const tilesRef = useRef(null)
-  // Ground shader uniforms (grain, dappled light).
+  // Ground shader uniforms (grain, wetness).
   const groundUniformsRef = useRef(null)
   const viewRef = useRef(DEFAULT_VIEW)
   // The current viewpoint's id, for the key handler.
@@ -250,7 +254,7 @@ export default function MapScene({ intro }) {
     effects.setSize(mount.clientWidth, mount.clientHeight, renderer.getPixelRatio())
 
     const { material, depthMaterial, farMaterial, uniforms, morphUniforms, holeUniforms } =
-      createGroundMaterial(sunOffsetRef.current)
+      createGroundMaterial()
     groundUniformsRef.current = uniforms
 
     // Ground cover follows the tiles: scattered when a tile is built,
@@ -339,11 +343,12 @@ export default function MapScene({ intro }) {
     })
     controllerRef.current = controller
 
-    // Forest light: dim green light from the canopy above, a dim brown
-    // bounce from the soil, and a strong warm sun breaking through.
-    const hemisphere = new THREE.HemisphereLight('#62705a', '#3a2c20', 0.38)
+    // Forest light: green light from the canopy above (enough that shade
+    // keeps its detail), a brown bounce from the soil, and a strong warm sun
+    // breaking through the leaves (canopyLight.js).
+    const hemisphere = new THREE.HemisphereLight('#62705a', '#3a2c20', 1.2)
     scene.add(hemisphere)
-    const sun = new THREE.DirectionalLight('#ffd59a', 2.3)
+    const sun = new THREE.DirectionalLight('#ffd59a', 3.4)
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
     sun.shadow.bias = -0.00005
@@ -619,8 +624,12 @@ export default function MapScene({ intro }) {
       hemisphere.color.copy(env.hemiSky)
       hemisphere.groundColor.copy(env.hemiGround)
       hemisphere.intensity = env.hemiIntensity
-      uniforms.uSunDirection.value.copy(env.sunDirection)
-      uniforms.uDapple.value = (viewRef.current.dapple / 100) * env.dapple
+      // Sun through the canopy (off underground, where it would only
+      // speckle the roots).
+      setCanopyLight(
+        (viewRef.current.dapple / 100) * env.dapple * (1 - Math.max(xray.amount, crossSection.amount)),
+        crownSettings.crownStart + CANOPY_ABOVE_CROWN_START
+      )
       sky.setSunDirection(env.sunDirection)
       sky.setColors(env.sky)
       scene.background.copy(env.sky.horizon)

@@ -49,10 +49,10 @@ import { windVector } from '../../utils/windField'
 const START_SECONDS = 1.5
 const BASE = {
   light: new THREE.Color('#ffd59a'),
-  lightIntensity: 2.3,
+  lightIntensity: 3.4,
   hemiSky: new THREE.Color('#62705a'),
   hemiGround: new THREE.Color('#3a2c20'),
-  hemiIntensity: 0.38,
+  hemiIntensity: 1.2,
 }
 const LOW_SUN = new THREE.Color('#ff8a3d')
 const MOON = new THREE.Color('#a9bcff')
