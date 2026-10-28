@@ -2,19 +2,20 @@ import * as THREE from 'three'
 
 /**
  * Forest sky: a dome around the camera with a vertical gradient, from the
- * dark underside of the canopy overhead to warm golden haze at the
- * horizon, plus a glow where the sun breaks through. The fog uses the
+ * deep shadow of the canopy overhead to green haze at the horizon,
+ * plus a low glow where the sun breaks through behind the trees. The fog uses the
  * horizon colour, so distant ground melts into the same haze.
  *
  * Drawn first, without depth, so it sits behind everything at any scale.
  */
 
 export const FOREST_COLORS = {
-  // Dark warm brown-green overhead, olive, then golden haze at the horizon.
-  canopy: '#2b2a1e',
-  middle: '#454f2d',
-  horizon: '#9a8a4f',
-  sunGlow: '#f2c46e',
+  // Deep shadow under the canopy overhead, desaturated forest green below,
+  // and the green haze the fog shares; pale gold where the sun breaks through.
+  canopy: '#182117',
+  middle: '#20291e',
+  horizon: '#394735',
+  sunGlow: '#e8cf96',
 }
 
 const VERTEX = /* glsl */ `
@@ -37,9 +38,13 @@ const FRAGMENT = /* glsl */ `
     // Below the horizon stays at the horizon colour (hidden by ground/fog).
     vec3 color = mix(uHorizon, uMiddle, smoothstep(0.0, 0.25, up));
     color = mix(color, uCanopy, smoothstep(0.25, 0.85, up));
-    // A wide soft halo plus a brighter core where the sun breaks through.
-    float facing = max(dot(normalize(vDirection), uSunDirection), 0.0);
-    float glow = 0.45 * pow(facing, 3.0) + 0.35 * pow(facing, 16.0);
+    // Sunlight breaking through low behind the trees: the glow sits near the
+    // horizon in the sun's compass direction, whatever its height, a soft
+    // halo with a small brighter core that fades out overhead.
+    vec3 behind = normalize(vec3(uSunDirection.x, 0.12, uSunDirection.z));
+    float facing = max(dot(normalize(vDirection), behind), 0.0);
+    float low = 1.0 - smoothstep(0.0, 0.55, abs(up - 0.08));
+    float glow = (0.3 * pow(facing, 6.0) + 0.4 * pow(facing, 40.0)) * low;
     color = mix(color, uSunGlow, glow);
     gl_FragColor = vec4(color, 1.0);
     #include <colorspace_fragment>

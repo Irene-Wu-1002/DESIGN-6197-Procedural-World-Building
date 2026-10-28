@@ -48,11 +48,11 @@ import { windVector } from '../../utils/windField'
 
 const START_SECONDS = 1.5
 const BASE = {
-  light: new THREE.Color('#ffd28a'),
-  lightIntensity: 1.8,
-  hemiSky: new THREE.Color('#a89a62'),
+  light: new THREE.Color('#ffd59a'),
+  lightIntensity: 2.3,
+  hemiSky: new THREE.Color('#62705a'),
   hemiGround: new THREE.Color('#3a2c20'),
-  hemiIntensity: 0.6,
+  hemiIntensity: 0.38,
 }
 const LOW_SUN = new THREE.Color('#ff8a3d')
 const MOON = new THREE.Color('#a9bcff')
@@ -63,12 +63,12 @@ const NIGHT_HEMI = 0.1
 const palette = (colors) => Object.fromEntries(Object.entries(colors).map(([key, hex]) => [key, new THREE.Color(hex)]))
 const SKY = {
   day: palette(FOREST_COLORS),
-  golden: palette({ canopy: '#1d1a14', middle: '#4a3d2c', horizon: '#a8835a', sunGlow: '#ffb066' }),
+  golden: palette({ canopy: '#191c13', middle: '#2b2e1d', horizon: '#53532f', sunGlow: '#ffb466' }),
   night: palette({ canopy: '#04070c', middle: '#0a1018', horizon: '#141c26', sunGlow: '#3a4a66' }),
 }
 const SKY_KEYS = Object.keys(FOREST_COLORS)
-const OVERCAST = palette({ canopy: '#1a1f1d', middle: '#3b423e', horizon: '#7a807b', sunGlow: '#8a8d86' })
-const OVERCAST_HEMI = new THREE.Color('#7d8580')
+const OVERCAST = palette({ canopy: '#1a201b', middle: '#2c352c', horizon: '#4f5a4d', sunGlow: '#7c8478' })
+const OVERCAST_HEMI = new THREE.Color('#6c7468')
 const FLASH = new THREE.Color('#c9d4ff')
 // Ground mist at 100% fog (per metre), and extra haze at full humidity.
 const MIST = 4

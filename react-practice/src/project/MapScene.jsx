@@ -331,11 +331,11 @@ export default function MapScene({ intro }) {
     })
     controllerRef.current = controller
 
-    // Forest light: green-tinted light from the canopy above, a dim brown
-    // bounce from the soil, and a warm low sun breaking through.
-    const hemisphere = new THREE.HemisphereLight('#a89a62', '#3a2c20', 0.6)
+    // Forest light: dim green light from the canopy above, a dim brown
+    // bounce from the soil, and a strong warm sun breaking through.
+    const hemisphere = new THREE.HemisphereLight('#62705a', '#3a2c20', 0.38)
     scene.add(hemisphere)
-    const sun = new THREE.DirectionalLight('#ffd28a', 1.8)
+    const sun = new THREE.DirectionalLight('#ffd59a', 2.3)
     sun.castShadow = true
     sun.shadow.mapSize.set(2048, 2048)
     sun.shadow.bias = -0.00005
