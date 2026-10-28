@@ -36,7 +36,7 @@ const MODES = [
   },
   {
     name: 'Underground',
-    line: 'The surface turns see-through; the fungal network pulses with light below.',
+    line: 'The ground turns see-through or is cut open: roots, water and rising sap glow below.',
     swatch: ['#120f1a', '#7a5cff', '#b8f0ff'],
   },
 ]
@@ -77,12 +77,13 @@ const REFERENCES = [
   },
 ]
 
-// How the world is made: three inputs feed the placement rules, then the
-// floor grows and changes. Mirrors src/project (habitat, cover, terrain).
+// How the world is made: three inputs feed the placement rules, trees grow
+// from the water below, then the floor streams in and comes alive. Mirrors
+// src/project (terrain, habitat, cover, underground, ants, simulation).
 const SYSTEM_INPUTS = [
   ['Ground shape', 'layered noise: slopes, bumps and hollows, fine grain, the ant hill and tree trunks'],
-  ['Light and shade', 'which ground faces the sun, and where canopy gaps and trunks cast shadow'],
-  ['Moisture and wind', 'damp hollows, dry steep slopes, and the calm spots where leaves gather'],
+  ['Light', 'the sun’s height and direction, and the patches it throws through gaps in the canopy'],
+  ['Water and wind', 'a water table and pockets underground, damp hollows, dry slopes, and calm spots where leaves gather'],
 ]
 
 const SYSTEM_STEPS = [
@@ -91,17 +92,22 @@ const SYSTEM_STEPS = [
     'six kinds of ground cover (moss, mushrooms, flowers, leaves, twigs, pebbles), each scoring the ground by its own needs',
   ],
   [
+    'Trees grow from below',
+    'roots reach for the water, sap rises to the crowns, and each crown grows and leafs out by how much water it gets',
+  ],
+  [
     'The floor grows around you',
     'tiles are built as you move, all from one seed, so a spot looks the same each time you return',
   ],
   [
     'The forest floor comes alive',
-    'ant trails form, day turns to night, weather and seasons pass, seen through a person’s, a butterfly’s or an ant’s eyes',
+    'an ant colony lays its own trails, day turns to night, weather and seasons pass, seen through a person’s, a butterfly’s or an ant’s eyes',
   ],
 ]
 
 // Features: the questions behind the project, what the World page does
-// today, and where it could go next (docs/planning/backlog.md).
+// today (grouped by layer), and where it could go next
+// (docs/planning/backlog.md).
 const FEATURES = [
   {
     id: 'explore',
@@ -111,6 +117,7 @@ const FEATURES = [
       'Whether a patch of ground 20 cm across can feel like a landscape when seen from 5 mm up.',
       'How the senses shape a world: the same ground, read differently by a person, a butterfly and an ant.',
       'How small local rules, like where moss likes to grow or which way a scent trail leads, add up to a forest floor that feels alive.',
+      'How the hidden world below shapes the one above: water in the soil decides how the trees grow.',
       'An endless world that never repeats, yet is exactly the same each time you come back.',
     ],
   },
@@ -119,11 +126,12 @@ const FEATURES = [
     kicker: '02 · Now',
     title: 'Current scope',
     items: [
-      'An endless forest floor, streamed in 20 cm tiles from one seed.',
-      'Habitat fields (slope, hollows, sunlight, shade, wind, moisture) that decide where six kinds of ground cover settle.',
-      'A fly agaric landmark and an ant hill, with an ant trail that follows its own pheromone around obstacles.',
-      'Three bodies to see it through: a free camera, a butterfly, and an ant with compound eyes and a sense of scent.',
-      'A simulation of day and night, weather and the seasons.',
+      ['Ground', 'an endless forest floor streamed in 20 cm tiles from one seed, where habitat fields decide where six kinds of cover settle around a fly agaric and an ant hill.'],
+      ['Trees', 'trunks with branching crowns that grow and leaf out by the water their roots reach, and turn and drop their leaves in autumn.'],
+      ['Underground', 'root systems, soil water drifting toward the roots and sap rising to the leaves, seen in an X-ray or a cross-section view.'],
+      ['Life', 'an ant colony whose pheromone trails form, shift and fade on their own, with day and night, weather and the seasons.'],
+      ['Atmosphere', 'a green forest haze, layers of distant trees, and sunlight falling through gaps in the canopy.'],
+      ['Viewpoints', 'a free camera, a butterfly, and an ant with compound eyes and ultraviolet sight.'],
     ],
   },
   {
@@ -131,9 +139,8 @@ const FEATURES = [
     kicker: '03 · Next',
     title: 'Possible future directions',
     items: [
-      'The hidden world below: a glowing mycelium network and ant tunnels, shown in a cutaway view.',
-      'Smell made visible: a mode where the world dims and pheromone trails glow.',
-      'A living colony: many ants whose trails form and fade on their own.',
+      'The fungal network: glowing mycelium linking the roots, and ant tunnels under the hill.',
+      'Smell made visible: a mode where the world dims and only the pheromone trails glow.',
       'A macro-photography look: dew drops as lenses, light through thin leaves, shallow depth of field.',
       'The sound of the soil, and saving and sharing a favourite world.',
     ],
@@ -189,8 +196,9 @@ export default function ConceptPage({ onExplore }) {
             pebbles, fallen leaves, a clump of moss, a red fly agaric. At ant
             scale it becomes a whole landscape. Pebbles are boulders, moss is a
             dense forest, a dew drop is a lens the size of a car, and the
-            mushroom is a tower reaching into the light. Under the surface, a
-            fungal network and the ants' tunnels form a hidden second world.
+            mushroom is a tower reaching into the light. Under the surface,
+            tree roots, water in the soil and fungal threads form a hidden
+            second world.
           </p>
           <ul className="concept-scale" aria-label="Real sizes and how they feel to an ant">
             {SCALE_EXAMPLES.map(([object, real, feels]) => (
@@ -332,9 +340,15 @@ export default function ConceptPage({ onExplore }) {
                 <p className="concept-feature-kicker">{group.kicker}</p>
                 <h3>{group.title}</h3>
                 <ul>
-                  {group.items.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
+                  {group.items.map((item) =>
+                    Array.isArray(item) ? (
+                      <li key={item[0]}>
+                        <strong>{item[0]}:</strong> {item[1]}
+                      </li>
+                    ) : (
+                      <li key={item}>{item}</li>
+                    ),
+                  )}
                 </ul>
               </div>
             ))}
