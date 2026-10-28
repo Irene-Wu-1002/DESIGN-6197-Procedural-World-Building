@@ -148,10 +148,12 @@ Thousands of grass blades, moss strands, and pebbles are drawn as **instanced me
 - **White spots** from a cellular (Voronoi) noise shader on the red cap. Each spot is slightly raised.
 - **Seeded growth stages:** button → open cap → flat and old.
 
-### 5. Paths and agents (planned)
+### 5. Paths and agents (built)
 
-- **Ant agents** walk across the height field, preferring gentle slopes. They leave pheromone that fades over time; other ants are drawn to stronger trails, so paths form by themselves.
-- **Vector fields:** the slope of the height field and the pheromone strength combine into a direction field that the ants follow. This also links to the course topics on paths and vector fields.
+- **Ant agents** (`project/ants/colony.js`, Paths › Ant colony) leave the ant hill's entrances, wander until they find food (the fly agaric, nearby trunk bases, seeded foraging spots), and carry it home. Walking out they lay *home* scent; carrying food they lay *food* scent; each follows the other's. Deposits weaken with time since the trip began, so every trail grows stronger toward its source. Paths form by themselves, with no trail given in advance.
+- **Pheromone grid** (`pheromoneGrid.js`): two fields on a 3.6 m square at 1.2 cm around the hill, with a half-life (evaporation) and diffusion. It is the one piece of stored state in the world; everything else (food, entrances, the ants' random choices) comes from the seed, and the simulation runs in fixed 50 ms steps, so a seed always grows the same trails. A new world is pre-warmed with about 2.5 simulated minutes.
+- **Vector fields:** each ant steers with three sensors ahead (left, centre, right). A sensor's score is the scent on a log scale (Weber's law, so strong trails keep a clear centre line) minus the grade toward it, so trails settle on gentle slopes. Wander, scouts that ignore trails, a homing pull for ants going home, and food that runs out and grows back keep the colony exploring.
+- **Drawing:** the grid is uploaded as a texture and glows in the ground shader (green to food, violet to home) for the ant, or for every view with Show pheromones. The ants are one instanced mesh, tilted with the slope.
 - The ant-vision camera can **ride on one ant**, following its path and staying on the surface.
 
 ### 6. Mycelium network

@@ -219,6 +219,10 @@ export function createSimulation() {
     setTime(hours) {
       time = ((hours % 24) + 24) % 24
     },
+    /** How far the simulated environment has faded in (0–1, eased). */
+    get weight() {
+      return blend * blend * (3 - 2 * blend)
+    },
 
     /**
      * Advance by dt (s) and return the environment to show. staticSun: the

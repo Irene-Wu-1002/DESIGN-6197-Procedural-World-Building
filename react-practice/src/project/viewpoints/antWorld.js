@@ -214,6 +214,8 @@ export function createAntWorld(scene, morphUniforms) {
   let entrances = []
   let lastSampler = null
   const pheromones = { show: false, intensity: 0.7, width: 1 }
+  // Off while the ant colony's agents lay their own scent.
+  let ribbons = true
 
   const buildTrailGeometry = (sampler) => {
     const positions = []
@@ -405,6 +407,11 @@ export function createAntWorld(scene, morphUniforms) {
       uniforms.uHalfWidth.value = halfWidth
     },
 
+    /** Draw the seeded scent ribbons (off while the ant agents run). */
+    setRibbons(on) {
+      ribbons = on
+    },
+
     /** scent: 0–1 how much the viewer perceives; near: entrance index or -1. */
     update({ scent, time, near, fadeStart, fadeEnd }) {
       // Shown pheromones are seen by everyone; the ant smells them anyway.
@@ -414,7 +421,7 @@ export function createAntWorld(scene, morphUniforms) {
       uniforms.uNear.value = near
       uniforms.uFade.value.set(fadeStart, fadeEnd)
       // Trails cost nothing for bodies that can't smell them.
-      trailMesh.visible = scent > 0.002 && trails.length > 0
+      trailMesh.visible = ribbons && scent > 0.002 && trails.length > 0
       entranceMesh.visible = entrances.length > 0
     },
 

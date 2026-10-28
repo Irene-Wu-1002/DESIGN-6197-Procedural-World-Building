@@ -62,7 +62,9 @@ Three pages, none of them a week — the project cuts across all of them:
     moss patches, flower colonies, mushrooms, and the **fly agaric** landmark
     (lathe-shaped stem and cap, cellular-noise spots).
   - **Paths** — a worn ant trail from the ant hill to the fly agaric along a
-    Catmull-Rom spline, with pheromone controls and exclusion zones.
+    Catmull-Rom spline, with pheromone controls and exclusion zones, and an
+    **ant colony**: agents that find food on their own and lay two scents
+    (to food, to home) on a pheromone grid, so the trails form by themselves.
   - **View as** — **Free view** (orbit, pan, zoom), **Butterfly** (flies at
     about 60 cm, sees ultraviolet, chase or eye camera), and **Ant** (4 mm eye
     height, compound-eye vision, follows scent trails and enters tunnels).

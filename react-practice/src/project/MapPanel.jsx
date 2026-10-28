@@ -40,6 +40,9 @@ const isField = (preview) => HABITAT_FIELDS.some(([id]) => id === preview)
 const formatDegrees = (value) => `${value}°`
 const formatCm = (value) => `${value} cm`
 const formatTenthCm = (value) => `${value.toFixed(1)} cm`
+const formatSeconds = (value) => `${value} s`
+const formatTimes = (value) => `${value}×`
+const formatCount = (value) => `${value}`
 const FLOWER_DISTRIBUTIONS = [
   ['colonies', 'Colonies'],
   ['even', 'Even spacing'],
@@ -62,6 +65,15 @@ const FLOWER_DISTRIBUTIONS = [
  * onResetKeys({ ground, cover, view, habitat, paths, underground, crowns: [...keys] }) restores
  * just those settings to their defaults; onReset restores everything.
  */
+// One line on how the colony is doing.
+function colonyNote(colony) {
+  if (!colony?.on) return '\u00a0'
+  if (!colony.ready) return 'Mapping the ground…'
+  if (colony.warming) return 'Growing the first trails…'
+  const minutes = Math.floor(colony.time / 60)
+  return `${colony.out} out · ${colony.carrying} carrying · ${colony.delivered} loads home · ${minutes} min simulated`
+}
+
 export default function MapPanel({
   ground,
   view,
@@ -87,6 +99,7 @@ export default function MapPanel({
   onHabitatChange,
   onPathsChange,
   onShowZones,
+  onResetColony,
   onUndergroundChange,
   onCrownsChange,
   onRegrow,
@@ -489,6 +502,31 @@ export default function MapPanel({
             {pathSlider('Pheromone width', 'pheromoneWidth', 25, 300, 5)}
             <p className="section-note">
               Off: only the ant smells the trails. On: every view sees them.
+            </p>
+          </ControlCard>
+          <ControlCard title="Ant colony">
+            <EnableToggle label="Ant agents" checked={paths.antAgents} onChange={setPath('antAgents')} />
+            {paths.antAgents && (
+              <>
+                {pathSlider('Colony size', 'colonySize', 10, 400, 10, formatCount)}
+                {pathSlider('Simulation speed', 'simSpeed', 1, 20, 1, formatTimes)}
+                {pathSlider('Scent half-life', 'scentHalfLife', 5, 180, 5, formatSeconds)}
+                {pathSlider('Scent diffusion', 'diffusion', 0, 100, 5)}
+                {pathSlider('Sensor angle', 'sensorAngle', 10, 80, 5, formatDegrees)}
+                {pathSlider('Sensor distance', 'sensorDistance', 0.5, 6, 0.5, formatTenthCm)}
+                {pathSlider('Wander', 'wander', 0, 100, 5)}
+                {pathSlider('Slope avoidance', 'slopeAvoidance', 0, 100, 5)}
+                <button type="button" className="layer-add" onClick={onResetColony}>
+                  Restart colony
+                </button>
+                <p className="section-note" aria-live="polite">
+                  {colonyNote(status.colony)}
+                </p>
+              </>
+            )}
+            <p className="section-note">
+              On: ants find food on their own and the trails grow from the scent they lay (green
+              to food, violet to home). Off: fixed scent trails from the seed.
             </p>
           </ControlCard>
           <ControlCard title="Exclusion zones">

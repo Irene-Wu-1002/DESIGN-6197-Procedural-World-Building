@@ -29,6 +29,18 @@ export const DEFAULT_PATHS = {
   showPheromones: false,
   pheromoneIntensity: 70,
   pheromoneWidth: 100,
+  // Ant colony (ants/colony.js): agents on (off: the seeded scent ribbons),
+  // how many, simulation speed (×), scent half-life (s), diffusion (%),
+  // sensor angle (°) and distance (cm), wander and slope avoidance (%).
+  antAgents: true,
+  colonySize: 150,
+  simSpeed: 4,
+  scentHalfLife: 40,
+  diffusion: 5,
+  sensorAngle: 35,
+  sensorDistance: 2.5,
+  wander: 40,
+  slopeAvoidance: 50,
   // Exclusion zones (cm): beyond the mound's edge, around the agaric's
   // stem, around the start view, beyond the trail's edge, around tunnel
   // entrances; and the soft edge where small things fade back in.

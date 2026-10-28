@@ -39,6 +39,7 @@ import Embodiment from './viewpoints/Embodiment'
 import ViewAsPanel from './viewpoints/ViewAsPanel'
 import { createAirLayer } from './viewpoints/airLayer'
 import { createAntWorld } from './viewpoints/antWorld'
+import { createAntColony } from './ants/antColony'
 import { createBodies } from './viewpoints/bodies'
 import { createViewController } from './viewpoints/viewController'
 import { createViewEffects } from './viewpoints/viewEffects'
@@ -125,6 +126,7 @@ export default function MapScene({ intro }) {
   const viewIdRef = useRef(START_VIEW)
   const flyAgaricRef = useRef(null)
   const antWorldRef = useRef(null)
+  const antColonyRef = useRef(null)
   const farGroundRef = useRef(null)
   // Where the sun light sits relative to the area you see.
   const sunOffsetRef = useRef(sunOffsetOf(DEFAULT_HABITAT))
@@ -312,6 +314,9 @@ export default function MapScene({ intro }) {
     // scent trails, the air (spores, currents), and the three bodies.
     const antWorld = createAntWorld(scene, morphUniforms)
     antWorldRef.current = antWorld
+    // The ant agents and the pheromones they lay (glowing on the ground).
+    const antColony = createAntColony(scene, morphUniforms)
+    antColonyRef.current = antColony
     const airLayer = createAirLayer(scene)
     // The simulation's clock and the life it brings (butterflies, ants).
     const simulation = createSimulation()
@@ -450,7 +455,7 @@ export default function MapScene({ intro }) {
     // shown for a moment, so switching viewpoints never stalls on it.
     let warmed = false
     const warmUp = () => {
-      const hidden = [...bodies.groups, ...antWorld.meshes, ...airLayer.meshes, ...ambientLife.meshes, ...rain.meshes].filter(
+      const hidden = [...bodies.groups, ...antWorld.meshes, ...antColony.meshes, ...airLayer.meshes, ...ambientLife.meshes, ...rain.meshes].filter(
         (object) => !object.visible
       )
       for (const object of hidden) object.visible = true
@@ -666,9 +671,22 @@ export default function MapScene({ intro }) {
         activity: { butterflies: env.butterflies, ants: env.ants },
         anchor,
         sampler: tiles.sampler,
-        trails: antWorld.trails,
+        // The agents replace the ants that shuttle along the seeded trails.
+        trails: antColony.on ? [] : antWorld.trails,
         flowers: (x, z) =>
           coverContextRef.current.cover.flowers.on ? coverContextRef.current.flowers?.coloniesIn(x - 1, z - 1, x + 1, z + 1) : [],
+      })
+
+      // Outside the simulation the whole colony is out; inside it, the
+      // day and the weather decide.
+      antColony.update({
+        dt: delta,
+        time,
+        activity: 1 - simulation.weight + env.ants,
+        sampler: tiles.sampler,
+        scent: params.perception.scent,
+        fadeStart: morphStart + COVER_FADE[0],
+        fadeEnd: morphStart + COVER_FADE[1],
       })
 
       setShadowReach(params.shadowReach)
@@ -690,6 +708,7 @@ export default function MapScene({ intro }) {
         ...tiles.stats(),
         focus: [viewer.x, viewer.z],
         ground: tiles.heightAt(viewer.x, viewer.z),
+        colony: antColony.stats(),
       })
       setSimStatus(simulation.snapshot())
       setRootStats(rootRenderer.stats())
@@ -708,7 +727,7 @@ export default function MapScene({ intro }) {
     // For checks during development: the controller and how many tiles
     // have been built (switching viewpoints must not build any).
     if (import.meta.env.DEV) {
-      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, waterRenderer, crownRenderer }
+      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, antColony, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, waterRenderer, crownRenderer }
     }
 
     return () => {
@@ -729,6 +748,8 @@ export default function MapScene({ intro }) {
       if (import.meta.env.DEV) delete window.__umwelt
       controllerRef.current = null
       antWorld.dispose()
+      antColony.dispose()
+      antColonyRef.current = null
       airLayer.dispose()
       ambientLife.dispose()
       rain.dispose()
@@ -814,6 +835,13 @@ export default function MapScene({ intro }) {
       agaric: flyAgaric?.group.visible ? flyAgaric.spot(seed) : null,
       antTrail,
     })
+    antColonyRef.current?.place({
+      sampler: tiles?.sampler,
+      trunks: tiles?.trunks,
+      seed,
+      antHill,
+      agaric: flyAgaric?.group.visible ? flyAgaric.spot(seed) : null,
+    })
   }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, cover.flyAgaric, antTrail])
 
   // Pheromone settings change at once (no rebuild of the ground).
@@ -824,7 +852,26 @@ export default function MapScene({ intro }) {
       intensity: pheromoneIntensity / 100,
       width: pheromoneWidth / 100,
     })
+    antColonyRef.current?.setPheromones({ show: showPheromones, intensity: pheromoneIntensity / 100 })
   }, [showPheromones, pheromoneIntensity, pheromoneWidth])
+
+  // Ant colony settings change at once; the agents hide the seeded ribbons.
+  const { antAgents, colonySize, simSpeed, scentHalfLife, diffusion, sensorAngle, sensorDistance, wander, slopeAvoidance } =
+    paths
+  useEffect(() => {
+    antColonyRef.current?.setSettings({
+      antAgents,
+      colonySize,
+      simSpeed,
+      scentHalfLife,
+      diffusion,
+      sensorAngle,
+      sensorDistance,
+      wander,
+      slopeAvoidance,
+    })
+    antWorldRef.current?.setRibbons(!antAgents)
+  }, [antAgents, colonySize, simSpeed, scentHalfLife, diffusion, sensorAngle, sensorDistance, wander, slopeAvoidance])
 
   useEffect(() => {
     if (groundUniformsRef.current) groundUniformsRef.current.uGrain.value = grain / 100
@@ -1015,6 +1062,7 @@ export default function MapScene({ intro }) {
         zonesShowing={zoneFlash > 0}
         onPathsChange={(key, value) => setPaths((current) => ({ ...current, [key]: value }))}
         onShowZones={() => setZoneFlash((count) => count + 1)}
+        onResetColony={() => antColonyRef.current?.reset()}
         crowns={crowns}
         crownsSettling={['crownStart', 'crownSize', 'branchDensity'].some((key) => crowns[key] !== settledCrowns[key])}
         crownStats={crownStats}

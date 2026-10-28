@@ -109,6 +109,39 @@ const MORPH_POSITION = /* glsl */ `
 transformed.y = mix(transformed.y, aSmoothY, groundMorph);
 `
 
+// Tiles only: the ant colony's pheromones glowing on the soil
+// (ants/antColony.js). uPheromoneMap: red = food scent, green = home scent
+// over the square uPheromoneArea (min x, min z, size); uPheromoneStrength
+// is 0 when nobody smells them.
+const PHEROMONE_DECLARATIONS = /* glsl */ `
+uniform sampler2D uPheromoneMap;
+uniform vec3 uPheromoneArea;
+uniform float uPheromoneStrength;
+uniform float uPheromoneTime;
+uniform vec2 uPheromoneFade;
+`
+const PHEROMONE_GLOW = /* glsl */ `
+#include <emissivemap_fragment>
+if (uPheromoneStrength > 0.001) {
+  vec2 p = vGrainPosition.xz;
+  vec2 uv = (p - uPheromoneArea.xy) / uPheromoneArea.z;
+  if (all(greaterThan(uv, vec2(0.0))) && all(lessThan(uv, vec2(1.0)))) {
+    // Faint scent stays dark, so the busy trails stand out from the
+    // wandering around them.
+    vec2 scent = texture2D(uPheromoneMap, uv).rg;
+    float food = smoothstep(0.25, 0.9, scent.r);
+    float home = smoothstep(0.2, 0.9, scent.g);
+    // Soft ~2 mm droplets, and a slow pulse running outward from the nest
+    // (the grid's centre).
+    float drop = smoothstep(0.45, 0.75, grainNoise(p * 450.0));
+    float pulse = 0.7 + 0.3 * sin(distance(p, uPheromoneArea.xy + 0.5 * uPheromoneArea.z) * 90.0 - uPheromoneTime * 2.5);
+    float fade = 1.0 - smoothstep(uPheromoneFade.x, uPheromoneFade.y, distance(p, uMorphCenter));
+    vec3 glow = food * vec3(0.35, 0.95, 0.78) * 0.7 + home * vec3(0.7, 0.5, 1.0) * 0.3;
+    totalEmissiveRadiance += glow * (0.5 + 0.5 * drop) * pulse * fade * uPheromoneStrength;
+  }
+}
+`
+
 function patchGround(material, uniforms, { hole = false, morph = false }) {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms)
@@ -130,6 +163,11 @@ function patchGround(material, uniforms, { hole = false, morph = false }) {
       .replace('#include <normal_fragment_maps>', GRAIN_NORMAL)
       .replace('#include <color_fragment>', GRAIN_COLOR)
       .replace('#include <roughnessmap_fragment>', WET_ROUGHNESS)
+    if (morph) {
+      fragment = fragment
+        .replace('#include <common>', `#include <common>\nuniform vec2 uMorphCenter;\n${PHEROMONE_DECLARATIONS}`)
+        .replace('#include <emissivemap_fragment>', PHEROMONE_GLOW)
+    }
     if (hole) {
       fragment = fragment
         .replace('#include <common>', '#include <common>\nuniform vec2 uHoleCenter;\nuniform float uHoleRadius;')
@@ -182,6 +220,11 @@ export function createGroundMaterial() {
     ...uniforms,
     uMorphCenter: { value: new THREE.Vector2() },
     uMorphRange: { value: new THREE.Vector2(1, 2) },
+    uPheromoneMap: { value: null },
+    uPheromoneArea: { value: new THREE.Vector3(0, 0, 1) },
+    uPheromoneStrength: { value: 0 },
+    uPheromoneTime: { value: 0 },
+    uPheromoneFade: { value: new THREE.Vector2(1, 2) },
   }
   const holeUniforms = {
     ...uniforms,

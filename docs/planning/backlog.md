@@ -104,11 +104,15 @@ The hidden second world and the living paths across the surface. *(Milestones 6�
   walls (litter, humus, subsoil): the surface and the underground in one cut.
 - [ ] **Ant tunnels** — tube meshes along tunnel paths below the ant hill (the height
   field cannot make caves).
-- [ ] **Ant agents** — ants walk the height field and prefer gentle slopes.
-- [ ] **Pheromone grid** — trails that fade over time, stored in a sparse map per tile
-  because they are not seed-based and can't be regenerated.
-- [ ] **Vector field** — slope and pheromone strength combined into a direction field the
-  ants follow, so paths form on their own.
+- [x] **Ant agents** — up to 400 ants (`project/ants/colony.js`) leave the nest, search,
+  carry food home and go back out. Three sensors ahead score scent minus slope, so they
+  prefer gentle ground; 15% are scouts that ignore trails and walk straighter. Food
+  (the fly agaric, trunk bases, foraging spots) runs out and grows back, so trails shift.
+- [x] **Pheromone grid** — two scents (home, food) on a 3.6 m grid at 1.2 cm around the
+  ant hill, with evaporation and diffusion; one fixed grid instead of a sparse map per
+  tile, since the ants never leave it. Drawn as a glow in the ground shader.
+- [x] **Vector field** — built per ant from its sensors: scent (log scale) minus grade,
+  plus wander and a homing pull for ants going home.
 - [ ] **Ride an ant** — the ant camera follows one agent along its path.
 - [ ] **Walk the tunnels** — the ant walks through the real nest tunnels in X-ray instead
   of the fade between entrances.

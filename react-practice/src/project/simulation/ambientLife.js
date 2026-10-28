@@ -23,7 +23,7 @@ const rand = (i, k) => {
 }
 
 // The ant body as one geometry (for one instanced draw of every ant).
-function antGeometry() {
+export function antGeometry() {
   const material = new THREE.MeshStandardMaterial()
   const ant = createAnt(material)
   ant.group.updateMatrixWorld(true)
