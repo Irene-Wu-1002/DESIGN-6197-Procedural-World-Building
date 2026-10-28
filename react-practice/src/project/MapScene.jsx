@@ -10,6 +10,7 @@ import { createLeafField } from './cover/leafField'
 import { createMossField } from './cover/mossField'
 import { scatterTile } from './cover/scatterTile'
 import { FOREST_COLORS, createForestSky } from './forest/sky'
+import { createDistantForest } from './forest/distantForest'
 import { DEFAULT_HABITAT, sunDirectionOf } from './habitat/habitatFields'
 import { DEFAULT_PATHS, createAntTrail } from './paths/antTrail'
 import { createExclusions } from './paths/exclusionZones'
@@ -127,6 +128,7 @@ export default function MapScene({ intro }) {
   const overlayRef = useRef(null)
   const xrayRef = useRef(null)
   const crossSectionRef = useRef(null)
+  const distantForestRef = useRef(null)
   const treeWaterRef = useRef(null)
   // What the roots are grown from (the settled Underground settings).
   const rootSettingsRef = useRef(DEFAULT_UNDERGROUND)
@@ -256,6 +258,8 @@ export default function MapScene({ intro }) {
     const coverRenderer = createCoverRenderer(scene, morphUniforms)
     const trunkRenderer = createTrunkRenderer(scene)
     const crownRenderer = createCrownRenderer(scene)
+    const distantForest = createDistantForest(scene)
+    distantForestRef.current = distantForest
     // Underground: the see-through ground and the roots under the trunks.
     const xray = createXray(scene, [material, farMaterial])
     xrayRef.current = xray
@@ -294,6 +298,7 @@ export default function MapScene({ intro }) {
     })
     tilesRef.current = tiles
     tiles.setGround(DEFAULT_GROUND)
+    distantForest.setGround(DEFAULT_GROUND)
     world = createWorldQueries(tiles, () => (flyAgaric.group.visible ? flyAgaric.group.position : null))
     const farGround = createFarGround(farMaterial, holeUniforms)
     farGroundRef.current = farGround
@@ -509,6 +514,7 @@ export default function MapScene({ intro }) {
       const crownSettings = crownSettingsRef.current
       trunkRenderer.update(tiles.trunks, tiles.sampler, anchor.x, anchor.z, tiles.version, crownSettings.crownStart)
       const trunkSampler = tiles.sampler
+      distantForest.update(tiles.trunks, trunkSampler, tiles.version, camera.position, Math.max(xray.amount, crossSection.amount))
       const roots = rootSettingsRef.current
       treeWater.update({
         dt: delta,
@@ -726,6 +732,8 @@ export default function MapScene({ intro }) {
       coverRenderer.dispose()
       trunkRenderer.dispose()
       crownRenderer.dispose()
+      distantForest.dispose()
+      distantForestRef.current = null
       xray.dispose()
       xrayRef.current = null
       crossSection.dispose()
@@ -780,6 +788,7 @@ export default function MapScene({ intro }) {
   )
   useEffect(() => {
     tilesRef.current?.setGround({ seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, trail: antTrail })
+    distantForestRef.current?.setGround({ seed, trunks, trunkSpacing })
   }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, antTrail])
 
   // The fly agaric stands by the ant hill (only while there is one), and

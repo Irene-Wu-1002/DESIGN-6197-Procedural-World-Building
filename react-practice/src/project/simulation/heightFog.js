@@ -14,6 +14,9 @@ import * as THREE from 'three'
  * decode this; ordinary linear (near ≥ 0) and exponential fog behave
  * exactly as before, so other scenes are unaffected.
  *
+ * The haze thickens with the square of distance near the eye and only
+ * linearly further out: a clear foreground and a long, soft fade.
+ *
  * Mist is weighed at the average height of the camera and the surface,
  * relative to the forest floor (y ≈ 0): a cheap stand-in for integrating
  * along the view ray.
@@ -59,7 +62,11 @@ const FRAGMENT = /* glsl */ `
       float mistDensity = fract( fogFar ) * 10.0;
       float height = max( 0.5 * ( vFogHeight + cameraPosition.y ), 0.0 );
       float density = - fogNear + mistDensity * exp( - height / mistHeight );
-      fogFactor = 1.0 - exp( - density * density * vFogDepth * vFogDepth );
+      // Squared near the eye (the foreground stays clear), then a long
+      // linear tail, so layer after layer of trees fades out gradually
+      // instead of meeting a wall of haze.
+      float depth = density * vFogDepth;
+      fogFactor = 1.0 - exp( - depth * depth / ( 1.0 + depth ) );
     } else {
       fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
     }
