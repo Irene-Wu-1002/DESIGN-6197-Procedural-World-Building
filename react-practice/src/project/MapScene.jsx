@@ -85,6 +85,23 @@ const SHADOW_BASE = { reach: 0.6, far: 4 }
 const BUILD_BUDGET_MS = 6
 const STATUS_REFRESH_MS = 250
 const MAX_FRAME = 0.1
+// Frame pacing, to spare the battery: up to ACTIVE_FPS while the camera
+// moves or something is being changed, AMBIENT_FPS once everything has been
+// still for IDLE_AFTER_MS (the ants, wind and spores keep moving, just drawn
+// less often). On a 120 Hz display the browser offers twice as many frames.
+const ACTIVE_FPS = 60
+const AMBIENT_FPS = 30
+const IDLE_AFTER_MS = 1500
+// Frame callbacks arrive a little early or late; take one this much (ms)
+// before its slot rather than wait a whole extra frame.
+const FRAME_SLACK_MS = 2
+// The shadow map is redrawn when the sun or its shadow box moves (more than
+// this, m) or the ground changes, and otherwise at SHADOW_FPS for the
+// casters that move on their own (ants, swaying cover, growing crowns).
+const SHADOW_MOVE = 1e-4
+const SHADOW_FPS = 15
+// The camera counts as moving above this much (m, and quaternion dot).
+const CAMERA_STILL = { move: 1e-6, turn: 1e-9 }
 // Small cover shrinks away just as the ground starts to smooth (m, relative
 // to the start of the morph band).
 const COVER_FADE = [-0.06, 0.1]
@@ -244,6 +261,9 @@ export default function MapScene({ intro }) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFShadowMap
+    // Redrawn only when needed (the frame loop decides; see SHADOW_FPS).
+    renderer.shadowMap.autoUpdate = false
+    renderer.shadowMap.needsUpdate = true
     mount.appendChild(renderer.domElement)
 
     const startConfig = VIEWPOINTS[START_VIEW]
@@ -373,12 +393,25 @@ export default function MapScene({ intro }) {
       sun.shadow.camera.updateProjectionMatrix()
     }
 
+    // Activity, for frame pacing: input of any kind (on the scene or the
+    // panels) wakes the loop to ACTIVE_FPS, and so does a held key.
+    let lastActive = performance.now()
+    const wake = () => (lastActive = performance.now())
+    const heldKeys = new Set()
+    window.addEventListener('input', wake, true)
+    window.addEventListener('change', wake, true)
+
     // Keys: the controller decides what they mean for the current body.
     // Whether focus last moved by Tab (keyboard) rather than a click.
     let tabbed = false
-    const onPointerFocus = () => (tabbed = false)
+    const onPointerFocus = () => {
+      tabbed = false
+      wake()
+    }
     const onKeyDown = (event) => {
+      wake()
       if (isTyping(event)) return
+      heldKeys.add(event.code)
       if (event.code === 'Tab') tabbed = true
       if (event.code === 'KeyU' && !event.repeat) {
         // Surface → X-ray → cross-section → surface; the free view only.
@@ -401,8 +434,15 @@ export default function MapScene({ intro }) {
       }
       if (controller.key(event.code, true) && scrolls) event.preventDefault()
     }
-    const onKeyUp = (event) => controller.key(event.code, false)
-    const onBlur = () => controller.input.clear()
+    const onKeyUp = (event) => {
+      heldKeys.delete(event.code)
+      wake()
+      controller.key(event.code, false)
+    }
+    const onBlur = () => {
+      heldKeys.clear()
+      controller.input.clear()
+    }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('blur', onBlur)
@@ -422,6 +462,7 @@ export default function MapScene({ intro }) {
     }
     const onPointerMove = (event) => {
       if (event.pointerId !== dragPointer) return
+      wake()
       const dx = event.clientX - dragLast.x
       const dy = event.clientY - dragLast.y
       if (dragPan) controller.input.pan(dx, dy)
@@ -440,9 +481,11 @@ export default function MapScene({ intro }) {
     // Zoom with the wheel (the free camera); double-click re-centres it.
     const onWheel = (event) => {
       event.preventDefault()
+      wake()
       controller.input.zoom(event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY)
     }
     const onDoubleClick = (event) => {
+      wake()
       const rect = canvas.getBoundingClientRect()
       controller.focusAt(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -461,6 +504,8 @@ export default function MapScene({ intro }) {
         (object) => !object.visible
       )
       for (const object of hidden) object.visible = true
+      // Draw the shadow map too, so its shaders compile as well.
+      renderer.shadowMap.needsUpdate = true
       effects.warmUp(scene, camera)
       for (const object of hidden) object.visible = false
       warmed = true
@@ -491,9 +536,23 @@ export default function MapScene({ intro }) {
     // simulation runs after the crowns).
     let liveWetness = 0
     let liveAutumn = 0
+    // Where the camera and the sun were, to tell when they move.
+    const lastCamera = { position: camera.position.clone(), quaternion: camera.quaternion.clone() }
+    const lastShadow = { sun: new THREE.Vector3(), target: new THREE.Vector3(), version: null, time: -Infinity }
+    const easing = (amount) => amount > 0 && amount < 1
+    // Frames and shadow maps drawn (for checks during development).
+    let renders = 0
+    let shadowDraws = 0
     let frameId
     const animate = () => {
       const now = performance.now()
+      // Frame pacing (ACTIVE_FPS): a tick that comes too soon is skipped,
+      // and the canvas keeps its last picture.
+      const fps = heldKeys.size > 0 || now - lastActive < IDLE_AFTER_MS ? ACTIVE_FPS : AMBIENT_FPS
+      if (now - lastTime < 1000 / fps - FRAME_SLACK_MS) {
+        frameId = requestAnimationFrame(animate)
+        return
+      }
       const delta = Math.min((now - lastTime) / 1000, MAX_FRAME)
       lastTime = now
       time += delta
@@ -501,6 +560,14 @@ export default function MapScene({ intro }) {
       const frame = controller.update(delta)
       latestFrame = frame
       const { anchor, params } = frame
+      // Still moving after the input stopped (momentum, springs, a body
+      // switch) keeps the loop awake.
+      const cameraMoved =
+        camera.position.distanceToSquared(lastCamera.position) > CAMERA_STILL.move ** 2 ||
+        1 - Math.abs(camera.quaternion.dot(lastCamera.quaternion)) > CAMERA_STILL.turn
+      lastCamera.position.copy(camera.position)
+      lastCamera.quaternion.copy(camera.quaternion)
+      if (cameraMoved || controller.busy) wake()
 
       // Detail rings: the Detail distance setting plus what this viewpoint
       // adds (the butterfly sees much further than the ant). Near tiles are
@@ -509,12 +576,15 @@ export default function MapScene({ intro }) {
       const rings = { near: detail + frame.lod.near, outer: detail + frame.lod.middle }
       const distance = rings.outer
       tiles.update(anchor.x, anchor.z, rings, BUILD_BUDGET_MS)
+      const tileStats = tiles.stats()
+      // Tiles still building or re-scattering: keep drawing them in briskly.
+      if (tileStats.pending > 0 || tileStats.refreshing > 0) wake()
       if (farGround.update(tiles.sampler, tiles.habitat, anchor.x, anchor.z, distance, tiles.habitatKey)) {
         holeRadius = holeUniforms.uHoleRadius.value
       }
       // While tiles are still building (e.g. right after switching body),
       // don't cut the hole: the far ground, sunk below the tiles, fills in.
-      holeUniforms.uHoleRadius.value = tiles.stats().pending > 0 ? 0 : holeRadius
+      holeUniforms.uHoleRadius.value = tileStats.pending > 0 ? 0 : holeRadius
       // At the outer ring's edge tiles fade to the smooth surface (and small
       // cover shrinks away), so they meet the far ground without a seam.
       morphUniforms.uMorphCenter.value.set(anchor.x, anchor.z)
@@ -574,6 +644,8 @@ export default function MapScene({ intro }) {
         waterRenderer.field && { field: waterRenderer.field, key: waterRenderer.key }
       )
       trunkRenderer.setCutBuried(crossSection.active)
+      // Easing into or out of X-ray or the cross-section.
+      if (easing(xray.amount) || easing(crossSection.amount)) wake()
       sapFlow.update({
         dt: delta,
         on: crownSettings.sap && crownSettings.crowns,
@@ -697,28 +769,59 @@ export default function MapScene({ intro }) {
         .copy(sun.target.position)
         .addScaledVector(env.sunDirection, SUN_DISTANCE * sunScaleFor(params.shadowReach))
 
-      if (!warmed && tiles.stats().loaded > 0) warmUp()
+      // After the warm-up (which drew the hidden bodies' shadows), redraw.
+      if (!warmed && tileStats.loaded > 0) {
+        warmUp()
+        lastShadow.time = -Infinity
+      }
+      // Shadows (shadowMap.autoUpdate is off): redrawn when the sun or its
+      // shadow box moved or the ground changed, otherwise at SHADOW_FPS.
+      if (
+        sun.position.distanceToSquared(lastShadow.sun) > SHADOW_MOVE ** 2 ||
+        sun.target.position.distanceToSquared(lastShadow.target) > SHADOW_MOVE ** 2 ||
+        tiles.version !== lastShadow.version ||
+        now - lastShadow.time >= 1000 / SHADOW_FPS - FRAME_SLACK_MS
+      ) {
+        renderer.shadowMap.needsUpdate = true
+        lastShadow.sun.copy(sun.position)
+        lastShadow.target.copy(sun.target.position)
+        lastShadow.version = tiles.version
+        lastShadow.time = now
+        shadowDraws += 1
+      }
+
+      renders += 1
       effects.render(scene, camera, frame.effects, { prevMix: frame.prevMix, dark: frame.dark, grade: gradeOf() })
       writeOverlay(frame.embodiment)
       frameId = requestAnimationFrame(animate)
     }
     animate()
 
+    // Panel readouts: handed to React only when they changed. Most of the
+    // time they haven't, and a new object would re-render both panels.
+    const shown = {}
+    const show = (key, setter, value) => {
+      const text = JSON.stringify(value)
+      if (shown[key] === text) return
+      shown[key] = text
+      setter(value)
+    }
     const statusTimer = setInterval(() => {
       const viewer = latestFrame?.viewer ?? camera.position
-      setStatus({
+      show('status', setStatus, {
         ...tiles.stats(),
         focus: [viewer.x, viewer.z],
         ground: tiles.heightAt(viewer.x, viewer.z),
         colony: antColony.stats(),
       })
-      setSimStatus(simulation.snapshot())
-      setRootStats(rootRenderer.stats())
-      setWaterStats(waterRenderer.stats())
-      setCrownStats({ ...crownRenderer.stats(), tree: treeWater.nearest(viewer.x, viewer.z), sap: sapFlow.alive })
+      show('sim', setSimStatus, simulation.snapshot())
+      show('roots', setRootStats, rootRenderer.stats())
+      show('water', setWaterStats, waterRenderer.stats())
+      show('crowns', setCrownStats, { ...crownRenderer.stats(), tree: treeWater.nearest(viewer.x, viewer.z), sap: sapFlow.alive })
     }, STATUS_REFRESH_MS)
 
     const onResize = () => {
+      wake()
       camera.aspect = mount.clientWidth / mount.clientHeight
       camera.updateProjectionMatrix()
       renderer.setSize(mount.clientWidth, mount.clientHeight)
@@ -729,7 +832,7 @@ export default function MapScene({ intro }) {
     // For checks during development: the controller and how many tiles
     // have been built (switching viewpoints must not build any).
     if (import.meta.env.DEV) {
-      window.__umwelt = { controller, tiles, builds: () => builds, coverRenderer, flyAgaric, antWorld, antColony, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, waterRenderer, crownRenderer }
+      window.__umwelt = { controller, tiles, builds: () => builds, renders: () => ({ frames: renders, shadows: shadowDraws }),coverRenderer, flyAgaric, antWorld, antColony, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, waterRenderer, crownRenderer }
     }
 
     return () => {
@@ -740,6 +843,8 @@ export default function MapScene({ intro }) {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('pointerdown', onPointerFocus, true)
+      window.removeEventListener('input', wake, true)
+      window.removeEventListener('change', wake, true)
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointermove', onPointerMove)
       canvas.removeEventListener('pointerup', onPointerUp)
