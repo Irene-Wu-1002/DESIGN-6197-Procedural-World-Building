@@ -139,7 +139,7 @@ export default function ViewAsPanel({ ui, settings, onSelect, onSettingChange, o
             </button>
           )}
           <span className="view-as-key">
-            Switch: 1 2 3{hasModes ? ` · ${eyeView ? 'Chase' : 'Eye'} view: V` : config.body ? ' · Body: V' : ''}
+            Switch: 1 2 3{hasModes ? ` · ${eyeView ? 'Chase' : 'Eye'} view: V` : config.body ? ' · Body: V' : ''} · Hide panels: H
           </span>
         </div>
         <details className="view-as-options">

@@ -172,6 +172,8 @@ export default function MapScene({ intro }) {
   // Show exclusion zones: paints them for a few seconds (a counter, so a
   // second press restarts the timer).
   const [zoneFlash, setZoneFlash] = useState(0)
+  // H hides both side panels so the forest can be seen on its own.
+  const [panelsHidden, setPanelsHidden] = useState(false)
   // Underground: the X-ray view changes at once; roots regrow once the
   // root controls settle.
   const [underground, setUnderground] = useState(DEFAULT_UNDERGROUND)
@@ -994,8 +996,33 @@ export default function MapScene({ intro }) {
 
   const viewpoint = VIEWPOINTS[viewUi.id]
 
+  // H toggles the side panels. Sliders and checkboxes don't swallow it;
+  // only fields that take text do.
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.code !== 'KeyH' || event.repeat) return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target
+      const textField =
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
+        (target.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button'].includes(target.type))
+      if (textField) return
+      setPanelsHidden((hidden) => !hidden)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  // Don't leave focus on a control that just faded out (Space would press it).
+  useEffect(() => {
+    if (!panelsHidden) return
+    const active = document.activeElement
+    if (active?.closest?.('.map-left-column, .voxel-workspace > .noise-panel')) active.blur()
+  }, [panelsHidden])
+
   return (
-    <div className="voxel-workspace">
+    <div className={`voxel-workspace${panelsHidden ? ' panels-hidden' : ''}`}>
       <div
         className="scene map-scene"
         ref={mountRef}
@@ -1023,6 +1050,14 @@ export default function MapScene({ intro }) {
         {viewUi.label}
         {viewUi.hint ? `. ${viewUi.hint}` : ''}
       </p>
+      <p className="view-sr-only" aria-live="polite">
+        {panelsHidden ? 'Panels hidden. Press H to show them.' : ''}
+      </p>
+      {panelsHidden && (
+        <div className="panels-hidden-hint" aria-hidden="true">
+          <kbd>H</kbd> show panels
+        </div>
+      )}
       <div className="map-left-column">
         {intro}
         <ViewAsPanel

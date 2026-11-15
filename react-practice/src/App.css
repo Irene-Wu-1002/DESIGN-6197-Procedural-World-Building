@@ -486,6 +486,81 @@ input[type='checkbox'] {
   pointer-events: auto;
 }
 
+/* H hides both side panels: they fade and slide out toward their edge,
+   then turn invisible so Tab can't reach them. */
+.map-left-column,
+.voxel-workspace > .noise-panel {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease,
+    visibility 0s linear 0s;
+}
+
+.panels-hidden > .map-left-column,
+.panels-hidden > .noise-panel {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease,
+    visibility 0s linear 0.25s;
+}
+
+.panels-hidden > .map-left-column {
+  transform: translateX(-24px);
+}
+
+.panels-hidden > .noise-panel {
+  transform: translateX(24px);
+}
+
+.panels-hidden > .map-left-column > *,
+.panels-hidden > .noise-panel * {
+  pointer-events: none;
+}
+
+.panels-hidden-hint {
+  position: absolute;
+  top: var(--panel-top);
+  left: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(14, 16, 20, 0.55);
+  pointer-events: none;
+  animation: panels-hint-in 0.3s ease 0.15s both;
+}
+
+.panels-hidden-hint kbd {
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 10px;
+  text-align: center;
+  color: var(--text-strong);
+}
+
+@keyframes panels-hint-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panels-hidden > .map-left-column,
+  .panels-hidden > .noise-panel {
+    transform: none;
+  }
+}
+
 .map-left-column .view-as {
   position: static;
   flex: none;
