@@ -26,7 +26,6 @@ export default function WorldPage() {
       <LeafMark className="page-intro-mark" />
       <div>
         <p className="page-kicker">The forest floor</p>
-        <h1>Explore the World</h1>
         <p>
           A procedurally generated forest floor. Adjust the parameters and see how the world
           evolves in real time.
