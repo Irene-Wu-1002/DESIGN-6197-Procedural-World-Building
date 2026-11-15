@@ -463,8 +463,8 @@ input[type='checkbox'] {
   outline-offset: -2px;
 }
 
-/* Map: the left column holds View as and, below it, Simulation, which
-   takes the rest of the height and scrolls (so they never overlap). */
+/* Map: the left column holds the intro, View as and Simulation at their
+   full heights; the whole column scrolls as one when they don't fit. */
 .map-left-column {
   position: absolute;
   top: var(--panel-top);
@@ -475,6 +475,10 @@ input[type='checkbox'] {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
   pointer-events: none;
 }
 
@@ -489,8 +493,9 @@ input[type='checkbox'] {
 
 .noise-panel.sim-panel {
   position: static;
-  flex: 0 1 auto;
-  min-height: 0;
+  flex: none;
+  max-height: none;
+  overflow: visible;
   width: auto;
   padding: 12px 14px;
   gap: 12px;
