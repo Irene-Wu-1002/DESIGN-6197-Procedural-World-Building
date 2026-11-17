@@ -207,7 +207,7 @@ export function createEcology(initialSeed) {
         open,
         level: env.level,
         groundAt,
-        diffusion: settings.diffusion * 1e-4,
+        turbulence: settings.turbulence / 100,
       }
       while (particleClock >= TIME.particleStep) {
         particleClock -= TIME.particleStep

@@ -10,12 +10,19 @@ import { FLOWER_TYPES, SCENT, SCENT_NECTAR_DROP, SCENT_TYPES } from './ecologyCo
  * the end of its life, once it is too faint, or when it drifts out of the
  * active area (SCENT.simRadius from its centre).
  *
- * Movement: new position = old position + local wind velocity × dt, plus,
- * as a separate and small term, a random walk with the set diffusion
- * (m²/s). No other random velocity, so with no wind a plume only spreads
- * slowly around its flower and with wind it goes downwind at wind speed.
- * Wind applies to every particle each step, so a change of wind turns the
- * particles already in the air.
+ * Movement: new position = old position + (local wind + eddy) × dt. The
+ * wind is the mean flow; the eddy is a separate turbulence term: each
+ * particle carries its own fluctuating velocity (an Ornstein–Uhlenbeck
+ * process with memory SCENT.eddy.memory), whose spread is
+ *   σ = turbulence × (local wind speed + SCENT.eddy.stillAir)
+ * horizontally and SCENT.eddy.vertical × σ up and down. Because an eddy
+ * lasts a while, near the flower a plume widens in proportion to the
+ * distance it has travelled (a cone, wider in stronger wind), and further
+ * on like a random walk. The ground reflects particles (and their vertical
+ * eddy), so a plume spreads up and sideways but never into the soil. With
+ * turbulence 0 the particles move exactly with the wind. Wind applies to
+ * every particle each step, so a change of wind turns the particles
+ * already in the air.
  *
  * Emission: each open flower in the active area emits
  *   rate × openness × (1 − SCENT_NECTAR_DROP × (1 − nectar share))
@@ -44,6 +51,11 @@ export function createScentField(random) {
   const px = new Float32Array(capacity)
   const py = new Float32Array(capacity)
   const pz = new Float32Array(capacity)
+  // Each particle's eddy velocity (m/s), the turbulence on top of the wind.
+  const vx = new Float32Array(capacity)
+  const vy = new Float32Array(capacity)
+  const vz = new Float32Array(capacity)
+  let turbulence = 0
   const age = new Float32Array(capacity)
   const life = new Float32Array(capacity)
   const strength = new Float32Array(capacity)
@@ -76,6 +88,9 @@ export function createScentField(random) {
       px[i] = px[count]
       py[i] = py[count]
       pz[i] = pz[count]
+      vx[i] = vx[count]
+      vy[i] = vy[count]
+      vz[i] = vz[count]
       age[i] = age[count]
       life[i] = life[count]
       strength[i] = strength[count]
@@ -85,6 +100,8 @@ export function createScentField(random) {
     recycled += 1
   }
 
+  // The current step's context (spawn reads the wind from it).
+  let ctx0 = null
   const spawn = (x, y, z, scentType, s) => {
     if (count >= capacity) {
       dropped += 1
@@ -95,6 +112,13 @@ export function createScentField(random) {
     px[i] = x
     py[i] = y
     pz[i] = z
+    // The air at the flower is already turbulent: start with an eddy drawn
+    // from the steady spread there.
+    ctx0.wind.at(x, z, wind)
+    const sigma = turbulence * (Math.hypot(wind.x, wind.z) + SCENT.eddy.stillAir)
+    vx[i] = sigma * random.normal()
+    vy[i] = sigma * SCENT.eddy.vertical * random.normal()
+    vz[i] = sigma * random.normal()
     age[i] = 0
     life[i] = SCENT.lifetime[0] + (SCENT.lifetime[1] - SCENT.lifetime[0]) * random()
     strength[i] = s
@@ -135,12 +159,16 @@ export function createScentField(random) {
      * One step of dt seconds. ctx: { wind (windSampler), flowers (registry),
      * now (ecology time, s), center {x, z}, radius (emission range, m),
      * open [per flower type 0–1], level (season presence level), groundAt
-     * (x, z) → m, diffusion (m²/s) }.
+     * (x, z) → m, turbulence (0–1: eddy spread as a share of wind speed) }.
      */
     step(dt, ctx) {
       if (dt <= 0) return
+      ctx0 = ctx
+      turbulence = Math.max(ctx.turbulence ?? 0, 0)
       const decay = Math.pow(0.5, dt / SCENT.halfLife)
-      const sigma = Math.sqrt(2 * Math.max(ctx.diffusion, 0) * dt)
+      // Ornstein–Uhlenbeck: keep a of the eddy, refresh the rest (exact for dt).
+      const keep = Math.exp(-dt / SCENT.eddy.memory)
+      const fresh = Math.sqrt(1 - keep * keep)
       const reach2 = SCENT.simRadius * SCENT.simRadius
       const { center } = ctx
       for (let i = count - 1; i >= 0; i -= 1) {
@@ -151,15 +179,22 @@ export function createScentField(random) {
           continue
         }
         ctx.wind.at(px[i], pz[i], wind)
-        px[i] += wind.x * dt
-        pz[i] += wind.z * dt
-        if (sigma > 0) {
-          px[i] += sigma * random.normal()
-          py[i] += sigma * random.normal()
-          pz[i] += sigma * random.normal()
+        if (turbulence > 0) {
+          const sigma = turbulence * (Math.hypot(wind.x, wind.z) + SCENT.eddy.stillAir)
+          vx[i] = vx[i] * keep + sigma * fresh * random.normal()
+          vy[i] = vy[i] * keep + sigma * SCENT.eddy.vertical * fresh * random.normal()
+          vz[i] = vz[i] * keep + sigma * fresh * random.normal()
+        } else {
+          vx[i] = vy[i] = vz[i] = 0
         }
+        px[i] += (wind.x + vx[i]) * dt
+        py[i] += vy[i] * dt
+        pz[i] += (wind.z + vz[i]) * dt
         const floor = ctx.groundAt(px[i], pz[i]) + SCENT.floor
-        if (py[i] < floor) py[i] = floor + (floor - py[i])
+        if (py[i] < floor) {
+          py[i] = floor + (floor - py[i])
+          vy[i] = Math.abs(vy[i])
+        }
         const dx = px[i] - center.x
         const dz = pz[i] - center.z
         if (dx * dx + dz * dz > reach2) kill(i)

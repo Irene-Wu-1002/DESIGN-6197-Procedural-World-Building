@@ -88,13 +88,13 @@ export default function EcologyPanel({
               onChange={set('scentDisplay')}
             />
             <LabeledSlider
-              label="Scent spread (turbulence)"
-              value={settings.diffusion}
+              label="Air turbulence"
+              value={settings.turbulence}
               min={0}
-              max={30}
-              step={1}
-              format={(v) => `${(v / 10).toFixed(1)} cm²/s`}
-              onChange={set('diffusion')}
+              max={60}
+              step={5}
+              format={percent}
+              onChange={set('turbulence')}
             />
             <EnableToggle label="Show senses (developer)" checked={settings.debug} onChange={set('debug')} />
             {/* The numbers arrive with the next readout after switching on. */}
@@ -109,7 +109,9 @@ export default function EcologyPanel({
               </p>
             )}
             <p className="section-note">
-              Shown particles are only a display: the butterflies smell all of them either way. The
+              Turbulence is how strongly eddies stir the air, as a share of the wind speed: scent leaves a
+              flower as a narrow plume and opens into a cone downwind, wider and fainter with more
+              turbulence. Shown particles are only a display: the butterflies smell all of them either way. The
               overlay draws each butterfly&apos;s field of view, its two scent-sampling spheres (pink when it
               smells a flower) and its target.
             </p>

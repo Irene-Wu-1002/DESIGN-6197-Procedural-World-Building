@@ -37,8 +37,13 @@ So a drained flower smells 30% weaker. The UV pattern is drawn only for the view
 **Scent.** Particles move by:
 
 ```
-pos += localWind × dt + √(2·D·dt)·noise
+pos += (localWind + eddy) × dt
+σ_eddy = turbulence × (|localWind| + 0.1 m/s)
 ```
+
+The eddy is each particle's own fluctuating velocity, an Ornstein–Uhlenbeck process with a 0.6 s memory. Vertical eddies are half as strong as horizontal ones, and the ground reflects particles.
+
+So a plume leaves the flower narrow and opens into a cone downwind. The cone is wider in stronger wind and with more turbulence (Advanced › Air turbulence, default 25%). At 0% turbulence, particles move exactly with the wind.
 
 They run at a fixed 30 Hz. Strength halves every 3 s, and particles are recycled when weak, old or out of range. When the pool (9000) would overflow, each flower emits fewer particles that each carry more strength, so the concentration stays the same. Particles carry a scent type but **no source id**. The "show scent" toggle and the "particles shown" share only change what is drawn.
 

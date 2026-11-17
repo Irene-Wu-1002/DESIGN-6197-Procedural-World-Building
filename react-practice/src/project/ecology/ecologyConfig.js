@@ -138,9 +138,11 @@ export const SCENT = {
   // Recycled below this strength or this far (m) from the active area.
   minStrength: 0.03,
   simRadius: 2.8,
-  // Turbulent spread (m²/s), a random walk on top of the wind; low by
-  // default so the wind clearly carries the plume.
-  diffusion: 0.0008,
+  // Turbulence (scentField): eddy velocity spread = turbulence setting ×
+  // (local wind speed + stillAir, m/s), vertical share of that, and how
+  // long an eddy lasts (s). Near the ground eddies are small and short, and
+  // up-and-down mixing is weaker than sideways.
+  eddy: { stillAir: 0.1, vertical: 0.5, memory: 0.6 },
   // Particles never sink below this height above the ground (m).
   floor: 0.004,
   // Spatial hash for sniffing (m) and the antenna sampling radius (m). The
@@ -295,10 +297,10 @@ export const LOD = { near: 2.5, far: 6, nearStep: 1 / 60, midStep: 1 / 20, farSt
 export const DEFAULT_ECOLOGY = {
   butterflies: 6,
   showScent: true,
-  // Advanced: share of scent particles drawn, turbulent spread, and the
-  // development overlay (senses, targets, numbers).
+  // Advanced: share of scent particles drawn, turbulence (% of the wind
+  // speed as eddies), and the development overlay (senses, targets, numbers).
   scentDisplay: 70,
-  diffusion: 8,
+  turbulence: 25,
   debug: false,
 }
 
