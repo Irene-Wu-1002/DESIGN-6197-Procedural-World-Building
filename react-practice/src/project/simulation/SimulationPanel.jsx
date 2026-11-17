@@ -19,9 +19,10 @@ const formatDegrees = (value) => `${Math.round(value)}°`
 /**
  * The Simulation panel: Start / End, live readouts, and the simulation's
  * settings by tab. settings: { day, weather, season }; status: the engine's
- * snapshot (running, blend, time, sun, temperatures, activity, weather).
+ * snapshot (running, blend, time, sun, temperatures, activity, weather);
+ * butterflies: the ecology's counts ({ butterflies, flying }) or null.
  */
-export default function SimulationPanel({ settings, status, onChange, onStart, onEnd, onTime }) {
+export default function SimulationPanel({ settings, status, onChange, onStart, onEnd, onTime, butterflies = null }) {
   const [open, setOpen] = useState(true)
   const [tab, setTab] = useState('day')
   const running = status.running
@@ -74,7 +75,7 @@ export default function SimulationPanel({ settings, status, onChange, onStart, o
       <p className="section-note sim-readout" aria-live="polite">
         {running
           ? `${formatClock(status.time)} · air ${status.air.toFixed(0)} °C · ground ${status.surface.toFixed(0)} °C · ` +
-            `butterflies ${Math.round(status.butterflies * 100)}% · ants ${Math.round(status.ants * 100)}%`
+            `${butterflies ? `butterflies ${butterflies.flying} of ${butterflies.butterflies} aloft` : 'butterflies –'} · ants ${Math.round(status.ants * 100)}%`
           : 'Not running. Set it up, then press Start; End fades back to the usual forest.'}
       </p>
       {open && (
@@ -167,8 +168,9 @@ export default function SimulationPanel({ settings, status, onChange, onStart, o
               </ControlCard>
               <p className="section-note">
                 Weather moves toward the chosen values over the transition. Rain duration is in simulated
-                minutes; when it ends the weather turns to after rain. Wind is visual only (flowers sway, rain
-                slants).
+                minutes; when it ends the weather turns to after rain. Wind sways the flowers, slants the
+                rain, carries the flowers&apos; scent and pushes the butterflies; rain and strong wind send
+                them to shelter.
               </p>
             </>
           )}
@@ -215,8 +217,9 @@ export default function SimulationPanel({ settings, status, onChange, onStart, o
                 )}
               </ControlCard>
               <p className="section-note">
-                Day length is real minutes per day at 1×. Flowers close in the dark; butterflies fly in
-                warm daylight; ants forage when it's mild, mostly mornings and evenings.
+                Day length is real minutes per day at 1×. Flowers close in the dark; butterflies warm up
+                in the sun, fly in daylight and roost at night (they move in real time: 4× and 20× only
+                speed the day); ants forage when it&apos;s mild, mostly mornings and evenings.
               </p>
             </>
           )}

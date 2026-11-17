@@ -409,3 +409,60 @@
     }
   }
 }
+
+/* --- Following a butterfly: what it's doing, and the way back. */
+.eco-follow {
+  position: absolute;
+  /* Below the site header. */
+  top: 84px;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 5px 6px 5px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-strong);
+  background: rgba(14, 16, 20, 0.7);
+  backdrop-filter: blur(8px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.eco-follow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eco-follow button {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.eco-follow button:hover,
+.eco-follow button:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.eco-follow kbd {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.eco-debug {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Flowers & butterflies: Follow / Next is the main action. */
+.panel-actions.eco-actions {
+  grid-template-columns: 3fr 2fr;
+}

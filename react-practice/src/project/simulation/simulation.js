@@ -32,7 +32,10 @@ import { windVector } from '../../utils/windField'
  * middle, horizon, sunGlow }, dapple (0–1 share of the dappled light),
  * flowerOpen, butterflies, ants (activity 0–1), haze (× the usual haze),
  * mist (ground mist per metre), mistHeight (m), rain, wetness, wind (0–1),
- * windDirection [x, z] }.
+ * windDirection [x, z], and for the flower and butterfly ecology:
+ * brightness (0–1, what flowers open to), daylight (0–1), directSun (0–1,
+ * direct sun reaching open ground through the clouds), air (°C) }. Outside
+ * the simulation these are a mild, bright afternoon (STATIC).
  *
  * The season (season.js) sets day length and sun warmth, soil wetness,
  * misty mornings, leaf colours and how much of each kind of cover shows:
@@ -73,8 +76,12 @@ const FLASH = new THREE.Color('#c9d4ff')
 // Ground mist at 100% fog (per metre), and extra haze at full humidity.
 const MIST = 4
 const HUMID_HAZE = 1.2
-// Wind direction for rain slant (degrees it comes from, as in the Habitat tab).
+// Wind direction for rain slant (degrees it comes from, as in the Habitat
+// tab; setWindFrom follows the Habitat setting).
 const WIND_FROM = 45
+// The ecology's light and warmth while the simulation is off: the Habitat
+// tab's sun (sin 47°) on a mild afternoon.
+const STATIC = { brightness: 1, daylight: 1, directSun: 0.73, air: 18 }
 
 const makeEnvironment = () => ({
   sunDirection: new THREE.Vector3(),
@@ -95,6 +102,10 @@ const makeEnvironment = () => ({
   wetness: 0,
   wind: 0,
   windDirection: windVector(WIND_FROM),
+  brightness: STATIC.brightness,
+  daylight: STATIC.daylight,
+  directSun: STATIC.directSun,
+  air: STATIC.air,
   levels: { leaves: 1 / SEASON_HEADROOM, flowers: 1 / SEASON_HEADROOM, mushrooms: 1 / SEASON_HEADROOM, moss: 1 / SEASON_HEADROOM },
   autumn: { value: 0, weight: 0 },
 })
@@ -180,6 +191,10 @@ export function createSimulation() {
     const surface = temperature.surface - 3 * w.rain
     const brightness = daylight * sunScale * (1 - 0.55 * cloud)
     simulated.flowerOpen = flowerOpening(brightness) * (1 - 0.7 * w.rain)
+    simulated.brightness = brightness
+    simulated.daylight = daylight
+    simulated.directSun = sunUp * sunScale * (1 - 0.8 * cloud)
+    simulated.air = air
     simulated.butterflies = butterflyActivity(daylight, surface) * (1 - w.rain) * (1 - 0.8 * Math.max(w.wind - 0.5, 0) * 2)
     simulated.ants = antActivity(daylight, surface) * (1 - 0.85 * w.rain)
     simulated.haze = 1 + HUMID_HAZE * Math.max(w.humidity - 0.5, 0) * 2
@@ -209,6 +224,21 @@ export function createSimulation() {
     /** New settings ({ day }); takes effect next frame. */
     setSettings(next) {
       settings = next
+    },
+    /** Where the wind comes from (degrees, the Habitat setting). */
+    setWindFrom(degrees) {
+      const [x, z] = windVector(degrees)
+      simulated.windDirection[0] = out.windDirection[0] = x
+      simulated.windDirection[1] = out.windDirection[1] = z
+    },
+    /**
+     * How fast the animals' time runs per real second: 1 outside the
+     * simulation, 0 while paused, the clock speed up to 1× (faster clocks
+     * only speed the day, not the animals; ecology/ecologyConfig.js TIME).
+     */
+    get timeScale() {
+      if (!running) return 1
+      return settings.day.playing ? Math.min(settings.day.speed, 1) : 0
     },
     start() {
       running = true
@@ -256,6 +286,10 @@ export function createSimulation() {
       out.rain = simulated.rain * k
       out.wetness = simulated.wetness * k
       out.wind = simulated.wind * k
+      out.brightness = lerp(STATIC.brightness, simulated.brightness, k)
+      out.daylight = lerp(STATIC.daylight, simulated.daylight, k)
+      out.directSun = lerp(STATIC.directSun, simulated.directSun, k)
+      out.air = lerp(STATIC.air, simulated.air, k)
       // Season levels for the cover and leaf colours, faded with the rest.
       const weight = seasonNow.weight * k
       for (const kind of COVER_KINDS) {

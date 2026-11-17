@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { TILE_SIZE } from '../terrain/heightField'
+import { FLOWER_TYPES } from '../ecology/ecologyConfig'
 import {
-  FLOWER_COLORS,
   FLOWER_STEM_COLOR,
   LEAF_COLORS,
   MOSS_COLORS,
@@ -41,7 +41,7 @@ const palettes = {
   mushroom: MUSHROOM_COLORS.map(toLinear),
   twig: TWIG_COLORS.map(toLinear),
   stem: toLinear(STEM_COLOR),
-  flower: FLOWER_COLORS.map(toLinear),
+  flowers: FLOWER_TYPES.map((type) => type.colors.map(toLinear)),
   flowerStem: toLinear(FLOWER_STEM_COLOR),
 }
 
@@ -134,14 +134,20 @@ const MOSS_COLOR = /* glsl */ `
 }
 `
 
-// Flowers only: yellow stamens, and the nectar guides that only
-// ultraviolet vision sees (uUV, 0–1): a dark violet bullseye at the base of
-// the petals around bright, UV-reflecting tips.
-// Petals fold up into a bud as the light fades (uOpen 1 open – 0 closed):
-// each petal is pulled in and its tip lifted, more toward the tip.
+// Flowers only: yellow stamens (or a pale centre / style), a green calyx,
+// and the nectar guides that only ultraviolet vision sees (uUV, 0–1). Each
+// flower type has its own pattern (FLOWER_TYPES[k].uv): a dark violet
+// bullseye (anemone), dark rays down the tube (bellflower), a bright ring
+// around a dark eye (campion). These are drawn for the viewer, a
+// translation of what a butterfly's eye may pick out; they don't say how
+// much nectar a flower holds.
+// Petals fold up into a bud as the light fades (uOpen 1 open – 0 closed;
+// each flower type has its own): each petal is pulled in and its tip
+// lifted, more toward the tip.
 const FLOWER_VERTEX = /* glsl */ `
 #include <begin_vertex>
 vPetal = aPetal;
+vPetalXZ = position.xz;
 if (aPetal >= 0.0) {
   float closed = 1.0 - uOpen;
   float reach = max(length(transformed.xz) - 0.012, 0.0);
@@ -152,24 +158,39 @@ if (aPetal >= 0.0) {
 const FLOWER_FRAGMENT_DECLARATIONS = /* glsl */ `
 uniform float uUV;
 varying float vPetal;
+varying vec2 vPetalXZ;
 `
-const FLOWER_COLOR = /* glsl */ `
+const UV_PATTERNS = {
+  bullseye: /* glsl */ `
+    float guide = 1.0 - smoothstep(0.25, 0.6, vPetal);
+    float bright = smoothstep(0.5, 0.95, vPetal);`,
+  rays: /* glsl */ `
+    float angle = atan(vPetalXZ.y, vPetalXZ.x);
+    float guide = smoothstep(0.55, 0.9, cos(angle * 10.0)) * (1.0 - smoothstep(0.55, 0.9, vPetal));
+    float bright = smoothstep(0.75, 1.0, vPetal);`,
+  ring: /* glsl */ `
+    float guide = 1.0 - smoothstep(0.12, 0.3, vPetal);
+    float bright = smoothstep(0.3, 0.45, vPetal) * (1.0 - smoothstep(0.6, 0.75, vPetal)) * 1.5;`,
+}
+const flowerColor = (pattern) => /* glsl */ `
 #include <color_fragment>
-if (vPetal < 0.0) {
+if (vPetal < -1.5) {
+  diffuseColor.rgb = vec3(0.3, 0.42, 0.17);
+} else if (vPetal < 0.0) {
   diffuseColor.rgb = mix(vec3(0.95, 0.74, 0.16), vec3(0.32, 0.16, 0.5), uUV * 0.6);
 } else {
-  float guide = 1.0 - smoothstep(0.25, 0.6, vPetal);
+  ${UV_PATTERNS[pattern] ?? UV_PATTERNS.bullseye}
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.24, 0.1, 0.52), guide * uUV * 0.85);
-  diffuseColor.rgb *= 1.0 + 0.4 * uUV * smoothstep(0.5, 0.95, vPetal);
+  diffuseColor.rgb *= 1.0 + 0.4 * uUV * bright;
 }
 `
 
 /**
  * level: this kind's season level ({ value }); leaf: two-colour leaves.
  */
-function applyFade(material, uniforms, key, { moss = false, flower = false, sway = false, level, leaf = false } = {}) {
+function applyFade(material, uniforms, key, { moss = false, flower = null, sway = false, level, leaf = false, open = null } = {}) {
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms, { uPresenceLevel: level })
+    Object.assign(shader.uniforms, uniforms, { uPresenceLevel: level }, open ? { uOpen: open } : {})
     let vertex = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${FADE_DECLARATIONS}`)
       .replace('#include <begin_vertex>', FADE_VERTEX)
@@ -196,11 +217,14 @@ function applyFade(material, uniforms, key, { moss = false, flower = false, sway
     }
     if (flower) {
       vertex = vertex
-        .replace('#include <common>', '#include <common>\nattribute float aPetal;\nvarying float vPetal;\nuniform float uOpen;')
+        .replace(
+          '#include <common>',
+          '#include <common>\nattribute float aPetal;\nvarying float vPetal;\nvarying vec2 vPetalXZ;\nuniform float uOpen;'
+        )
         .replace('#include <begin_vertex>', FLOWER_VERTEX)
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${FLOWER_FRAGMENT_DECLARATIONS}`)
-        .replace('#include <color_fragment>', FLOWER_COLOR)
+        .replace('#include <color_fragment>', flowerColor(flower))
     }
     shader.vertexShader = vertex
   }
@@ -225,7 +249,8 @@ export function createCoverRenderer(scene, morphUniforms) {
     // 0 shown – 1 gone (the underground X-ray view).
     uHide: { value: 0 },
     uUV: { value: 0 },
-    // Flowers: 1 open – 0 closed (the day cycle closes them at night).
+    // Flowers: 1 open – 0 closed (the day cycle closes them at night); each
+    // flower type has its own (openUniforms below), this one is a default.
     uOpen: { value: 1 },
     // Weather: wind (sway) and wetness, and the clock for the sway.
     uWind: { value: 0 },
@@ -247,6 +272,7 @@ export function createCoverRenderer(scene, morphUniforms) {
   const leafGeometries = createLeafGeometries()
   const mushroom = createMushroomGeometries()
   const flower = createFlowerGeometries()
+  const openUniforms = FLOWER_TYPES.map(() => ({ value: 1 }))
   // Shadows follow the same fades, so one depth material per kind.
   const depthMaterials = Object.fromEntries(
     Object.entries(levels).map(([kind, level]) => [
@@ -343,19 +369,22 @@ export function createCoverRenderer(scene, morphUniforms) {
       items: (tile) => tile.flowers ?? [],
       color: (item, out) => out.copy(palettes.flowerStem).multiplyScalar(0.85 + 0.3 * item.shade),
     },
-    {
-      id: 'flowerHead',
-      geometry: flower.head,
+    // One head per flower type, each opening on its own.
+    ...FLOWER_TYPES.map((type, species) => ({
+      id: `flowerHead${species}`,
+      geometry: flower.heads[species],
       kind: 'flowers',
-      material: standard({ roughness: 0.55, side: THREE.DoubleSide }, 'cover-flower-head', 'flowers', {
-        flower: true,
+      material: standard({ roughness: 0.55, side: THREE.DoubleSide }, `cover-flower-head-${type.id}`, 'flowers', {
+        flower: type.uv,
         sway: true,
+        open: openUniforms[species],
       }),
       capacity: 3000,
       castShadow: true,
-      items: (tile) => tile.flowers ?? [],
-      color: (item, out) => out.copy(palettes.flower[item.palette]).multiplyScalar(0.92 + 0.08 * item.shade),
-    },
+      items: (tile) => (tile.flowers ?? []).filter((item) => (item.species ?? 0) === species),
+      color: (item, out) =>
+        out.copy(palettes.flowers[species][item.palette % palettes.flowers[species].length]).multiplyScalar(0.92 + 0.08 * item.shade),
+    })),
   ]
 
   for (const part of parts) {
@@ -457,9 +486,14 @@ export function createCoverRenderer(scene, morphUniforms) {
       uniforms.uWet.value = wet
       uniforms.uTime.value = time
     },
-    /** How open the flowers are (0 closed – 1 open). */
+    /**
+     * How open the flowers are (0 closed – 1 open): one value for all, or
+     * one per flower type (FLOWER_TYPES order).
+     */
     setFlowerOpen(value) {
-      uniforms.uOpen.value = value
+      openUniforms.forEach((uniform, k) => {
+        uniform.value = Array.isArray(value) ? value[k] ?? 1 : value
+      })
     },
     /** Shrink all cover away (0 shown – 1 gone), for the underground X-ray. */
     setHidden(value) {

@@ -115,6 +115,8 @@ export function createButterfly(material) {
   }
   return {
     group,
+    // The two wing pivots (rotation.z opens / closes them; side ±1).
+    wings,
     geometries: [plane, sphere, cylinder],
     extra: [wingMaterial, texture],
     // beat: 1 is cruising; higher climbs (faster, fuller strokes), lower

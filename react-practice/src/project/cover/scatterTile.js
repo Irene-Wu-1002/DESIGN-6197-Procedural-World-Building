@@ -1,7 +1,8 @@
 import { createRandom } from '../../utils/distributions'
 import { TILE_SIZE, hash } from '../terrain/heightField'
-import { COVER_RULES, FLOWER_COLORS, HABITAT_NORMAL, MOSS_COLORS, SEASON_HEADROOM } from './coverRules'
+import { COVER_RULES, HABITAT_NORMAL, MOSS_COLORS, SEASON_HEADROOM } from './coverRules'
 import { FULL_DENSITY } from './flowerField'
+import { FLOWER_TYPES } from '../ecology/ecologyConfig'
 import { scatterLeaves } from './scatterLeaves'
 
 /**
@@ -338,7 +339,7 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
     })
   }
 
-  // --- Flowers (wood anemones): colonies (flowerField.js), or evenly
+  // --- Flowers (anemones, bellflowers, campions): colonies (flowerField.js), or evenly
   // spaced / fully random where the ground suits them. Placed last, so
   // they never move anything else.
   if (cover.flowers.on && cover.flowers.amount > 0 && flowers) {
@@ -350,8 +351,10 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
         ? flowers.suitability({ sunlight: g.sunlight, moisture: g.moisture, slope: g.habitatSlope })
         : 0
     // h: seven 0–1 numbers fixed for this flower (size, height, look);
-    // presence: the season level at which it appears.
-    const addFlower = (x, z, tone, h, presence) => {
+    // presence: the season level at which it appears; species: its flower
+    // type (index into FLOWER_TYPES). id: stable per type and position, so
+    // the ecology keeps its nectar when the tile is rebuilt or comes back.
+    const addFlower = (x, z, tone, h, presence, species) => {
       const g = ground(x, z)
       // Fade near the zones and on the trail, decided by position (the same
       // whichever tile places it).
@@ -373,10 +376,12 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
         normal: [lean, 1, (h[4] - 0.5) * 0.3],
         scale: [middle * size, height * size, middle * size],
         // Each colony (or area) has a tone; colour variation mixes in others.
-        palette: h[5] < colorVariation * 0.7 ? Math.floor(h[6] * FLOWER_COLORS.length) : tone,
+        palette: h[5] < colorVariation * 0.7 ? Math.floor(h[6] * FLOWER_TYPES[species].colors.length) : tone,
         shade: 0.5 + (h[6] - 0.5) * colorVariation,
         variant: 0,
         presence,
+        species,
+        id: `${species}:${Math.round(x * 1e5)}:${Math.round(z * 1e5)}`,
       })
     }
 
@@ -385,7 +390,7 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
         for (const flower of colony.flowers) {
           if (!look.inside(flower.x, flower.z)) continue
           // A colony opens together, its flowers a moment apart.
-          addFlower(flower.x, flower.z, colony.tone, flower.h, Math.min(colony.presence + 0.03 * flower.h[4], 1))
+          addFlower(flower.x, flower.z, colony.tone, flower.h, Math.min(colony.presence + 0.03 * flower.h[4], 1), colony.species)
         }
       }
     } else if (settings.distribution === 'even') {
@@ -401,7 +406,7 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
           if (!look.inside(x, z)) continue
           const g = ground(x, z)
           if (h(2) >= suits(g) * flowers.regionAt(x, z)) continue
-          addFlower(x, z, flowers.toneAt(x, z), [h(3), h(4), h(5), h(6), h(7), h(8), h(9)], h(10))
+          addFlower(x, z, flowers.toneAt(x, z), [h(3), h(4), h(5), h(6), h(7), h(8), h(9)], h(10), flowers.typeAt(x, z))
         }
       }
     } else {
@@ -416,7 +421,7 @@ export function scatterTile(data, { cover, seed, trunks, moss, flowers, leaves, 
         const presence = random()
         const g = ground(x, z)
         if (keep >= suits(g) * flowers.regionAt(x, z)) continue
-        addFlower(x, z, flowers.toneAt(x, z), h, presence)
+        addFlower(x, z, flowers.toneAt(x, z), h, presence, flowers.typeAt(x, z))
       }
     }
   }

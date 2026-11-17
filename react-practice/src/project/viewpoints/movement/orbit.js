@@ -6,7 +6,9 @@ import * as THREE from 'three'
  * input is the orbit angle), the wheel or + / − zoom, right-drag / Shift+drag
  * or W A S D pan the focus across the ground (faster when zoomed out),
  * Space / C lift it above the ground (up to the crowns), and setFocus
- * glides it to a spot and back down (double-click). The camera never dips
+ * glides it to a spot and back down (double-click), and track(target)
+ * keeps the focus on something that moves (a butterfly you follow) until
+ * you pan or move the focus yourself. The camera never dips
  * under the ground, except in the underground X-ray (ctx.underground.active),
  * where the focus also sinks ctx.underground.depth below the surface, and
  * C can take it further down.
@@ -34,6 +36,9 @@ export function createOrbitMovement() {
   // targetLift so rising and sinking glide to a stop.
   let lift = 0
   let targetLift = 0
+  // A moving point (Vector3) the focus follows, or null.
+  let tracked = null
+  let untracked = false
 
   // Camera = focus, backed off along the view direction by `distance`.
   const pose = (state, world, underground) => {
@@ -61,9 +66,27 @@ export function createOrbitMovement() {
 
     /** Glide the focus to (x, z), back down to the ground. */
     setFocus(x, z) {
+      if (tracked) {
+        tracked = null
+        untracked = true
+      }
       glide.set(x, 0, z)
       gliding = true
       targetLift = 0
+    },
+
+    /**
+     * Follow a moving point (a Vector3 that its owner keeps up to date), or
+     * stop (null). zoom: ease in to this distance if further out.
+     */
+    track(target, zoom = null) {
+      tracked = target
+      untracked = false
+      gliding = false
+      if (target && zoom !== null && targetDistance > zoom) targetDistance = zoom
+    },
+    get tracking() {
+      return Boolean(tracked)
     },
 
     /** The ground point you're looking at (detail streams around it). */
@@ -89,7 +112,14 @@ export function createOrbitMovement() {
       const sin = Math.sin(state.yaw)
       const cos = Math.cos(state.yaw)
       const { x: strafe, y: ahead } = input.move
+      // Moving the focus yourself ends a follow.
+      const stopTracking = () => {
+        if (!tracked) return
+        tracked = null
+        untracked = true
+      }
       if (strafe || ahead) {
+        stopTracking()
         gliding = false
         const speed = m.speed * distance * (input.run ? m.runFactor : 1)
         focus.x += (-sin * ahead + cos * strafe) * speed * dt
@@ -99,6 +129,7 @@ export function createOrbitMovement() {
       // goes left); drag down and it comes toward you (the focus goes ahead).
       const pan = input.takePan()
       if (pan.x || pan.y) {
+        stopTracking()
         gliding = false
         const scale = m.panPerPixel * distance
         focus.x += (-cos * pan.x - sin * pan.y) * scale
@@ -116,9 +147,20 @@ export function createOrbitMovement() {
       const lowest = underground?.active ? -Math.max(m.lift.sink - sinkOf(underground), 0) : 0
       targetLift = clamp(targetLift + vertical * m.lift.speed * (input.run ? m.runFactor : 1) * dt, lowest, m.lift.max)
       lift += (targetLift - lift) * smooth(8, dt)
-      focus.y += (world.heightAt(focus.x, focus.z) - sinkOf(underground) + lift - focus.y) * smooth(10, dt)
+      if (tracked) {
+        // Follow the target closely, height included.
+        const k = smooth(8, dt)
+        focus.x += (tracked.x - focus.x) * k
+        focus.z += (tracked.z - focus.z) * k
+        focus.y += (tracked.y - focus.y) * k
+        targetLift = lift = Math.max(focus.y - world.heightAt(focus.x, focus.z), 0)
+      } else {
+        focus.y += (world.heightAt(focus.x, focus.z) - sinkOf(underground) + lift - focus.y) * smooth(10, dt)
+      }
       pose(state, world, underground)
-      return { moving: false, turn: 0 }
+      const ended = untracked
+      untracked = false
+      return { moving: false, turn: 0, untracked: ended }
     },
   }
 }

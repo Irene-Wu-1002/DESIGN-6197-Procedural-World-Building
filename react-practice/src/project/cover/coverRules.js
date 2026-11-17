@@ -1,3 +1,5 @@
+import { DEFAULT_FLOWER_MIX, FLOWER_TYPES } from '../ecology/ecologyConfig'
+
 /**
  * Ground cover: what grows or lies where, and how it's distributed.
  * Plain data only, no Three.js. Sizes are real metres.
@@ -87,6 +89,8 @@ export const DEFAULT_COVER = {
     colonyFalloff: 50,
     seedOffset: 0,
     noiseInfluence: 60,
+    // Share of each flower type (%, weights; ecology/ecologyConfig.js).
+    mix: DEFAULT_FLOWER_MIX,
   },
   flyAgaric: true,
 }
@@ -186,6 +190,7 @@ export const LEAF_COLORS = {
 export const MUSHROOM_COLORS = ['#8a5a32', '#a87a4a', '#c9a77a', '#6b4528', '#d8c3a0']
 export const MOSS_COLORS = ['#4f6b26', '#5f7d2c', '#3f5a22', '#6f8a34']
 export const TWIG_COLORS = ['#5a4636', '#6b5848', '#4a3a2c', '#7a6a58']
-/** Wood anemone petals (white, blush, lilac) and stem. */
-export const FLOWER_COLORS = ['#f3f0e8', '#f1e2e6', '#e7e2f2', '#f6f3ea']
+/** Wood anemone petals (white, blush, lilac) and stem. Every flower
+ * type's petal colours: FLOWER_TYPES[k].colors (ecology/ecologyConfig.js). */
+export const FLOWER_COLORS = FLOWER_TYPES[0].colors
 export const FLOWER_STEM_COLOR = '#5d7a33'

@@ -20,7 +20,7 @@ const percent = (share) => `${Math.round(share * 100)}%`
 // Full names for the scatter cards (the picker buttons use short ones).
 const ELEMENT_TITLES = {
   moss: 'Moss',
-  flowers: 'Wood anemones',
+  flowers: 'Flowers',
   leaves: 'Fallen leaves',
   twigs: 'Twigs & branches',
   pebbles: 'Pebbles',
@@ -231,7 +231,8 @@ export default function MapPanel({
             </AdvancedSection>
             <p className="section-note">
               Flowers like sunny, moderately moist, fairly flat ground. Noise influence leaves whole
-              regions without flowers.
+              regions without flowers. Each colony is one type: the mix of anemones, bellflowers and
+              campions is set under Flowers &amp; butterflies.
             </p>
           </>
         )}

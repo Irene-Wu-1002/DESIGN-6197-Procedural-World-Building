@@ -1,9 +1,10 @@
 import { getNoise } from '../../utils/noise'
 import { hash } from '../terrain/heightField'
 import { COVER_RULES, SEASON_HEADROOM } from './coverRules'
+import { DEFAULT_FLOWER_MIX, FLOWER_TYPES } from '../ecology/ecologyConfig'
 
 /**
- * Flowers (wood anemones): where they grow, as a pure function of world
+ * Flowers (anemones, bellflowers, campions): where they grow, as a pure function of world
  * position, the seed, the habitat, and the flower settings
  * (DEFAULT_COVER.flowers in coverRules.js).
  *
@@ -18,7 +19,9 @@ import { COVER_RULES, SEASON_HEADROOM } from './coverRules'
  *                of that its hash used, see SEASON_HEADROOM). Its flowers are
  *                placed inside the colony radius (falloff pulls them to the
  *                centre), at least the minimum spacing apart, each checked
- *                against the ground where it lands.
+ *                against the ground where it lands. Each colony is one
+ *                flower type (ecology/ecologyConfig.js), picked by its hash
+ *                with the flower mix as weights.
  *
  * Colonies are worked out in world space (habitat.at), so a colony that
  * crosses a tile edge is the same in both tiles. Even spacing and fully
@@ -37,7 +40,22 @@ const SIZE_SPREAD = 0.3
 const TRIES_PER_FLOWER = 3
 // Colony base tones, white most often (indexes into FLOWER_COLORS).
 const COLONY_TONES = [0, 0, 3, 1, 2]
-const SALT = { site: 901, colony: 902, flower: 903, region: 904, tone: 905 }
+const SALT = { site: 901, colony: 902, flower: 903, region: 904, tone: 905, type: 906 }
+// Outside colonies, flower types come in patches this size (m).
+const TYPE_PATCH = 0.25
+
+/** Pick a flower type index from a 0–1 number, weighted by the mix (%). */
+export function flowerTypeFor(u, mix = DEFAULT_FLOWER_MIX) {
+  const weights = FLOWER_TYPES.map((type) => Math.max(mix?.[type.id] ?? 0, 0))
+  const total = weights.reduce((sum, w) => sum + w, 0)
+  if (total <= 0) return 0
+  let acc = 0
+  for (let k = 0; k < weights.length; k += 1) {
+    acc += weights[k] / total
+    if (u < acc) return k
+  }
+  return weights.length - 1
+}
 
 const smoothstep = (edge0, edge1, value) => {
   const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1)
@@ -104,6 +122,7 @@ export function createFlowerField(settings, { habitat, seed }) {
       const r = radius * (1 + SIZE_SPREAD * (h(3) * 2 - 1))
       const count = Math.max(1, Math.round(settings.flowersPerColony * (1 + SIZE_SPREAD * (h(4) * 2 - 1))))
       const tone = COLONY_TONES[Math.floor(h(5) * COLONY_TONES.length)]
+      const species = flowerTypeFor(h(6), settings.mix)
       const flowers = []
       for (let k = 0; flowers.length < count && k < count * TRIES_PER_FLOWER; k += 1) {
         const f = (j) => hash(ix * 977 + k, iz, offsetSeed + SALT.flower + j)
@@ -116,7 +135,7 @@ export function createFlowerField(settings, { habitat, seed }) {
         if (!clear(g) || f(2) >= Math.sqrt(suitability(g))) continue
         flowers.push({ x, z, h: [f(3), f(4), f(5), f(6), f(7), f(8), f(9)] })
       }
-      colony = { x: cx, z: cz, radius: r, tone, flowers, presence: h(2) / chance }
+      colony = { x: cx, z: cz, radius: r, tone, species, flowers, presence: h(2) / chance }
     }
     if (colonies.size > 20000) colonies.clear()
     colonies.set(key, colony)
@@ -131,6 +150,11 @@ export function createFlowerField(settings, { habitat, seed }) {
     toneAt(x, z) {
       const value = smoothstep(-0.4, 0.4, getNoise(x, z, toneNoise))
       return COLONY_TONES[Math.min(Math.floor(value * COLONY_TONES.length), COLONY_TONES.length - 1)]
+    },
+
+    /** The flower type (index) for the uncolonised modes: patches. */
+    typeAt(x, z) {
+      return flowerTypeFor(hash(Math.floor(x / TYPE_PATCH), Math.floor(z / TYPE_PATCH), offsetSeed + SALT.type), settings.mix)
     },
 
     /** Colonies whose flowers may fall inside [x0, x1) × [z0, z1). */

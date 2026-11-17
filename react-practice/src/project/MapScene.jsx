@@ -41,6 +41,10 @@ import { createAirLayer } from './viewpoints/airLayer'
 import { createAntWorld } from './viewpoints/antWorld'
 import { createAntColony } from './ants/antColony'
 import { createBodies } from './viewpoints/bodies'
+import EcologyPanel from './ecology/EcologyPanel'
+import { createEcology } from './ecology/ecology'
+import { DEFAULT_ECOLOGY } from './ecology/ecologyConfig'
+import { createEcologyRenderer } from './ecology/ecologyRenderer'
 import { createViewController } from './viewpoints/viewController'
 import { createViewEffects } from './viewpoints/viewEffects'
 import { DEFAULT_PERCEPTION_SETTINGS, VIEWPOINTS, summaryOf } from './viewpoints/viewpointConfig'
@@ -100,6 +104,12 @@ const FRAME_SLACK_MS = 2
 // casters that move on their own (ants, swaying cover, growing crowns).
 const SHADOW_MOVE = 1e-4
 const SHADOW_FPS = 15
+// Following a butterfly zooms the free camera in to this distance (m). A
+// click (pointer moved less than CLICK_PIXELS, quicker than CLICK_MS) picks
+// one.
+const FOLLOW_ZOOM = 0.3
+const CLICK_PIXELS = 5
+const CLICK_MS = 350
 // The camera counts as moving above this much (m, and quaternion dot).
 const CAMERA_STILL = { move: 1e-6, turn: 1e-9 }
 // Small cover shrinks away just as the ground starts to smooth (m, relative
@@ -158,6 +168,12 @@ export default function MapScene({ intro }) {
   // The water in the ground: its settings and the Habitat wetness.
   const waterSettingsRef = useRef({ ...DEFAULT_WATER, wetness: DEFAULT_HABITAT.wetness })
   const crownSettingsRef = useRef(DEFAULT_CROWNS)
+  // Flowers & butterflies: the ecology, its settings, the live Habitat wind
+  // (scent drifts with it at once), and which butterfly is followed (-1 none).
+  const ecologyRef = useRef(null)
+  const ecologySettingsRef = useRef(DEFAULT_ECOLOGY)
+  const habitatRef = useRef(DEFAULT_HABITAT)
+  const followRef = useRef(-1)
   // What the tile listener needs to scatter a new tile (moss, flowers: the
   // moss patch and flower colony fields, built from the settled settings
   // below).
@@ -239,6 +255,10 @@ export default function MapScene({ intro }) {
     hint: '',
     hintId: 0,
   })
+  const [ecologySettings, setEcologySettings] = useState(DEFAULT_ECOLOGY)
+  const [ecologyStats, setEcologyStats] = useState(null)
+  const [follow, setFollow] = useState(-1)
+  const [followed, setFollowed] = useState(null)
   const [perception, setPerception] = useState(() => ({
     ...DEFAULT_PERCEPTION_SETTINGS,
     reducedMotion: prefersReducedMotion(),
@@ -310,6 +330,10 @@ export default function MapScene({ intro }) {
     flyAgaricRef.current = flyAgaric
     // The cover the scene draws is also what bodies collide with and climb.
     let world = null
+    // Flowers, scent and butterflies (ecology/): flowers follow the tiles.
+    const ecology = createEcology(DEFAULT_GROUND.seed)
+    ecologyRef.current = ecology
+    const ecologyRenderer = createEcologyRenderer(scene)
     let builds = 0
     const tiles = createTileManager(scene, material, depthMaterial, {
       onTileReady: (key, data) => {
@@ -317,11 +341,13 @@ export default function MapScene({ intro }) {
         const items = scatterTile(data, { cover, seed, moss, flowers, leaves, exclusions, landmarks, trunks: tiles.trunks })
         coverRenderer.setTile(key, items)
         world.setTile(key, items)
+        ecology.setTile(key, items)
         builds += 1
       },
       onTileRemoved: (key) => {
         coverRenderer.removeTile(key)
         world.removeTile(key)
+        ecology.removeTile(key)
       },
     })
     tilesRef.current = tiles
@@ -363,6 +389,8 @@ export default function MapScene({ intro }) {
       },
       hooks: {
         onUi: setViewUi,
+        // Panning or moving the free camera yourself ends a follow.
+        onUntrack: () => setFollow(-1),
         capture: () => {
           if (latestFrame) effects.capture(scene, camera, latestFrame.effects, { dark: latestFrame.dark, grade: gradeOf() })
         },
@@ -413,6 +441,10 @@ export default function MapScene({ intro }) {
       if (isTyping(event)) return
       heldKeys.add(event.code)
       if (event.code === 'Tab') tabbed = true
+      if (event.code === 'Escape' && followRef.current >= 0) {
+        setFollow(-1)
+        return
+      }
       if (event.code === 'KeyU' && !event.repeat) {
         // Surface → X-ray → cross-section → surface; the free view only.
         if (viewIdRef.current !== 'free') return
@@ -453,7 +485,11 @@ export default function MapScene({ intro }) {
     let dragPointer = null
     let dragPan = false
     let dragLast = { x: 0, y: 0 }
+    // A click (not a drag) on a butterfly in the free view follows it.
+    let press = null
+    const pickRay = new THREE.Raycaster()
     const onPointerDown = (event) => {
+      if (event.button === 0) press = { x: event.clientX, y: event.clientY, t: performance.now() }
       if (dragPointer !== null || (event.button !== 0 && event.button !== 2)) return
       dragPointer = event.pointerId
       dragPan = event.button === 2 || event.shiftKey
@@ -473,6 +509,20 @@ export default function MapScene({ intro }) {
     canvas.addEventListener('contextmenu', onContextMenu)
     const onPointerUp = (event) => {
       if (event.pointerId === dragPointer) dragPointer = null
+      const click =
+        press &&
+        event.button === 0 &&
+        Math.hypot(event.clientX - press.x, event.clientY - press.y) < CLICK_PIXELS &&
+        performance.now() - press.t < CLICK_MS
+      press = null
+      if (!click || viewIdRef.current !== 'free') return
+      const rect = canvas.getBoundingClientRect()
+      pickRay.setFromCamera(
+        { x: ((event.clientX - rect.left) / rect.width) * 2 - 1, y: -((event.clientY - rect.top) / rect.height) * 2 + 1 },
+        camera
+      )
+      const index = ecology.pick(pickRay.ray.origin, pickRay.ray.direction, 0.012)
+      if (index >= 0) setFollow(index)
     }
     canvas.addEventListener('pointerdown', onPointerDown)
     canvas.addEventListener('pointermove', onPointerMove)
@@ -500,7 +550,15 @@ export default function MapScene({ intro }) {
     // shown for a moment, so switching viewpoints never stalls on it.
     let warmed = false
     const warmUp = () => {
-      const hidden = [...bodies.groups, ...antWorld.meshes, ...antColony.meshes, ...airLayer.meshes, ...ambientLife.meshes, ...rain.meshes].filter(
+      const hidden = [
+        ...bodies.groups,
+        ...antWorld.meshes,
+        ...antColony.meshes,
+        ...airLayer.meshes,
+        ...ambientLife.meshes,
+        ...rain.meshes,
+        ...ecologyRenderer.meshes,
+      ].filter(
         (object) => !object.visible
       )
       for (const object of hidden) object.visible = true
@@ -529,6 +587,16 @@ export default function MapScene({ intro }) {
     }
 
     const agaricTop = new THREE.Vector3()
+    // What the butterflies can ask the world (the same obstacles and
+    // surfaces the viewpoints use), and the point the free camera follows.
+    const ecologyWorld = {
+      surfaceAt: (x, z) => world.surfaceAt(x, z),
+      trunksNear: (x, z, reach) => tiles.trunks?.trunksNear(x, z, reach) ?? [],
+      resolve: (x, z, radius, collision, altitude) => world.resolve(x, z, radius, collision, altitude),
+      agaric: () => (flyAgaric.group.visible ? flyAgaric.group.position : null),
+    }
+    const followTarget = new THREE.Vector3()
+    let tracking = -1
     let holeRadius = 0
     let lastTime = performance.now()
     let time = 0
@@ -713,14 +781,18 @@ export default function MapScene({ intro }) {
       sky.setColors(env.sky)
       scene.background.copy(env.sky.horizon)
       scene.fog.color.copy(env.sky.horizon)
-      coverRenderer.setFlowerOpen(env.flowerOpen)
       // Weather: haze and ground mist, wet ground and cover, wind, rain.
       scene.fog.set(haze * env.haze, env.mist, env.mistHeight)
       xray.applyAtmosphere(scene, sky)
       uniforms.uWet.value = env.wetness
       liveWetness = env.wetness
       liveAutumn = env.autumn.value * env.autumn.weight
-      coverRenderer.setWeather({ wind: env.wind, wet: env.wetness, time })
+      // Wind: the Habitat wind, or the Weather's while the simulation runs.
+      // The same strength sways the flowers, carries their scent and pushes
+      // the butterflies.
+      const habitatNow = habitatRef.current
+      const windStrength = (habitatNow.windStrength / 100) * (1 - simulation.weight) + env.wind
+      coverRenderer.setWeather({ wind: windStrength, wet: env.wetness, time })
       // Season: how much of each kind shows, and the leaves' autumn share
       // (the Scatter setting, blended toward the season's).
       const baseAutumn = coverContextRef.current.cover.leaves.autumn / 100
@@ -741,14 +813,60 @@ export default function MapScene({ intro }) {
       })
       ambientLife.update({
         dt: delta,
-        time,
-        activity: { butterflies: env.butterflies, ants: env.ants },
-        anchor,
+        activity: { ants: env.ants },
         sampler: tiles.sampler,
         // The agents replace the ants that shuttle along the seeded trails.
         trails: antColony.on ? [] : antWorld.trails,
-        flowers: (x, z) =>
-          coverContextRef.current.cover.flowers.on ? coverContextRef.current.flowers?.coloniesIn(x - 1, z - 1, x + 1, z + 1) : [],
+      })
+
+      // Flowers, scent and butterflies, on the simulation's clock (paused
+      // holds them; ecology.js steps them on fixed sub-steps).
+      const ecologySettings = ecologySettingsRef.current
+      ecology.update({
+        dt: delta,
+        scale: simulation.timeScale,
+        center: anchor,
+        visibleRadius: morphStart + COVER_FADE[0],
+        camera: camera.position,
+        follow: followRef.current,
+        world: ecologyWorld,
+        sampler: tiles.sampler,
+        groundKey: tiles.version,
+        habitat: tiles.habitat,
+        habitatKey: tiles.habitatKey,
+        wind: { strength: windStrength, from: habitatNow.windDirection },
+        light: { brightness: env.brightness, daylight: env.daylight, sun: env.directSun, air: env.air, rain: env.rain },
+        level: env.levels.flowers,
+        sway: { time, wind: windStrength },
+      })
+      // Each flower type opens and closes with its own light (and rain).
+      coverRenderer.setFlowerOpen(ecology.open)
+      // Following: the free camera's focus stays on the butterfly.
+      const followIndex = followRef.current
+      const followedAgent = followIndex >= 0 ? ecology.agents[followIndex] : null
+      if (followIndex >= 0 && (!followedAgent || followedAgent.removing)) setFollow(-1)
+      if (followedAgent) {
+        followTarget.set(followedAgent.position.x, followedAgent.position.y, followedAgent.position.z)
+        if (tracking !== followIndex && !controller.busy) {
+          // From a body, back to the free view first; then follow.
+          if (controller.id !== 'free') controller.select('free')
+          else if (controller.track(followTarget, FOLLOW_ZOOM)) tracking = followIndex
+        }
+        wake()
+      } else if (tracking >= 0) {
+        controller.track(null)
+        tracking = -1
+      }
+      ecologyRenderer.update({
+        ecology,
+        dt: delta,
+        camera,
+        pixels,
+        showScent: ecologySettings.showScent,
+        share: ecologySettings.scentDisplay / 100,
+        debug: ecologySettings.debug,
+        follow: followRef.current,
+        hidden: Math.max(xray.amount, crossSection.amount),
       })
 
       // Outside the simulation the whole colony is out; inside it, the
@@ -818,6 +936,26 @@ export default function MapScene({ intro }) {
       show('roots', setRootStats, rootRenderer.stats())
       show('water', setWaterStats, waterRenderer.stats())
       show('crowns', setCrownStats, { ...crownRenderer.stats(), tree: treeWater.nearest(viewer.x, viewer.z), sap: sapFlow.alive })
+      // Ecology readouts: the numbers only with the developer overlay on, so
+      // the panel doesn't re-render for every particle.
+      const ecoStats = ecology.stats()
+      const debug = ecologySettingsRef.current.debug
+      show('ecology', setEcologyStats, {
+        butterflies: ecoStats.butterflies,
+        flying: ecoStats.flying,
+        feeding: ecoStats.feeding,
+        wind: Math.round(ecoStats.wind * 100) / 100,
+        from: ecoStats.from,
+        ...(debug
+          ? { particles: ecoStats.particles, capacity: ecoStats.capacity, emitScale: ecoStats.emitScale, flowers: ecoStats.flowers }
+          : {}),
+      })
+      const status = followRef.current >= 0 ? ecology.status(followRef.current) : null
+      show(
+        'followed',
+        setFollowed,
+        status && !debug ? { index: status.index, label: status.label, state: status.state } : status
+      )
     }, STATUS_REFRESH_MS)
 
     const onResize = () => {
@@ -832,7 +970,7 @@ export default function MapScene({ intro }) {
     // For checks during development: the controller and how many tiles
     // have been built (switching viewpoints must not build any).
     if (import.meta.env.DEV) {
-      window.__umwelt = { controller, tiles, builds: () => builds, renders: () => ({ frames: renders, shadows: shadowDraws }),coverRenderer, flyAgaric, antWorld, antColony, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, waterRenderer, crownRenderer }
+      window.__umwelt = { controller, tiles, builds: () => builds, renders: () => ({ frames: renders, shadows: shadowDraws }), ecology, coverRenderer, flyAgaric, antWorld, antColony, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, waterRenderer, crownRenderer }
     }
 
     return () => {
@@ -859,6 +997,10 @@ export default function MapScene({ intro }) {
       antColonyRef.current = null
       airLayer.dispose()
       ambientLife.dispose()
+      ecologyRenderer.dispose()
+      // Keeps the butterflies and nectar for coming back (ecology.js).
+      ecology.dispose()
+      ecologyRef.current = null
       rain.dispose()
       simulationRef.current = null
       bodies.dispose()
@@ -983,6 +1125,24 @@ export default function MapScene({ intro }) {
   useEffect(() => {
     if (groundUniformsRef.current) groundUniformsRef.current.uGrain.value = grain / 100
   }, [grain])
+
+  // Flowers & butterflies: a new seed brings new butterflies (a follow
+  // ends by itself: its butterfly is gone); settings and the followed
+  // butterfly apply at once.
+  useEffect(() => {
+    ecologyRef.current?.setSeed(seed)
+  }, [seed])
+  useEffect(() => {
+    ecologySettingsRef.current = ecologySettings
+    ecologyRef.current?.setSettings(ecologySettings)
+  }, [ecologySettings])
+  useEffect(() => {
+    followRef.current = follow
+  }, [follow])
+  useEffect(() => {
+    habitatRef.current = habitat
+    simulationRef.current?.setWindFrom(habitat.windDirection)
+  }, [habitat])
 
   // Underground: the X-ray view and the free camera follow at once; roots
   // regrow from the settled root settings (Roots on/off is instant).
@@ -1150,6 +1310,16 @@ export default function MapScene({ intro }) {
             {viewUi.hint}
           </div>
         )}
+        {follow >= 0 && followed && (
+          <div className="eco-follow" style={{ pointerEvents: 'auto' }}>
+            <span>
+              Butterfly {followed.index + 1} · {followed.label}
+            </span>
+            <button type="button" onClick={() => setFollow(-1)}>
+              Free view <kbd>Esc</kbd>
+            </button>
+          </div>
+        )}
       </div>
       <p className="view-sr-only" aria-live="polite">
         {viewUi.label}
@@ -1188,6 +1358,28 @@ export default function MapScene({ intro }) {
             simulationRef.current?.setTime(hours)
             setSimStatus((current) => ({ ...current, time: hours }))
           }}
+          butterflies={ecologyStats}
+        />
+        <EcologyPanel
+          settings={ecologySettings}
+          flowers={cover.flowers}
+          stats={ecologyStats}
+          followed={followed}
+          following={follow >= 0}
+          onChange={(key, value) => setEcologySettings((current) => ({ ...current, [key]: value }))}
+          onFlowersChange={(key, value) => setCover((current) => ({ ...current, flowers: { ...current.flowers, [key]: value } }))}
+          onFollow={() => {
+            const anchor = controllerRef.current?.debug().focus
+            const index = ecologyRef.current?.nearest(anchor?.[0] ?? 0, anchor?.[2] ?? 0) ?? -1
+            if (index >= 0) setFollow(index)
+          }}
+          onNext={() => {
+            const agents = (ecologyRef.current?.agents ?? []).filter((agent) => !agent.removing)
+            if (!agents.length) return
+            const at = agents.findIndex((agent) => agent.index === follow)
+            setFollow(agents[(at + 1) % agents.length].index)
+          }}
+          onStop={() => setFollow(-1)}
         />
       </div>
       <MapPanel

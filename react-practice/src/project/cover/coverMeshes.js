@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { FLOWER_TOP } from '../ecology/ecologyConfig'
 
 /**
  * Shapes for the ground cover. Small items are built at unit size and
@@ -120,7 +121,8 @@ export function createMushroomGeometries() {
 // --- Wood anemone (unit height): a slender stem with a whorl of three
 // leaves, and a cupped six-petal flower on top. aPetal runs 0 → 1 from a
 // petal's base to its tip (-1 on the stamens), for the nectar-guide shader.
-const FLOWER_TOP = 0.87
+// FLOWER_TOP (ecology/ecologyConfig.js) is where the head sits; the ecology
+// uses the same number to find where butterflies land.
 
 export function createFlowerGeometries() {
   const stalk = stick([[0, 0, 0], [0.01, 0.45, 0.005], [0, FLOWER_TOP, 0]], 0.012)
@@ -178,7 +180,127 @@ export function createFlowerGeometries() {
   const head = mergeGeometries([petals, stamens])
   petals.dispose()
   stamens.dispose()
-  return { stem, head }
+  return { stem, head, heads: [head, createBellHead(), createCampionHead()] }
+}
+
+// A surface of revolution-like grid: rows along t (0 → 1), columns around.
+// point(t, angle) → [x, y, z]; petal(t) is the aPetal value.
+function gridSurface(rows, columns, point, petal) {
+  const positions = []
+  const petals = []
+  const indices = []
+  for (let i = 0; i <= rows; i += 1) {
+    const t = i / rows
+    for (let j = 0; j <= columns; j += 1) {
+      positions.push(...point(t, (j / columns) * Math.PI * 2))
+      petals.push(petal(t))
+    }
+  }
+  for (let i = 0; i < rows; i += 1) {
+    for (let j = 0; j < columns; j += 1) {
+      const a = i * (columns + 1) + j
+      const b = a + columns + 1
+      indices.push(a, b, a + 1, a + 1, b, b + 1)
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('aPetal', new THREE.Float32BufferAttribute(petals, 1))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+const withPetal = (geometry, value) => {
+  geometry.deleteAttribute('uv')
+  geometry.setAttribute('aPetal', new THREE.Float32BufferAttribute(new Array(geometry.attributes.position.count).fill(value), 1))
+  return geometry
+}
+
+// --- Bellflower head: an upturned bell (a deep tube with five pointed,
+// flaring lobes) on a green calyx, a pale style inside. aPetal: 0 at the
+// bottom of the tube → 1 at the rim; -1 the style, -2 the calyx.
+const BELL_DEPTH = 0.2
+function createBellHead() {
+  const LOBES = 5
+  const bell = gridSurface(
+    10,
+    40,
+    (t, angle) => {
+      const lobe = 0.5 + 0.5 * Math.cos(angle * LOBES)
+      const flare = smoothstepJs(0.7, 1, t)
+      const radius = 0.03 + 0.05 * t ** 1.4 + flare * (0.035 + 0.02 * lobe)
+      const y = FLOWER_TOP + BELL_DEPTH * t + flare * 0.025 * (lobe - 0.4)
+      return [Math.cos(angle) * radius, y, Math.sin(angle) * radius]
+    },
+    (t) => t
+  )
+  const calyx = withPetal(new THREE.SphereGeometry(0.034, 10, 6, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55), -2)
+  calyx.translate(0, FLOWER_TOP + 0.02, 0)
+  const style = withPetal(new THREE.CylinderGeometry(0.006, 0.008, BELL_DEPTH * 0.85, 6), -1)
+  style.translate(0, FLOWER_TOP + BELL_DEPTH * 0.45, 0)
+  const head = mergeGeometries([bell, calyx, style])
+  bell.dispose()
+  calyx.dispose()
+  style.dispose()
+  return head
+}
+
+// --- Campion head: a narrow green calyx tube with a flat star of five
+// notched (two-lobed) petals on top. aPetal: 0 at a petal's base → 1 at its
+// tip, -1 the pale centre, -2 the calyx.
+const CAMPION_TUBE = 0.12
+function createCampionHead() {
+  const PETALS = 5
+  const ALONG = 7
+  const ACROSS = [-1, -0.6, -0.2, 0.2, 0.6, 1]
+  const positions = []
+  const petal = []
+  const indices = []
+  for (let k = 0; k < PETALS; k += 1) {
+    const angle = (k / PETALS) * Math.PI * 2
+    const rx = Math.cos(angle)
+    const rz = Math.sin(angle)
+    const base = positions.length / 3
+    for (let i = 0; i <= ALONG; i += 1) {
+      const t = i / ALONG
+      // Narrow claw, broad limb; the middle of the tip stops short (notch).
+      const width = 0.012 + 0.07 * smoothstepJs(0.15, 0.6, t)
+      for (const side of ACROSS) {
+        const notch = 1 - 0.2 * (1 - Math.abs(side)) * smoothstepJs(0.6, 1, t)
+        const out = 0.02 + 0.15 * t * notch
+        const up = FLOWER_TOP + CAMPION_TUBE + 0.02 * t - 0.02 * t * t
+        positions.push(rx * out - rz * side * width, up, rz * out + rx * side * width)
+        petal.push(t * notch)
+      }
+    }
+    for (let i = 0; i < ALONG; i += 1) {
+      for (let j = 0; j < ACROSS.length - 1; j += 1) {
+        const a = base + i * ACROSS.length + j
+        indices.push(a, a + 1, a + ACROSS.length, a + 1, a + ACROSS.length + 1, a + ACROSS.length)
+      }
+    }
+  }
+  const petals = new THREE.BufferGeometry()
+  petals.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  petals.setAttribute('aPetal', new THREE.Float32BufferAttribute(petal, 1))
+  petals.setIndex(indices)
+  petals.computeVertexNormals()
+  const tube = withPetal(new THREE.CylinderGeometry(0.024, 0.032, CAMPION_TUBE, 10, 1, true), -2)
+  tube.translate(0, FLOWER_TOP + CAMPION_TUBE / 2, 0)
+  const centre = withPetal(new THREE.CircleGeometry(0.022, 10), -1)
+  centre.rotateX(-Math.PI / 2)
+  centre.translate(0, FLOWER_TOP + CAMPION_TUBE + 0.001, 0)
+  const head = mergeGeometries([petals, tube, centre])
+  petals.dispose()
+  tube.dispose()
+  centre.dispose()
+  return head
+}
+
+function smoothstepJs(edge0, edge1, value) {
+  const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1)
+  return t * t * (3 - 2 * t)
 }
 
 // --- Trunk (unit radius, `height` m above the ground, where the crown

@@ -276,6 +276,10 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     const spot = here()
     nextMovement.place(nextState, { x: spot.x, z: spot.z }, ctxFor(nextConfig))
     if (movement.stopScent) movement.stopScent()
+    if (movement.tracking) {
+      movement.track(null)
+      hooks.onUntrack?.()
+    }
     const next = { id: nextId, movement: nextMovement, state: nextState, params: paramsOf(nextConfig) }
     showLabel(nextConfig)
     setUi({ busy: true, target: nextId })
@@ -677,6 +681,7 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       else if (action || !movement.setFocus) input.takeZoom(dt, 0)
       if (!action) {
         info = movement.update(dt, input, state, ctxFor(config))
+        if (info.untracked) hooks.onUntrack?.()
         applyIdlePose(dt, false)
       }
 
@@ -838,6 +843,20 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         hooks.onUi({ ...ui })
       }
       return frame
+    },
+
+    /**
+     * Free camera only: keep the focus on a moving point (a Vector3 its
+     * owner updates), zooming in to `zoom` m; null stops. Returns whether
+     * it took. Panning or moving the focus ends it (hooks.onUntrack).
+     */
+    track(target, zoom = null) {
+      if (action || !movement.track) return false
+      movement.track(target, zoom)
+      return true
+    },
+    get tracking() {
+      return Boolean(!action && movement.tracking)
     },
 
     /**
