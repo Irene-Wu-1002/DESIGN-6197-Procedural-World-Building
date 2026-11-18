@@ -31,7 +31,8 @@ import { windVector } from '../../utils/windField'
  * lightIntensity, hemiSky, hemiGround, hemiIntensity, sky: { canopy,
  * middle, horizon, sunGlow }, dapple (0–1 share of the dappled light),
  * flowerOpen, butterflies, ants (activity 0–1), haze (× the usual haze),
- * mist (ground mist per metre), mistHeight (m), rain, wetness, wind (0–1),
+ * mist (ground mist per metre), mistHeight (m), rain, wetness, flash
+ * (0–1, lightning lighting the sky right now), wind (0–1),
  * windDirection [x, z], and for the flower and butterfly ecology:
  * brightness (0–1, what flowers open to), daylight (0–1), directSun (0–1,
  * direct sun reaching open ground through the clouds), air (°C) }. Outside
@@ -100,6 +101,7 @@ const makeEnvironment = () => ({
   mistHeight: 0.3,
   rain: 0,
   wetness: 0,
+  flash: 0,
   wind: 0,
   windDirection: windVector(WIND_FROM),
   brightness: STATIC.brightness,
@@ -288,6 +290,7 @@ export function createSimulation() {
       out.mistHeight = simulated.mistHeight
       out.rain = simulated.rain * k
       out.wetness = simulated.wetness * k
+      out.flash = weatherNow.flash * k
       out.wind = simulated.wind * k
       out.brightness = lerp(STATIC.brightness, simulated.brightness, k)
       out.daylight = lerp(STATIC.daylight, simulated.daylight, k)

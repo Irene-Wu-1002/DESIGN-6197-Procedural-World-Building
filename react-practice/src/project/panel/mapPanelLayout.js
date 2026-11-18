@@ -2,6 +2,7 @@ import { DEFAULT_CROWNS } from '../cover/crowns'
 import { DEFAULT_HABITAT } from '../habitat/habitatFields'
 import { DEFAULT_PATHS } from '../paths/antTrail'
 import { DEFAULT_UNDERGROUND } from '../underground/settings'
+import { DEFAULT_SOUND } from '../soundscape/mix'
 
 // Which settings each tab and scatter element owns, so the panel can reset
 // just those. Keys are grouped by the scene state they live in.
@@ -12,6 +13,7 @@ export const MAP_TABS = [
   ['scatter', 'Scatter'],
   ['paths', 'Paths'],
   ['underground', 'Underground'],
+  ['sound', 'Sound'],
   ['debug', 'Debug'],
 ]
 
@@ -45,6 +47,8 @@ export const TAB_KEYS = {
   paths: { paths: Object.keys(DEFAULT_PATHS) },
   // Reset Tab keeps you in the view you're in.
   underground: { underground: Object.keys(DEFAULT_UNDERGROUND).filter((key) => key !== 'view') },
+  // Reset Tab keeps the sound on or off.
+  sound: { sound: Object.keys(DEFAULT_SOUND).filter((key) => key !== 'on') },
   debug: { view: ['preview', 'distance'] },
 }
 

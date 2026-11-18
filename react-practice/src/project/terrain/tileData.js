@@ -29,7 +29,7 @@ export function tileKey(tileX, tileZ) {
  * changes slowly enough for the coarse far-ground mesh to follow closely.
  */
 export function smoothHeightOf(sample) {
-  return sample.broadLowHeight + sample.hillHeight
+  return sample.broadLowHeight + sample.hillHeight + (sample.streamSmooth ?? 0)
 }
 
 /**
@@ -68,6 +68,7 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks, habitat, 
   const hill = new Float32Array(count)
   const litter = new Float32Array(count)
   const trailTone = new Float32Array(count)
+  const streamTone = new Float32Array(count)
   const trunkDistance = new Float32Array(count)
   const out = {}
 
@@ -87,6 +88,7 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks, habitat, 
       hill[index] = out.hill
       litter[index] = out.litter
       trailTone[index] = out.trailTone
+      streamTone[index] = out.streamBank
       trunkDistance[index] = trunkDistanceAt(x, z)
     }
   }
@@ -134,6 +136,7 @@ export function buildTileData(sampler, tileX, tileZ, segments, trunks, habitat, 
     hill,
     litter,
     trailTone,
+    streamTone,
     trunkDistance,
   }
   return applyHabitat(data, habitat)
@@ -172,6 +175,7 @@ export function decimateTileData(data, factor) {
     hill: pick(data.hill),
     litter: pick(data.litter),
     trailTone: pick(data.trailTone),
+    streamTone: pick(data.streamTone),
     trunkDistance: pick(data.trunkDistance),
     ...pickHabitat(data, pick),
   }
@@ -203,6 +207,8 @@ export const GROUND_COLORS = {
   litter: hex('#5e3d1f'),
   // Ant trail: packed, darker soil.
   trail: hex('#2e2219'),
+  // Stream banks and bed: soaked silt.
+  silt: hex('#231a13'),
 }
 
 const PREVIEW = {
@@ -235,15 +241,16 @@ const smoothstep = (edge0, edge1, value) => {
 /**
  * Soil colour (linear RGB into `out`): damp soil in hollows, dry sand where
  * it's driest, reddish fine soil on the ant hill, packed dark soil on the
- * ant trail (trailTone 0–1).
+ * ant trail (trailTone 0–1), soaked silt by the stream (streamTone 0–1).
  */
-export function soilColor(moisture, hill, out, litter = 0, trailTone = 0) {
+export function soilColor(moisture, hill, out, litter = 0, trailTone = 0, streamTone = 0) {
   mix(GROUND_COLORS.soil, GROUND_COLORS.damp, smoothstep(0.55, 0.75, moisture), out)
   mix(out, GROUND_COLORS.sand, 0.6 * smoothstep(0.42, 0.28, moisture), out)
   // Leaf litter darkens and warms the soil where leaves gather.
   mix(out, GROUND_COLORS.litter, 0.45 * smoothstep(0.45, 0.8, litter), out)
   mix(out, GROUND_COLORS.hill, 0.85 * hill, out)
   mix(out, GROUND_COLORS.trail, Math.min(trailTone, 1), out)
+  mix(out, GROUND_COLORS.silt, 0.85 * Math.min(streamTone, 1), out)
   return out
 }
 
@@ -278,7 +285,7 @@ export function colorTile(data, mode, colors, exclusions = null) {
       mix(PREVIEW.windCalm, c, Math.min(data.wind[index] * 1.5, 1), c)
     } else {
       // Natural ground, with pebbles on top.
-      soilColor(data.moisture[index], data.hill[index], c, data.litter[index], data.trailTone[index])
+      soilColor(data.moisture[index], data.hill[index], c, data.litter[index], data.trailTone[index], data.streamTone[index])
       if (data.pebble[index] > 0) {
         mix(GROUND_COLORS.pebbleDark, GROUND_COLORS.pebbleLight, data.pebbleShade[index], pebbleColor)
         mix(c, pebbleColor, data.pebble[index], c)

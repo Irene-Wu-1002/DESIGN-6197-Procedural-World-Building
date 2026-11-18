@@ -162,7 +162,7 @@ export function createFarGround(material, holeUniforms) {
         const bumps = 1 - smoothstep(outerEdge, outerEdge + BUMP_COLOR_FADE, distance)
         habitat.farPoint(centerX + localX, centerZ + localZ, out, bumps, fields)
         const { moisture } = fields
-        soilColor(moisture, out.hill, color, out.litter)
+        soilColor(moisture, out.hill, color, out.litter, 0, out.streamBank)
         // No pebble shapes out here, but keep their average tone so the
         // speckled ground doesn't stop at the tile edge.
         const cover = out.pebbleChance * PEBBLE_AREA

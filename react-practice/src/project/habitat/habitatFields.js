@@ -69,6 +69,8 @@ const CONCAVITY_SCALE = 60
 // (0.5 − 0.35 · broad − 0.3 · bump, damper by trunks).
 const MOISTURE = { patch: 0.35, hollow: 0.3, runoff: 0.12, runoffSlope: [15, 40], shade: 0.1, shadeMean: 0.37 }
 const TRUNK_DAMP = { amount: 0.3, reach: 0.25 }
+// The stream soaks its banks (out to the channel's reach).
+const STREAM_DAMP = 0.5
 const CANOPY = { wavelength: 1.5, open: 0.15, closed: 0.75 }
 // Trunks are a few metres tall; their shadows stop at maxLength.
 const TRUNK_SHADOW = { height: 3, maxLength: 4, strength: 0.8, spread: 0.05 }
@@ -121,6 +123,12 @@ export function createHabitatField(sampler, trunks, habitat) {
   const turnNoise = noise(WIND.variationWavelength, 2, SALT.windTurn)
   const gustNoise = noise(WIND.gustWavelength, 1, SALT.windGust)
 
+  const stream = sampler.stream ?? null
+  const streamDamp = (x, z) => {
+    if (!stream) return 0
+    const d = stream.nearest(x, z).distance
+    return Number.isFinite(d) ? STREAM_DAMP * smoothstep(stream.reach, stream.halfWidth, d) : 0
+  }
   const nearTrunks = (x, z, reach) => (trunks ? trunks.trunksNear(x, z, reach) : [])
   const trunkReach = Math.max(shadowLength, 1) + TILE_SIZE
 
@@ -185,6 +193,7 @@ export function createHabitatField(sampler, trunks, habitat) {
       MOISTURE.hollow * concavityInfluence * concavity -
       MOISTURE.runoff * slopeInfluence * smoothstep(...MOISTURE.runoffSlope, slope) +
       TRUNK_DAMP.amount * Math.exp(-out.trunkDistance / TRUNK_DAMP.reach) +
+      streamDamp(x, z) +
       MOISTURE.shade * (out.shade - MOISTURE.shadeMean)
     out.moisture = clamp01(wetness + (raw - 0.5) * contrast)
     return out

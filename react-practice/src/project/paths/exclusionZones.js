@@ -13,6 +13,7 @@ import { antHillEntrances } from './antTrail'
  *   trail          the trail's strip, plus a clearance beyond its edge
  *   interaction    around each tunnel entrance (where the ant goes
  *                  underground)
+ *   stream         the water, plus its clearance beyond the water's edge
  *
  * distance(x, z) is the signed distance to the nearest zone edge (m,
  * negative inside). Large objects (mushrooms, branches) must lie wholly
@@ -33,9 +34,10 @@ const smoothstep = (edge0, edge1, value) => {
 /**
  * paths: Paths settings; seed; antHill: is there one; nests: how many
  * (terrain/antHills.js); agaric: is the fly
- * agaric shown; trail: the ant trail or null.
+ * agaric shown; trail: the ant trail or null; stream: the stream
+ * (terrain/stream.js) or null.
  */
-export function createExclusions({ paths, seed, antHill, nests, agaric, trail }) {
+export function createExclusions({ paths, seed, antHill, nests, agaric, trail, stream = null }) {
   const cm = (value) => value / 100
   const soft = cm(paths.softEdge)
   const circles = []
@@ -60,7 +62,8 @@ export function createExclusions({ paths, seed, antHill, nests, agaric, trail })
     return best
   }
   const trailDistance = (x, z) => (trail ? trail.distanceTo(x, z, trailEdge + reach) - trailEdge : Infinity)
-  const distance = (x, z) => Math.min(circleDistance(x, z), trailDistance(x, z))
+  const streamDistance = (x, z) => (stream ? stream.nearest(x, z).distance - stream.halfWidth - stream.clearance : Infinity)
+  const distance = (x, z) => Math.min(circleDistance(x, z), trailDistance(x, z), streamDistance(x, z))
   const fade = (d) => (d < 0 ? 0 : soft <= 0 ? 1 : smoothstep(0, soft, d))
   const clearing = trail ? trail.clearing : 0
 
@@ -75,7 +78,7 @@ export function createExclusions({ paths, seed, antHill, nests, agaric, trail })
     /** 0–1: how much a small object survives here (0 inside, 1 well outside). */
     keep(x, z) {
       const nearTrail = fade(trailDistance(x, z))
-      return fade(circleDistance(x, z)) * (1 - clearing * (1 - nearTrail))
+      return fade(Math.min(circleDistance(x, z), streamDistance(x, z))) * (1 - clearing * (1 - nearTrail))
     },
   }
 }

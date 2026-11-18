@@ -26,6 +26,11 @@ import { DEFAULT_DAY } from './simulation/dayCycle'
 import { createSimulation } from './simulation/simulation'
 import { createWorldClock } from './simulation/worldClock'
 import { createFarGround, morphRange } from './terrain/farGround'
+import { createStream } from './terrain/stream'
+import { createStreamWater } from './terrain/streamWater'
+import { createTrunkField } from './cover/trunks'
+import { createSoundscape } from './soundscape/soundscape'
+import { DEFAULT_SOUND } from './soundscape/mix'
 import { DEFAULT_GROUND } from './terrain/heightField'
 import { createGroundMaterial } from './terrain/groundMaterial'
 import { createTileManager } from './terrain/tiles'
@@ -163,6 +168,8 @@ export default function MapScene({ intro }) {
   const antWorldRef = useRef(null)
   const antColonyRef = useRef(null)
   const farGroundRef = useRef(null)
+  const streamWaterRef = useRef(null)
+  const soundscapeRef = useRef(null)
   // Where the sun light sits relative to the area you see.
   const sunOffsetRef = useRef(sunOffsetOf(DEFAULT_HABITAT))
   const controllerRef = useRef(null)
@@ -205,6 +212,9 @@ export default function MapScene({ intro }) {
   // Paths: the trail and exclusion zones follow once the controls settle;
   // pheromones change at once.
   const [paths, setPaths] = useState(DEFAULT_PATHS)
+  // Sound (soundscape/): settings, and what's sounding now.
+  const [sound, setSound] = useState(DEFAULT_SOUND)
+  const [soundStatus, setSoundStatus] = useState(null)
   // Tree crowns regrow once their sliders settle.
   const [crowns, setCrowns] = useState(DEFAULT_CROWNS)
   const settledCrowns = useDebounced(crowns, SETTLE_MS)
@@ -369,6 +379,12 @@ export default function MapScene({ intro }) {
     const farGround = createFarGround(farMaterial, holeUniforms)
     farGroundRef.current = farGround
     scene.add(farGround.mesh)
+    // The stream's water surface (the channel is carved into the ground).
+    const streamWater = createStreamWater(scene)
+    streamWaterRef.current = streamWater
+    // Nature sounds that follow the camera (silent until Sound is on).
+    const soundscape = createSoundscape()
+    soundscapeRef.current = soundscape
 
     // Shared by every viewpoint and created once: the ants' tunnels and
     // scent trails, the air (spores, currents), and the three bodies.
@@ -901,6 +917,15 @@ export default function MapScene({ intro }) {
       })
       world.setPresence(env.levels)
       const pixels = canvas.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))
+      streamWater.update({
+        time: worldTime,
+        rain: env.rain,
+        sky: env.sky.horizon,
+        light: env.lightColor,
+        intensity: env.lightIntensity,
+        sun: env.sunDirection,
+        hidden: Math.max(xray.amount, crossSection.amount),
+      })
       rain.update({
         time: worldTime,
         intensity: env.rain,
@@ -909,6 +934,21 @@ export default function MapScene({ intro }) {
         wind: [env.windDirection[0] * env.wind, env.windDirection[1] * env.wind],
         light: Math.min(env.lightIntensity / 1.8 + env.hemiIntensity, 1),
         pixels,
+      })
+      // What you hear from here: the weather, the stream, birds, crickets,
+      // through this body's ears (muffled underground).
+      const groundBelow = tiles.heightAt(camera.position.x, camera.position.z)
+      soundscape.update({
+        dt: delta,
+        env,
+        wind: windStrength,
+        windDirection: env.windDirection,
+        camera,
+        ground: groundBelow,
+        stream: tiles.sampler?.stream ?? null,
+        hearing: params.hearing,
+        underground: Boolean(frame.underground) || camera.position.y < groundBelow - 0.001,
+        paused: worldClock.paused,
       })
 
       // Each flower type opens and closes with its own light (and rain).
@@ -996,6 +1036,13 @@ export default function MapScene({ intro }) {
         colony: antColony.stats(),
       })
       show('sim', setSimStatus, simulation.snapshot())
+      // Sound levels, in steps of 5% (so the panel doesn't re-render for
+      // every flicker).
+      const levels = soundscape.levels()
+      for (const key of Object.keys(levels)) {
+        if (typeof levels[key] === 'number') levels[key] = Math.round(levels[key] * 20) / 20
+      }
+      show('sound', setSoundStatus, levels)
       worldClock.sync()
       show('roots', setRootStats, rootRenderer.stats())
       show('water', setWaterStats, waterRenderer.stats())
@@ -1030,7 +1077,7 @@ export default function MapScene({ intro }) {
     // For checks during development: the controller and how many tiles
     // have been built (switching viewpoints must not build any).
     if (import.meta.env.DEV) {
-      window.__umwelt = { worldClock, controller, tiles, builds: () => builds, renders: () => ({ frames: renders, shadows: shadowDraws }), ecology, coverRenderer, flyAgaric, antWorld, antColony, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, waterRenderer, crownRenderer }
+      window.__umwelt = { worldClock, controller, tiles, soundscape, streamWater, builds: () => builds, renders: () => ({ frames: renders, shadows: shadowDraws }), ecology, coverRenderer, flyAgaric, antWorld, antColony, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, waterRenderer, crownRenderer }
     }
 
     return () => {
@@ -1064,6 +1111,8 @@ export default function MapScene({ intro }) {
       ecology.dispose()
       ecologyRef.current = null
       rain.dispose()
+      streamWater.dispose()
+      soundscape.dispose()
       simulationRef.current = null
       bodies.dispose()
       effects.dispose()
@@ -1115,6 +1164,24 @@ export default function MapScene({ intro }) {
       }),
     [seed, antHill, agaricShown, showTrail, trailWidth, trailCurvature, trailDarkness, compression, clearing, detail]
   )
+  // Sound settings go straight to the soundscape (turning it on is a click,
+  // so the browser lets the audio start).
+  useEffect(() => {
+    soundscapeRef.current?.setSettings(sound)
+  }, [sound])
+
+  // The stream: routed over the ground (and around its trunks), then
+  // carved into it.
+  const { showStream, streamWidth, streamDepth, streamMeander, streamFlow, streamClearance } = settledPaths
+  const stream = useMemo(
+    () =>
+      createStream({
+        ground: { seed, slopes, bumps, warp, antHill, nests },
+        paths: { showStream, streamWidth, streamDepth, streamMeander, streamFlow, streamClearance },
+        trunks: createTrunkField(seed, trunkSpacing, trunks),
+      }),
+    [seed, slopes, bumps, warp, antHill, nests, trunks, trunkSpacing, showStream, streamWidth, streamDepth, streamMeander, streamFlow, streamClearance]
+  )
   const { antHillClearance, agaricClearance, spawnClearance, trailClearance, interactionClearance, softEdge } =
     settledPaths
   const exclusions = useMemo(
@@ -1126,13 +1193,15 @@ export default function MapScene({ intro }) {
         nests,
         agaric: agaricShown,
         trail: antTrail,
+        stream,
       }),
-    [antHillClearance, agaricClearance, spawnClearance, trailClearance, interactionClearance, softEdge, seed, antHill, nests, agaricShown, antTrail]
+    [antHillClearance, agaricClearance, spawnClearance, trailClearance, interactionClearance, softEdge, seed, antHill, nests, agaricShown, antTrail, stream]
   )
   useEffect(() => {
-    tilesRef.current?.setGround({ seed, slopes, bumps, warp, pebbles, antHill, nests, trunks, trunkSpacing, trail: antTrail })
+    tilesRef.current?.setGround({ seed, slopes, bumps, warp, pebbles, antHill, nests, trunks, trunkSpacing, trail: antTrail, stream })
     distantForestRef.current?.setGround({ seed, trunks, trunkSpacing })
-  }, [seed, slopes, bumps, warp, pebbles, antHill, nests, trunks, trunkSpacing, antTrail])
+    streamWaterRef.current?.setStream(stream)
+  }, [seed, slopes, bumps, warp, pebbles, antHill, nests, trunks, trunkSpacing, antTrail, stream])
 
   // The fly agaric stands by the ant hill (only while there is one), and
   // the ants' tunnels and trails lead out from the hill to it and to food.
@@ -1159,7 +1228,7 @@ export default function MapScene({ intro }) {
       agaric: flyAgaric?.group.visible ? flyAgaric.spot(seed) : null,
       tunnels: antWorldRef.current?.tunnels ?? null,
     })
-  }, [seed, slopes, bumps, warp, pebbles, antHill, nests, trunks, trunkSpacing, cover.flyAgaric, antTrail])
+  }, [seed, slopes, bumps, warp, pebbles, antHill, nests, trunks, trunkSpacing, cover.flyAgaric, antTrail, stream])
 
   // Pheromone settings change at once (no rebuild of the ground).
   const { showPheromones, pheromoneIntensity, pheromoneWidth } = paths
@@ -1483,6 +1552,9 @@ export default function MapScene({ intro }) {
         habitatSettling={habitat !== settledHabitat || status.refreshing > 0}
         coverSettling={cover !== settledCover || status.refreshing > 0}
         paths={paths}
+        sound={sound}
+        soundStatus={soundStatus}
+        onSoundChange={(key, value) => setSound((current) => ({ ...current, [key]: value }))}
         pathsSettling={paths !== settledPaths || status.refreshing > 0 || status.pending > 0}
         zonesShowing={zoneFlash > 0}
         onPathsChange={(key, value) => setPaths((current) => ({ ...current, [key]: value }))}
@@ -1515,6 +1587,7 @@ export default function MapScene({ intro }) {
           paths: pathKeys,
           underground: undergroundKeys,
           crowns: crownKeys,
+          sound: soundKeys,
         }) => {
           if (groundKeys) setGround((current) => withDefaults(current, DEFAULT_GROUND, groundKeys))
           if (viewKeys) setView((current) => withDefaults(current, DEFAULT_VIEW, viewKeys))
@@ -1523,6 +1596,7 @@ export default function MapScene({ intro }) {
           if (pathKeys) setPaths((current) => withDefaults(current, DEFAULT_PATHS, pathKeys))
           if (crownKeys) setCrowns((current) => withDefaults(current, DEFAULT_CROWNS, crownKeys))
           if (undergroundKeys) setUnderground((current) => withDefaults(current, DEFAULT_UNDERGROUND, undergroundKeys))
+          if (soundKeys) setSound((current) => withDefaults(current, DEFAULT_SOUND, soundKeys))
         }}
         onReset={() => {
           setGround(DEFAULT_GROUND)
@@ -1532,6 +1606,8 @@ export default function MapScene({ intro }) {
           setPaths(DEFAULT_PATHS)
           setUnderground(DEFAULT_UNDERGROUND)
           setCrowns(DEFAULT_CROWNS)
+          // Reset All keeps the sound on or off as it is.
+          setSound((current) => ({ ...DEFAULT_SOUND, on: current.on }))
         }}
       />
     </div>

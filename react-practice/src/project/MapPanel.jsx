@@ -14,6 +14,7 @@ import { HABITAT_FIELDS } from './habitat/habitatFields'
 import UndergroundControls from './underground/UndergroundControls'
 import { WORLD_STEP_LABEL } from './simulation/worldClock'
 import { DEFAULT_NESTS, MAX_NESTS } from './terrain/antHills'
+import { SOUND_LAYERS } from './soundscape/mix'
 
 const formatPercent = (value) => `${value}%`
 // A 0 – 1 share as a whole percent.
@@ -68,7 +69,36 @@ const FLOWER_DISTRIBUTIONS = [
  * just those settings to their defaults; onReset restores everything.
  * worldClock: { paused, elapsed } from the World's clock (worldClock.js);
  * onTogglePause / onStep: Pause / Play and one 1/60 s Step while paused.
+ * sound / soundStatus / onSoundChange: the Sound tab's settings, what's
+ * sounding now (soundscape.levels()), and a change of one setting.
  */
+// What's sounding now: [label, level key] rows for the Sound tab.
+const HEARING_ROWS = [
+  ['Stream', 'stream'],
+  ['Rain & drips', 'rain'],
+  ['Wind', 'wind'],
+  ['Thunder', 'thunder'],
+  ['Birds', 'birds'],
+  ['Crickets', 'crickets'],
+]
+
+function SoundMeters({ status }) {
+  if (!status?.started) return <p className="section-note">Turn the sound on to hear the forest.</p>
+  if (!status.running) return <p className="section-note">Quiet while the World is paused.</p>
+  return (
+    <ul className="sound-meters" aria-label="What you hear now">
+      {HEARING_ROWS.map(([label, key]) => (
+        <li key={key} className={status[key] > 0.02 ? 'on' : ''}>
+          <span>{label}</span>
+          <span className="sound-meter">
+            <span style={{ width: `${Math.round(Math.min(status[key], 1) * 100)}%` }} />
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 // One line on how the colony is doing.
 function colonyNote(colony) {
   if (!colony?.on) return '\u00a0'
@@ -87,6 +117,9 @@ export default function MapPanel({
   habitatSettling,
   coverSettling,
   paths,
+  sound,
+  soundStatus,
+  onSoundChange,
   pathsSettling,
   zonesShowing,
   underground,
@@ -493,8 +526,8 @@ export default function MapPanel({
       {tab === 'paths' && (
         <>
           <p className="section-note">
-            The ant trail runs from the ant hill to the fly agaric. Exclusion zones keep the trail,
-            the landmarks and the start view clear: large things stay out, small things fade back
+            The ant trail runs from the ant hill to the fly agaric; a stream crosses the world past
+            them. Exclusion zones keep the trail, the stream, the landmarks and the start view clear: large things stay out, small things fade back
             in across the soft edge.
           </p>
           <p className="section-note" aria-live="polite">
@@ -512,6 +545,22 @@ export default function MapPanel({
                 {pathSlider('Small-detail amount', 'detail', 0, 100, 5)}
               </>
             )}
+          </ControlCard>
+          <ControlCard title="Stream">
+            <EnableToggle label="Show stream" checked={paths.showStream} onChange={setPath('showStream')} />
+            {paths.showStream && (
+              <>
+                {pathSlider('Width', 'streamWidth', 3, 15, 0.5, formatTenthCm)}
+                {pathSlider('Water depth', 'streamDepth', 0.3, 2, 0.1, formatTenthCm)}
+                {pathSlider('Meander', 'streamMeander', 0, 100, 5)}
+                {pathSlider('Flow speed', 'streamFlow', 0, 200, 10)}
+                {pathSlider('Bank clearance', 'streamClearance', 0, 5, 0.5, formatTenthCm)}
+              </>
+            )}
+            <p className="section-note">
+              A rill that finds the low ground and runs downhill past the ant hill, cut into the
+              soil. The ant can't wade it; you can hear it as you come near (Sound tab).
+            </p>
           </ControlCard>
           <ControlCard title="Pheromones">
             <EnableToggle
@@ -578,6 +627,47 @@ export default function MapPanel({
           stats={rootStats}
           waterStats={waterStats}
         />
+      )}
+
+      {tab === 'sound' && (
+        <>
+          <p className="section-note">
+            The forest heard from wherever you are: the stream grows louder as you come near it,
+            rain patters when it rains, thunder follows lightning, birds sing by day (most at dawn
+            and dusk) and crickets on warm nights. Each body hears differently: the ant feels every
+            raindrop as a thud. Start the Simulation for weather and night.
+          </p>
+          <ControlCard title="Sound">
+            <EnableToggle label="Sound on" checked={sound.on} onChange={(value) => onSoundChange('on', value)} />
+            <LabeledSlider
+              label="Volume"
+              value={sound.volume}
+              min={0}
+              max={100}
+              step={5}
+              format={formatPercent}
+              onChange={(value) => onSoundChange('volume', value)}
+            />
+            <AdvancedSection>
+              {SOUND_LAYERS.map(([key, label]) => (
+                <LabeledSlider
+                  key={key}
+                  label={label}
+                  value={sound[key]}
+                  min={0}
+                  max={200}
+                  step={5}
+                  format={formatPercent}
+                  onChange={(value) => onSoundChange(key, value)}
+                />
+              ))}
+            </AdvancedSection>
+          </ControlCard>
+          <ControlCard title="Now hearing">
+            <SoundMeters status={soundStatus} />
+            {soundStatus?.underground && <p className="section-note">Muffled: you're underground.</p>}
+          </ControlCard>
+        </>
       )}
 
       {tab === 'debug' && (

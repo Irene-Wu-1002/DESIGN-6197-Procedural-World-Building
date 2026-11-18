@@ -1,6 +1,7 @@
 import { agaricSpot } from '../cover/flyAgaric'
 import { antHills } from '../terrain/antHills'
 import { ANT_HILL, hash } from '../terrain/heightField'
+import { DEFAULT_STREAM } from '../terrain/stream'
 
 /**
  * The ant trail: a worn strip of ground from the ant hill to the fly
@@ -53,6 +54,8 @@ export const DEFAULT_PATHS = {
   trailClearance: 0.5,
   interactionClearance: 1.5,
   softEdge: 3,
+  // The stream (terrain/stream.js).
+  ...DEFAULT_STREAM,
 }
 
 // Tunnel entrances: one in the crater, a few on the mound's sides. The

@@ -23,6 +23,10 @@
  *   effects      post-processing preset (viewEffects.js)
  *   perception   what this body notices: scent trails, ultraviolet,
  *                air currents, spores (0–1, or a size boost for spores)
+ *   hearing      how this body hears the soundscape (soundscape/mix.js):
+ *                wind, drops, birds, insects, water (× loudness), rumble
+ *                (0–1: the ground's low thuds, high sounds dulled), pitch
+ *                (× of drops, drips and the stream's bubbles)
  *   body         model shown during transitions (bodies.js) and where its
  *                eye sits relative to its feet ([forward, up]), or null
  *   embodiment   first-person cue (Embodiment.jsx)
@@ -73,6 +77,7 @@ export const VIEWPOINTS = {
     collision: { radius: 0, trunks: false, flyAgaric: false, mushrooms: false },
     effects: 'natural',
     perception: { scent: 0, uv: 0, air: 0, spores: 1 },
+    hearing: { wind: 1, drops: 1, birds: 1, insects: 1, water: 1, rumble: 0, pitch: 1 },
     body: null,
     embodiment: null,
     // Only its distance is used: how far to pull back when leaving.
@@ -117,6 +122,8 @@ export const VIEWPOINTS = {
     collision: { radius: 0.06, trunks: true, flyAgaric: true, mushrooms: false },
     effects: 'ultraviolet',
     perception: { scent: 0, uv: 1, air: 1, spores: 2.6 },
+    // Up in the moving air: the wind rushes past, birds are nearer.
+    hearing: { wind: 1.7, drops: 0.8, birds: 1.4, insects: 0.8, water: 0.9, rumble: 0, pitch: 1.05 },
     body: { model: 'butterfly', eye: [0.012, 0.0] },
     embodiment: 'wings',
     framing: { distance: 0.2, elevation: 0.4, lookUp: 0, orbit: 0.6 },
@@ -173,9 +180,12 @@ export const VIEWPOINTS = {
     lod: { near: 0, middle: 0 },
     shadowReach: 0.6,
     movement: { type: 'crawl', speed: 0.03, runFactor: 3, tilt: 0.55, scentReach: 0.02, tunnelReach: 0.014 },
-    collision: { radius: 0.003, trunks: true, flyAgaric: true, mushrooms: true },
+    collision: { radius: 0.003, trunks: true, flyAgaric: true, mushrooms: true, water: true },
     effects: 'compound',
     perception: { scent: 1, uv: 0, air: 0, spores: 1 },
+    // On the ground: each raindrop a thud, the stream a roaring river,
+    // crickets enormous, the wind sheltered, the birds far above.
+    hearing: { wind: 0.45, drops: 2.2, birds: 0.6, insects: 1.8, water: 1.6, rumble: 1, pitch: 0.4 },
     body: { model: 'ant', eye: [0.0046, 0.004] },
     embodiment: 'antennae',
     framing: { distance: 0.03, elevation: 0.42, lookUp: 0.002, orbit: 0.7 },

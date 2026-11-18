@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { lerpHearing } from '../soundscape/mix'
 import { createChaseCamera } from './chaseCamera'
 import { createViewInput } from './input'
 import { createCrawlMovement } from './movement/crawl'
@@ -61,11 +62,17 @@ function paramsOf(config) {
     streamAhead: config.streamAhead,
     effects: presetValues(config.effects),
     perception: { ...config.perception },
+    hearing: { ...config.hearing },
   }
 }
 
 function copyParams(p) {
-  return { ...p, effects: { ...p.effects, tint: [...p.effects.tint] }, perception: { ...p.perception } }
+  return {
+    ...p,
+    effects: { ...p.effects, tint: [...p.effects.tint] },
+    perception: { ...p.perception },
+    hearing: { ...p.hearing },
+  }
 }
 
 const NUMBERS = ['fov', 'near', 'far', 'hazeScale', 'hazeMin', 'shadowReach', 'streamAhead']
@@ -77,6 +84,7 @@ function lerpParams(a, b, t, out) {
   for (const key of Object.keys(b.perception)) {
     out.perception[key] = a.perception[key] + (b.perception[key] - a.perception[key]) * t
   }
+  lerpHearing(a.hearing, b.hearing, t, out.hearing)
   return out
 }
 

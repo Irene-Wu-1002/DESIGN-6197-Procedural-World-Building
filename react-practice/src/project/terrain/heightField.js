@@ -17,6 +17,8 @@ import { hash } from './hash'
  *                  and seeded satellite nests (terrain/antHills.js)
  *   ant trail      a worn strip to the fly agaric (paths/antTrail.js):
  *                  pressed down, with fine crumbs, cleared of pebbles
+ *   stream         its channel carved in (terrain/stream.js): bed, banks
+ *                  and a low lip, in the detailed and the smooth surface
  * The ~2 mm grain is added in the ground shader (groundMaterial.js).
  *
  * Plain data only, no Three.js.
@@ -74,8 +76,12 @@ const smoothstep = (edge0, edge1, value) => {
  *   litter   0–1, how much leaf litter gathers here (slow, ~25 cm patches)
  *   trail    0–1, how much this point is on the ant trail
  *   trailTone  0–1, how much darker the trail makes the soil here
+ *   streamSmooth  m the stream's channel changes the smooth surface by
+ *   water    0–1, under the stream's water; streamBank 0–1, its wet bank;
+ *   waterLevel  the water surface here (m), or NaN away from the stream
  *
  * settings.trail: the ant trail (paths/antTrail.js) or null.
+ * settings.stream: the stream (terrain/stream.js) or null.
  */
 export function createGroundSampler(settings) {
   const seed = settings.seed
@@ -107,6 +113,7 @@ export function createGroundSampler(settings) {
   // Pebble patchiness is the same for every point in a cell, so cache it.
   const patchCache = new Map()
   const trail = settings.trail ?? null
+  const stream = settings.stream ?? null
   const clearedCache = new Map()
   // Crumbs on the trail: ~4 mm soil grains.
   const crumbNoise = noise(0.004, 1, 8)
@@ -172,6 +179,7 @@ export function createGroundSampler(settings) {
 
   return {
     seed,
+    stream,
     // The broad-slope noise settings: the habitat's wet/dry patches reuse
     // them, so at their default size they follow the low ground.
     broadNoise,
@@ -204,6 +212,13 @@ export function createGroundSampler(settings) {
           out.trail = onTrail
           out.trailTone = onTrail * trail.darkness * (1 + 0.5 * trail.detail * crumb)
         }
+      }
+      if (stream) stream.carve(x, z, out, out.broadLowHeight + out.hillHeight)
+      else {
+        out.streamSmooth = 0
+        out.water = 0
+        out.streamBank = 0
+        out.waterLevel = NaN
       }
       out.broad = broad
       out.bump = shaped

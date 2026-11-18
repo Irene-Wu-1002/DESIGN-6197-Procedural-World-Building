@@ -145,8 +145,9 @@ export function createWorldQueries(tiles, flyAgaric) {
 
     /**
      * Push a circle of `radius` at (x, z) out of the obstacles enabled in
-     * `collision` ({ trunks, flyAgaric, mushrooms }). `altitude` (m above
-     * the ground) lets flyers pass over the fly agaric. Returns { x, z, hit }.
+     * `collision` ({ trunks, flyAgaric, mushrooms, water }). `altitude` (m
+     * above the ground) lets flyers pass over the fly agaric and the
+     * stream. Returns { x, z, hit }.
      */
     resolve(x, z, radius, collision, altitude = 0) {
       let hit = false
@@ -173,6 +174,13 @@ export function createWorldQueries(tiles, flyAgaric) {
           if (altitude < capHeight + radius) {
             push(agaric.x, agaric.z, (altitude > 0.02 ? AGARIC.cap : AGARIC.stem) + radius)
           }
+        }
+        const stream = collision.water && altitude <= 0 ? tiles.sampler?.stream : null
+        if (stream) {
+          // Out of the water, to the bank on the side you came from.
+          const q = stream.nearest(x, z)
+          const reach = stream.halfWidth + radius
+          if (q.distance < reach) push(q.x, q.z, reach)
         }
         if (collision.mushrooms) {
           nearby(x, z, (entry) => {

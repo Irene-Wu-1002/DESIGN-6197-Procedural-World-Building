@@ -222,7 +222,8 @@ export function createColony() {
         heights[i] = sampler.height(x, z)
         const inTrunk = trunks ? trunks.distance(x, z, 0.5) <= 0 : false
         const inStem = agaric ? Math.hypot(x - agaric.x, z - agaric.z) < AGARIC_STEM : false
-        blocked[i] = inTrunk || inStem ? 1 : 0
+        const inWater = sampler.stream ? sampler.stream.wet(x, z) : false
+        blocked[i] = inTrunk || inStem || inWater ? 1 : 0
       }
     }
     buildRow = end

@@ -836,6 +836,42 @@ input[type='checkbox'] {
   color: var(--muted);
 }
 
+.sound-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.sound-meters li {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.sound-meters li.on {
+  color: var(--text);
+}
+
+.sound-meter {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sound-meter span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
 .control-subsection {
   display: flex;
   flex-direction: column;
