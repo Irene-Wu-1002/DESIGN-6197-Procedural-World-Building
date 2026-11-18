@@ -436,6 +436,21 @@
   text-overflow: ellipsis;
 }
 
+/* Status, then the butterfly's body in a few words. */
+.eco-follow-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.eco-follow small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10.5px;
+  opacity: 0.72;
+}
+
 .eco-follow button {
   flex: none;
   padding: 3px 10px;

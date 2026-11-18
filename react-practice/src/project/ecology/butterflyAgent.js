@@ -11,6 +11,7 @@ import {
   TIMERS,
   TRAITS,
 } from './ecologyConfig'
+import { deriveTraits, drawMorphology } from './morphology'
 import { clamp, clamp01, createRandom, lerp, smoothstep, wrapAngle } from './random'
 
 /**
@@ -78,23 +79,24 @@ const normalize = (v) => {
   return v
 }
 
-/** A butterfly with seeded traits; place() puts it in the world. */
+/**
+ * A butterfly with a seeded body (morphology.js); its abilities follow from
+ * that body. place() puts it in the world.
+ */
 export function createButterflyAgent(index, seed) {
   const random = createRandom(seed * 7919 + index * 104729 + 13)
   const range = ([low, high]) => random.range(low, high)
+  const morph = drawMorphology(random)
   const traits = {
-    scale: range(TRAITS.wingspan),
-    proboscis: range(TRAITS.proboscis),
-    speed: range(TRAITS.speed),
-    turnRate: range(TRAITS.turnRate),
-    visualRange: range(TRAITS.visualRange),
+    ...deriveTraits(morph),
+    // Half the field of view (rad), and antenna sensitivity.
     fov: (TRAITS.fov * Math.PI) / 360,
     scentThreshold: range(TRAITS.scentThreshold),
-    energyCapacity: ENERGY.capacity,
   }
   return {
     index,
     random,
+    morph,
     traits,
     prefs: FLOWER_TYPES.map(() => range(TRAITS.innate)),
     seen: 0,
@@ -105,7 +107,7 @@ export function createButterflyAgent(index, seed) {
     airspeed: 0,
     climb: 0,
     turn: 0,
-    energy: range(ENERGY.start) * ENERGY.capacity,
+    energy: range(ENERGY.start) * traits.energyCapacity,
     temperature: 22,
     state: 'explore',
     stateTime: 0,
@@ -660,6 +662,8 @@ function fly(agent, ctx, dt, groundVx, groundVz, targetY, drift) {
   const t = agent.traits
   const weak = agent.energy / t.energyCapacity < THRESHOLDS.weak
   const maxSpeed = t.speed * (weak ? 0.6 : 1) * 1.25
+  // Light bodies on big wings are carried further by the wind.
+  drift = Math.min(drift * t.windDrift, 0.9)
   ctx.wind.at(agent.position.x, agent.position.z, scratch.wind)
   // Air velocity that gives that ground velocity once the wind (the share
   // it doesn't correct) is added: it heads up into a crosswind.
@@ -680,9 +684,9 @@ function fly(agent, ctx, dt, groundVx, groundVz, targetY, drift) {
     agent.yaw += clamp(delta, -step, step)
   }
   agent.turn += (wrapAngle(agent.yaw - before) / Math.max(dt, 1e-4) - agent.turn) * smooth(6, dt)
-  // Speed up or slow down, no faster than FLIGHT.accel; slower while turning hard.
+  // Speed up or slow down, no faster than its acceleration; slower while turning hard.
   const aligned = Math.max(Math.cos(wrapAngle(yawOf(ax, az) - agent.yaw)), 0.2)
-  agent.airspeed += clamp(speed * aligned - agent.airspeed, -FLIGHT.accel * dt, FLIGHT.accel * dt)
+  agent.airspeed += clamp(speed * aligned - agent.airspeed, -t.accel * dt, t.accel * dt)
   const vx = forwardX(agent.yaw) * agent.airspeed + scratch.wind.x * drift
   const vz = forwardZ(agent.yaw) * agent.airspeed + scratch.wind.z * drift
   // Height: ease toward the target, limited climb rate; fluttering bobs.
@@ -935,7 +939,7 @@ export function move(agent, ctx, dt) {
         agent.target.lastSeen = ctx.now
         // Gusts can blow it off as it comes in.
         const gust = ctx.wind.strength * (0.8 + 0.4 * agent.random())
-        agent.land.fails = gust > THRESHOLDS.landingWind && agent.random() < THRESHOLDS.landingFailChance
+        agent.land.fails = gust > THRESHOLDS.landingWind * agent.traits.gustTolerance && agent.random() < THRESHOLDS.landingFailChance
       }
     }
   } else if (state === 'land') {
@@ -982,7 +986,7 @@ export function move(agent, ctx, dt) {
     a.beat = 0
   }
   // Proboscis: uncoils for probing and feeding, coils back otherwise.
-  a.proboscis += clamp(proboscis - a.proboscis, -dt / TIMERS.recoil, dt / TIMERS.uncoil)
+  a.proboscis += clamp(proboscis - a.proboscis, -dt / (TIMERS.recoil * agent.traits.uncoil), dt / (TIMERS.uncoil * agent.traits.uncoil))
   a.phase += dt * 13 * a.beat
 }
 
@@ -1001,7 +1005,7 @@ function probeAndFeed(agent, ctx, dt, record) {
   const badWeather = ctx.env.rain > THRESHOLDS.rain.enter || ctx.wind.strength > THRESHOLDS.wind.enter
   if (agent.state === 'probe') {
     // Wait for the proboscis to uncoil, then feel for nectar.
-    if (agent.stateTime < TIMERS.uncoil + TIMERS.probe) return 1
+    if (agent.stateTime < TIMERS.uncoil * agent.traits.uncoil + TIMERS.probe) return 1
     agent.stats.visits += 1
     if (access <= 0) {
       // Its tongue is too short for this corolla.
@@ -1076,9 +1080,10 @@ function crawl(agent, ctx, dt) {
 export function physiology(agent, ctx, dt) {
   const flying = isFlying(agent) && agent.state !== 'land'
   const settled = agent.phase === 'settled' && !FLYING.has(agent.state)
-  let cost = ENERGY.rest
-  if (flying) cost = ENERGY.flight
-  else if (agent.state === 'bask' && settled) cost = ENERGY.bask
+  const t = agent.traits
+  let cost = t.restCost
+  if (flying) cost = t.flightCost
+  else if (agent.state === 'bask' && settled) cost = t.baskCost
   agent.energy = clamp(agent.energy - cost * dt, 0, agent.traits.energyCapacity)
 
   let posture = THERMAL.posture.perched
@@ -1087,8 +1092,8 @@ export function physiology(agent, ctx, dt) {
   else if (agent.anim.wings === 'closed') posture = THERMAL.posture.closed
   let sun = agent.percept.sun
   if (agent.spot && (agent.spot.kind === 'bark' || agent.spot.kind === 'cap') && settled) sun *= 0.3
-  const equilibrium = ctx.env.air + THERMAL.sun * sun * posture + (flying ? THERMAL.flight : 0)
-  const tau = THERMAL.tau / (1 + THERMAL.windCooling * ctx.wind.strength)
+  const equilibrium = ctx.env.air + THERMAL.sun * t.absorb * sun * posture + (flying ? THERMAL.flight : 0)
+  const tau = t.warmTime / (1 + THERMAL.windCooling * ctx.wind.strength)
   agent.temperature += (equilibrium - agent.temperature) * (1 - Math.exp(-dt / tau))
 }
 

@@ -8,6 +8,10 @@ import { createButterfly } from '../viewpoints/bodies'
  * legs that reach down to land and a proboscis that uncoils from a spiral
  * under the head into the flower, and coils back.
  *
+ * Its shape follows the agent's morphology (morphology.js): wing length and
+ * width, body size (the whole group), eye size and wing colour from pale to
+ * dark, so how a butterfly looks is what it can do.
+ *
  * update(agent, dt, detail) poses it from the agent (ecology/butterflyAgent):
  * position, pose { forward, up }, anim { phase, beat, wings, legs,
  * proboscis, tip }. Wing modes: flap, glide, open (basking, flat), closed
@@ -19,6 +23,14 @@ const PROBOSCIS_SEGMENTS = 10
 const LEG_Z = [-0.0074, -0.0052, -0.003]
 const WING_POSE = { glide: 0.28, open: 0.06, closed: 1.47, feed: 1.2 }
 const smooth = (rate, dt) => 1 - Math.exp(-rate * dt)
+// Wing tint (× the wing texture) from pale (darkness 0) through the
+// model's own colours (0.5) to dark (1).
+const PALE = new THREE.Color(1.7, 1.6, 1.4)
+const DARK = new THREE.Color(0.16, 0.13, 0.12)
+const WHITE = new THREE.Color(1, 1, 1)
+export function wingTint(darkness, out = new THREE.Color()) {
+  return darkness < 0.5 ? out.copy(PALE).lerp(WHITE, darkness / 0.5) : out.copy(WHITE).lerp(DARK, (darkness - 0.5) / 0.5)
+}
 
 // A thin cylinder from a to b (unit cylinder geometry, along +y).
 function limb(geometry, material, a, b, radius) {
@@ -31,10 +43,25 @@ function limb(geometry, material, a, b, radius) {
   return mesh
 }
 
-export function createButterflyBody(material, { proboscis = 0.01, scale = 1 } = {}) {
+export function createButterflyBody(material, { proboscis = 0.01, scale = 1, morph = null } = {}) {
   const body = createButterfly(material)
   const group = body.group
   group.visible = false
+  // Wings: length along the span, width along the body (the whole group is
+  // scaled by body size, so divide that out); tinted pale to dark.
+  const span = (morph?.wingLength ?? scale) / scale
+  const chord = (morph ? morph.wingLength / morph.wingAspect : scale) / scale
+  for (const { pivot } of body.wings) pivot.children[0].scale.set(span, 1, chord)
+  if (morph) wingTint(morph.darkness, body.wings[0].pivot.children[0].material.color)
+  // Compound eyes on the sides of the head, sized by the eye trait.
+  const eyeGeometry = new THREE.SphereGeometry(1, 10, 8)
+  const eye = 0.00085 * (morph?.eye ?? 1)
+  for (const side of [-1, 1]) {
+    const mesh = new THREE.Mesh(eyeGeometry, material)
+    mesh.position.set(side * 0.0021, 0.0009, -0.0118)
+    mesh.scale.setScalar(eye)
+    group.add(mesh)
+  }
   const cylinder = new THREE.CylinderGeometry(1, 1, 1, 5)
   cylinder.translate(0, 0.5, 0)
   const centered = new THREE.CylinderGeometry(1, 1, 1, 5)
@@ -138,6 +165,7 @@ export function createButterflyBody(material, { proboscis = 0.01, scale = 1 } = 
       for (const geometry of body.geometries) geometry.dispose()
       cylinder.dispose()
       centered.dispose()
+      eyeGeometry.dispose()
       for (const item of body.extra) item.dispose()
     },
   }

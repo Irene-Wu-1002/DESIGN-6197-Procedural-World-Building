@@ -162,20 +162,61 @@ export const SCENT_DISPLAY = {
 }
 
 // --- Butterflies ------------------------------------------------------
-// Individual traits are drawn from these ranges with the world seed.
-export const TRAITS = {
-  // Body scale (1 = the existing model, ~6.4 cm wingspan).
-  wingspan: [0.8, 1.05],
+// Each butterfly's body is drawn from these ranges with the world seed
+// (morphology.js); its abilities then follow from that body (MORPH_RULES),
+// not from separate random numbers. 1 = the existing model.
+export const MORPHOLOGY = {
+  // Wing length (span direction) and aspect ratio (length / width: under 1
+  // broad and rounded, over 1 long and slender).
+  wingLength: [0.8, 1.1],
+  wingAspect: [0.8, 1.3],
+  // Body girth (thorax and abdomen); mass grows with its cube.
+  body: [0.85, 1.15],
+  // Wing colour from pale (0) to dark (1).
+  darkness: [0, 1],
+  // Eye size.
+  eye: [0.8, 1.2],
   // Proboscis length (m).
   proboscis: [0.007, 0.0145],
-  // Cruising airspeed (m/s) and maximum turn rate (rad/s).
-  speed: [0.3, 0.46],
-  turnRate: [3, 5],
-  // How far (m) and how wide (degrees, total) it can spot flowers.
-  visualRange: [0.32, 0.55],
-  fov: 300,
+}
+
+/**
+ * How abilities follow from the body. Simplified scaling rules, with
+ * softened exponents so every combination in MORPHOLOGY stays able to live
+ * here; NOT measured values for any species. A body at the reference (wing
+ * 1 × 1, body 1, darkness 0.5, eye 1, proboscis REF) gets exactly the BASE
+ * values, which are the former averages.
+ *
+ *   mass m = body³, wing area A = length² / aspect, wing loading W = m / A
+ *   cruise speed   ∝ W^0.3            (more weight per wing: faster)
+ *   turn rate      ∝ length^-0.8 · m^-0.25 · aspect^-0.3
+ *   acceleration   ∝ (A / m)^0.5
+ *   blown by wind  ∝ W^-0.4           (drift share, gust landing tolerance)
+ *   flight cost    ∝ m^0.8 · W^0.3 / aspect^0.4  (slender wings save energy)
+ *   rest cost      ∝ m^0.75
+ *   energy store   ∝ m
+ *   sun absorbed   ∝ (0.6 + 0.8 · darkness) · (A / m)^0.3
+ *   warm / cool time ∝ body
+ *   visual range   ∝ eye
+ *   uncoil / recoil time ∝ proboscis / REF
+ */
+export const MORPH_RULES = {
+  base: { speed: 0.38, turnRate: 4, accel: 1.4, visualRange: 0.43, proboscis: 0.01075 },
+  // Each derived value is kept inside these bounds.
+  limits: {
+    speed: [0.26, 0.56],
+    turnRate: [2.8, 6],
+    accel: [0.8, 2.4],
+    windDrift: [0.6, 1.5],
+    absorb: [0.6, 1.5],
+  },
+}
+
+export const TRAITS = {
   // Smoothed scent concentration (particle-equivalents) to count as smelt.
   scentThreshold: [0.035, 0.08],
+  // Total field of view (degrees).
+  fov: 300,
   // Innate preference per flower type (0.2–2) before any learning.
   innate: [0.7, 1.3],
 }

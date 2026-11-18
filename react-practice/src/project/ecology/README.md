@@ -47,6 +47,21 @@ So a plume leaves the flower narrow and opens into a cone downwind. The cone is 
 
 They run at a fixed 30 Hz. Strength halves every 3 s, and particles are recycled when weak, old or out of range. When the pool (9000) would overflow, each flower emits fewer particles that each carry more strength, so the concentration stays the same. Particles carry a scent type but **no source id**. The "show scent" toggle and the "particles shown" share only change what is drawn.
 
+**Body → abilities.** Each butterfly's body is drawn from the seed (`morphology.js`): wing length and aspect ratio, body girth, wing darkness, eye size and proboscis length. No ability is drawn separately; each follows from that body:
+
+| From the body | Ability |
+| --- | --- |
+| Wing loading (mass ÷ wing area) | Cruise speed ↑, how far wind pushes it ↓, gust landing tolerance ↑ |
+| Mass (girth³) | Energy store ↑, upkeep and flight cost ↑, slower to warm and cool |
+| Wing length, aspect ratio | Turn rate ↓ for long or slender wings; slender wings fly more cheaply |
+| Darkness × wing area ÷ mass | Sun absorbed: basks warm faster, but overheats sooner |
+| Eye size | Visual range |
+| Proboscis length | Reaches deeper nectar, but takes longer to uncoil and coil |
+
+The exponents are softened scaling rules (`MORPH_RULES` in `ecologyConfig.js`), and the bounds keep every body in range able to live here. A reference body (all 1, darkness 0.5) gets exactly the former average abilities.
+
+The model shows the body: wing length and width, girth, eyes, and a pale-to-dark wing tint. The follow card describes it in words, for example "Dark wings, heavy body: costly to fly, long tongue". The developer readout shows the numbers.
+
 **Butterflies.** Each frame follows world → perceive → decide → move:
 - **Vision** has a field of view, a range and occlusion by trunks and toadstools.
 - **Smell** samples two antenna spheres and smooths the result.

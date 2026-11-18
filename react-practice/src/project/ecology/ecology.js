@@ -1,5 +1,6 @@
 import { createButterflyAgent, decide, move, perceive, physiology, placeAgent, statusOf } from './butterflyAgent'
 import { DEFAULT_ECOLOGY, FLIGHT, FLOWER_TYPES, LOD, STATE_LABELS, TIME, TIMERS } from './ecologyConfig'
+import { bodyMeasures, describe } from './morphology'
 import { createFlowerRegistry } from './flowerRegistry'
 import { createRandom, lerp, smoothstep } from './random'
 import { createScentField } from './scentField'
@@ -299,6 +300,10 @@ export function createEcology(initialSeed) {
         empty: agent.stats.empty,
         outOfReach: agent.stats.outOfReach,
         target: agent.target ? FLOWER_TYPES[agent.target.type].label : null,
+        // Its body in plain words, and the numbers behind it (developer view).
+        looks: describe(agent.morph, agent.traits),
+        morph: { ...agent.morph },
+        derived: { ...bodyMeasures(agent.morph), speed: agent.traits.speed, turnRate: agent.traits.turnRate, flightCost: agent.traits.flightCost, energyCapacity: agent.traits.energyCapacity, absorb: agent.traits.absorb, windDrift: agent.traits.windDrift },
       }
     },
 

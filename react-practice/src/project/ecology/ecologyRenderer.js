@@ -117,7 +117,7 @@ export function createEcologyRenderer(scene) {
   const bodyFor = (agent) => {
     let body = bodies.get(agent)
     if (!body) {
-      body = createButterflyBody(bodyMaterial, { proboscis: agent.traits.proboscis, scale: agent.traits.scale })
+      body = createButterflyBody(bodyMaterial, { proboscis: agent.traits.proboscis, scale: agent.traits.scale, morph: agent.morph })
       scene.add(body.group)
       bodies.set(agent, body)
     }

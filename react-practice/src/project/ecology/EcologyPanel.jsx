@@ -106,6 +106,12 @@ export default function EcologyPanel({
                     `scent ${followed.attraction.toFixed(3)}${followed.smelt ? ' (smelt)' : ''} · sees ${followed.seen} flowers · ` +
                     `visits ${followed.visits} (empty ${followed.empty}, out of reach ${followed.outOfReach}) · ` +
                     `likes ${FLOWER_TYPES.map((type, k) => `${type.short.toLowerCase()} ${followed.prefs[k].toFixed(2)}`).join(', ')}`}
+                {followed?.morph &&
+                  ` · body: wing ${followed.morph.wingLength.toFixed(2)} × aspect ${followed.morph.wingAspect.toFixed(2)}, girth ${followed.morph.body.toFixed(2)}, ` +
+                    `dark ${followed.morph.darkness.toFixed(2)}, eye ${followed.morph.eye.toFixed(2)} → mass ${followed.derived.mass.toFixed(2)}, ` +
+                    `wing loading ${followed.derived.wingLoading.toFixed(2)}, cruise ${followed.derived.speed.toFixed(2)} m/s, turn ${followed.derived.turnRate.toFixed(1)} rad/s, ` +
+                    `flight ${(followed.derived.flightCost * 1000).toFixed(0)} mU/s of ${followed.derived.energyCapacity.toFixed(1)} U, ` +
+                    `sun ×${followed.derived.absorb.toFixed(2)}, wind drift ×${followed.derived.windDrift.toFixed(2)}`}
               </p>
             )}
             <p className="section-note">

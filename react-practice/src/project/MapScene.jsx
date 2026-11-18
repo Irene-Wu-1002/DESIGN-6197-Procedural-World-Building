@@ -954,7 +954,7 @@ export default function MapScene({ intro }) {
       show(
         'followed',
         setFollowed,
-        status && !debug ? { index: status.index, label: status.label, state: status.state } : status
+        status && !debug ? { index: status.index, label: status.label, state: status.state, looks: status.looks } : status
       )
     }, STATUS_REFRESH_MS)
 
@@ -1312,8 +1312,11 @@ export default function MapScene({ intro }) {
         )}
         {follow >= 0 && followed && (
           <div className="eco-follow" style={{ pointerEvents: 'auto' }}>
-            <span>
-              Butterfly {followed.index + 1} · {followed.label}
+            <span className="eco-follow-text">
+              <span>
+                Butterfly {followed.index + 1} · {followed.label}
+              </span>
+              {followed.looks && <small>{followed.looks}</small>}
             </span>
             <button type="button" onClick={() => setFollow(-1)}>
               Free view <kbd>Esc</kbd>
