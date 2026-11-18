@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { ANT_HILL, hash } from '../terrain/heightField'
+import { agaricSpot } from '../terrain/antHills'
+import { hash } from '../terrain/hash'
 
 /**
  * The fly agaric: the world's landmark, a ~12 cm mushroom (a 40 m tower to
@@ -8,17 +9,13 @@ import { ANT_HILL, hash } from '../terrain/heightField'
  * cellular noise in the cap's shader. Growth stages come later.
  */
 
-// Distance from the ant hill's centre; the direction comes from the seed.
-const DISTANCE = 0.24
 // The stem reaches below ground, so it never floats where the ground
 // smooths out with distance.
 const BURY = 0.02
 
-/** Where the fly agaric stands for this seed (world x, z). */
-export function agaricSpot(seed) {
-  const angle = hash(seed, 17, 9001) * Math.PI * 2
-  return { x: ANT_HILL.x + Math.cos(angle) * DISTANCE, z: ANT_HILL.z + Math.sin(angle) * DISTANCE }
-}
+// Where it stands (beside the ant hill) lives with the ant hills, which
+// keep clear of it.
+export { agaricSpot }
 
 const lathe = (points, segments = 40) =>
   new THREE.LatheGeometry(points.map(([r, y]) => new THREE.Vector2(r, y)), segments)

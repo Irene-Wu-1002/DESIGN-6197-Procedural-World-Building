@@ -13,6 +13,7 @@ import { ELEMENT_KEYS, MAP_TABS, SCATTER_ELEMENTS, TAB_KEYS } from './panel/mapP
 import { HABITAT_FIELDS } from './habitat/habitatFields'
 import UndergroundControls from './underground/UndergroundControls'
 import { WORLD_STEP_LABEL } from './simulation/worldClock'
+import { DEFAULT_NESTS, MAX_NESTS } from './terrain/antHills'
 
 const formatPercent = (value) => `${value}%`
 // A 0 – 1 share as a whole percent.
@@ -372,7 +373,8 @@ export default function MapPanel({
           </ControlCard>
           <p className="section-note">
             Tree trunks shade and dampen the ground around them. The ant hill brings ant trails,
-            and the fly agaric grows beside it.
+            and the fly agaric grows beside it. The colony lives in several nests joined by
+            tunnels: as the ant, press E at an entrance to go underground.
           </p>
           <ControlCard title="Trees & creatures">
             <EnableToggle label="Tree trunks" checked={ground.trunks} onChange={setGround('trunks')} />
@@ -388,6 +390,17 @@ export default function MapPanel({
               />
             )}
             <EnableToggle label="Ant hill" checked={ground.antHill} onChange={setGround('antHill')} />
+            {ground.antHill && (
+              <LabeledSlider
+                label="Nests"
+                value={ground.nests ?? DEFAULT_NESTS}
+                min={1}
+                max={MAX_NESTS}
+                step={1}
+                format={(value) => `${value}`}
+                onChange={setGround('nests')}
+              />
+            )}
           </ControlCard>
           {ground.trunks && (
             <ControlCard title="Tree crowns">

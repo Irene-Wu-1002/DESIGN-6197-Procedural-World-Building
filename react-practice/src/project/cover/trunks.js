@@ -1,4 +1,5 @@
-import { ANT_HILL, hash } from '../terrain/heightField'
+import { possibleAntHills } from '../terrain/antHills'
+import { hash } from '../terrain/heightField'
 
 /**
  * Tree trunks on a jittered world grid: at most one trunk per `spacing`-m
@@ -12,8 +13,10 @@ import { ANT_HILL, hash } from '../terrain/heightField'
 const TRUNK = {
   chance: 0.8,
   radius: [0.15, 0.3],
-  // Keep the start (ant hill and fly agaric) open.
+  // Keep the start (ant hill and fly agaric) open, and room around the
+  // satellite nests (beyond their mound).
   keepClear: 0.6,
+  keepClearNest: 0.2,
 }
 // Salt so trunk hashes don't line up with pebble hashes.
 const SALT = 7001
@@ -24,6 +27,11 @@ const SALT = 7001
  */
 export function createTrunkField(seed, spacing, on = true) {
   const cache = new Map()
+  const hills = possibleAntHills(seed)
+  const clearOf = (x, z, radius) =>
+    hills.every(
+      (hill) => Math.hypot(x - hill.x, z - hill.z) > (hill.main ? TRUNK.keepClear : hill.radius + TRUNK.keepClearNest) + radius
+    )
   const trunkInCell = (cx, cz) => {
     const key = cx * 92821 + cz
     if (cache.has(key)) return cache.get(key)
@@ -35,7 +43,7 @@ export function createTrunkField(seed, spacing, on = true) {
       const room = Math.max(spacing - 2 * margin, 0)
       const x = cx * spacing + margin + hash(cx, cz, seed + SALT + 2) * room
       const z = cz * spacing + margin + hash(cx, cz, seed + SALT + 3) * room
-      const clear = Math.hypot(x - ANT_HILL.x, z - ANT_HILL.z) > TRUNK.keepClear + radius
+      const clear = clearOf(x, z, radius)
       if (clear) trunk = { x, z, radius, seed: Math.floor(hash(cx, cz, seed + SALT + 4) * 1e6) }
     }
     if (cache.size > 4000) cache.clear()

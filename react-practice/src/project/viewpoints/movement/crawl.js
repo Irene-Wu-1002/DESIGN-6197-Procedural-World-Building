@@ -5,8 +5,12 @@
  *
  * Follow scent (toggle): near a pheromone trail the ant walks along it on
  * its own, turning with the trail, until the trail ends or you move.
+ * Underground (enterTunnel): along the colony's tunnels, see burrow.js.
+ *
  * See orbit.js for the strategy interface.
  */
+
+import { createBurrow } from './burrow'
 
 const smooth = (rate, dt) => 1 - Math.exp(-rate * dt)
 // Sample spacing for the slope under the ant (about its body length).
@@ -20,6 +24,7 @@ export function createCrawlMovement() {
   // { trail, s, direction } while following a scent trail.
   let following = null
   const point = { x: 0, z: 0, tx: 0, tz: 0 }
+  const burrow = createBurrow()
 
   const settle = (state, world, config, dt, snap) => {
     const { x, z } = state.position
@@ -32,10 +37,27 @@ export function createCrawlMovement() {
 
   return {
     get following() {
-      return Boolean(following)
+      return Boolean(following || burrow.auto)
+    },
+
+    /** True while in the tunnels. */
+    get underground() {
+      return burrow.active
+    },
+
+    /** The nest you're under or heading for (index), or -1 on the surface. */
+    get nest() {
+      return burrow.hill
+    },
+
+    /** Go down entrance `index` (antWorld order). Returns a hint, or null. */
+    enterTunnel(state, index, { antWorld }) {
+      following = null
+      return burrow.enter(state, antWorld?.tunnels, index)
     },
 
     place(state, from, { config, world }) {
+      burrow.leave()
       const spot = world.resolve(from.x, from.z, config.collision.radius, config.collision)
       state.position.x = spot.x
       state.position.z = spot.z
@@ -49,6 +71,7 @@ export function createCrawlMovement() {
 
     /** Start or stop following the nearest scent trail. Returns whether it follows. */
     toggleScent(state, { config, antWorld }) {
+      if (burrow.active) return burrow.toggleAuto()
       if (following) {
         following = null
         return false
@@ -64,9 +87,12 @@ export function createCrawlMovement() {
 
     stopScent() {
       following = null
+      if (burrow.auto) burrow.toggleAuto()
     },
 
-    update(dt, input, state, { config, world, motion }) {
+    update(dt, input, state, ctx) {
+      if (burrow.active) return burrow.update(dt, input, state, ctx)
+      const { config, world, motion } = ctx
       const m = config.movement
       const amount = Math.min(Math.hypot(input.move.x, input.move.y), 1)
       if (following && amount > 0.2) following = null

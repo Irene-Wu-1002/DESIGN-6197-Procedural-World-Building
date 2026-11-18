@@ -1,4 +1,5 @@
 import { agaricSpot } from '../cover/flyAgaric'
+import { antHills } from '../terrain/antHills'
 import { ANT_HILL, hash } from '../terrain/heightField'
 
 /**
@@ -52,8 +53,10 @@ export const DEFAULT_PATHS = {
   softEdge: 3,
 }
 
-// Tunnel entrances: one in the crater, a few on the mound's sides.
+// Tunnel entrances: one in the crater, a few on the mound's sides. The
+// satellite nests are smaller, with fewer side entrances.
 const ENTRANCE = { main: 0.006, side: 0.0035, sideCount: 3, distance: [0.035, 0.06] }
+const SATELLITE_ENTRANCE = { main: 0.005, side: 0.0035, sideCount: [1, 2], distance: [0.018, 0.03] }
 const ENTRANCE_SALT = 4401
 // The trail stops this far short of the agaric's centre (its stem).
 const STEM_GAP = 0.012
@@ -63,24 +66,45 @@ const SWING = 0.35
 const STEP = 0.002
 const SALT = 4501
 
-/** Tunnel entrances [{ x, z, radius }] (main first) for this seed. */
-export function antHillEntrances(seed) {
-  const entrances = [{ x: ANT_HILL.x, z: ANT_HILL.z, radius: ENTRANCE.main }]
-  const turn = hash(seed, 1, ENTRANCE_SALT) * Math.PI * 2
-  for (let k = 0; k < ENTRANCE.sideCount; k += 1) {
-    const angle = turn + (k / ENTRANCE.sideCount) * Math.PI * 2 + (hash(seed, 10 + k, ENTRANCE_SALT) - 0.5) * 0.8
-    const d = ENTRANCE.distance[0] + hash(seed, 20 + k, ENTRANCE_SALT) * (ENTRANCE.distance[1] - ENTRANCE.distance[0])
-    entrances.push({ x: ANT_HILL.x + Math.cos(angle) * d, z: ANT_HILL.z + Math.sin(angle) * d, radius: ENTRANCE.side })
+/**
+ * Tunnel entrances [{ x, z, radius, hill, main }] for this seed: the main
+ * hill's first (its crater first), then each satellite nest's, for the
+ * first `nests` nests (terrain/antHills.js). hill: the nest's index; main:
+ * the crater entrance.
+ */
+export function antHillEntrances(seed, nests = 1) {
+  const entrances = []
+  for (const hill of antHills(seed, nests)) {
+    const spec = hill.main ? ENTRANCE : SATELLITE_ENTRANCE
+    entrances.push({ x: hill.x, z: hill.z, radius: spec.main, hill: hill.index, main: true })
+    // The main hill keeps its old hashes, so its entrances never move.
+    const salt = ENTRANCE_SALT + hill.index * 97
+    const sides = hill.main
+      ? ENTRANCE.sideCount
+      : spec.sideCount[0] + Math.floor(hash(seed, 5, salt) * (spec.sideCount[1] - spec.sideCount[0] + 1))
+    const turn = hash(seed, 1, salt) * Math.PI * 2
+    for (let k = 0; k < sides; k += 1) {
+      const angle = turn + (k / sides) * Math.PI * 2 + (hash(seed, 10 + k, salt) - 0.5) * 0.8
+      const d = spec.distance[0] + hash(seed, 20 + k, salt) * (spec.distance[1] - spec.distance[0])
+      entrances.push({
+        x: hill.x + Math.cos(angle) * d,
+        z: hill.z + Math.sin(angle) * d,
+        radius: spec.side,
+        hill: hill.index,
+        main: false,
+      })
+    }
   }
   return entrances
 }
 
-/** The side entrance facing (x, z), or the main one if there are none. */
+/** The main hill's side entrance facing (x, z), or its crater if it has none. */
 export function entranceFacing(entrances, x, z) {
   const heading = Math.atan2(z - ANT_HILL.z, x - ANT_HILL.x)
-  let found = entrances[0]
+  const own = entrances.filter((entrance) => (entrance.hill ?? 0) === 0)
+  let found = own[0]
   let best = Infinity
-  for (const entrance of entrances.slice(1)) {
+  for (const entrance of own.slice(1)) {
     const angle = Math.atan2(entrance.z - ANT_HILL.z, entrance.x - ANT_HILL.x)
     const gap = Math.abs(Math.atan2(Math.sin(angle - heading), Math.cos(angle - heading)))
     if (gap < best) {

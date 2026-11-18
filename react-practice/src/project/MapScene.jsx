@@ -6,6 +6,7 @@ import { createCoverRenderer, createTrunkRenderer, trunkGround } from './cover/c
 import { DEFAULT_CROWNS, createCrownRenderer } from './cover/crowns'
 import { createFlowerField } from './cover/flowerField'
 import { agaricSpot, createFlyAgaric } from './cover/flyAgaric'
+import { DEFAULT_NESTS, antHills } from './terrain/antHills'
 import { createLeafField } from './cover/leafField'
 import { createMossField } from './cover/mossField'
 import { scatterTile } from './cover/scatterTile'
@@ -854,6 +855,11 @@ export default function MapScene({ intro }) {
         near: frame.nearEntrance ?? -1,
         fadeStart: morphStart + COVER_FADE[0],
         fadeEnd: morphStart + COVER_FADE[1],
+        // The tunnels: inside for the ant down there, glowing in X-ray.
+        underground: Boolean(frame.underground),
+        xray: xray.amount,
+        viewer: camera.position,
+        daylight: env ? Math.min(env.lightIntensity / 1.8 + env.hemiIntensity, 1) : 1,
       })
       if (flyAgaric.group.visible) agaricTop.copy(flyAgaric.group.position).setY(flyAgaric.group.position.y + 0.12)
       airLayer.update({
@@ -1094,6 +1100,7 @@ export default function MapScene({ intro }) {
   // Shape settings (and trunks) rebuild the tiles, which re-scatter their
   // cover as they finish; grain is only a shader uniform.
   const { seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, grain } = ground
+  const nests = ground.nests ?? DEFAULT_NESTS
   // The ant trail (part of the ground: it presses the soil down) and the
   // exclusion zones, from the settled Paths settings.
   const agaricShown = cover.flyAgaric && antHill
@@ -1116,15 +1123,16 @@ export default function MapScene({ intro }) {
         paths: { antHillClearance, agaricClearance, spawnClearance, trailClearance, interactionClearance, softEdge },
         seed,
         antHill,
+        nests,
         agaric: agaricShown,
         trail: antTrail,
       }),
-    [antHillClearance, agaricClearance, spawnClearance, trailClearance, interactionClearance, softEdge, seed, antHill, agaricShown, antTrail]
+    [antHillClearance, agaricClearance, spawnClearance, trailClearance, interactionClearance, softEdge, seed, antHill, nests, agaricShown, antTrail]
   )
   useEffect(() => {
-    tilesRef.current?.setGround({ seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, trail: antTrail })
+    tilesRef.current?.setGround({ seed, slopes, bumps, warp, pebbles, antHill, nests, trunks, trunkSpacing, trail: antTrail })
     distantForestRef.current?.setGround({ seed, trunks, trunkSpacing })
-  }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, antTrail])
+  }, [seed, slopes, bumps, warp, pebbles, antHill, nests, trunks, trunkSpacing, antTrail])
 
   // The fly agaric stands by the ant hill (only while there is one), and
   // the ants' tunnels and trails lead out from the hill to it and to food.
@@ -1137,6 +1145,7 @@ export default function MapScene({ intro }) {
       trunks: tiles?.trunks,
       seed,
       antHill,
+      nests,
       agaric: flyAgaric?.group.visible ? flyAgaric.spot(seed) : null,
       antTrail,
     })
@@ -1147,7 +1156,7 @@ export default function MapScene({ intro }) {
       antHill,
       agaric: flyAgaric?.group.visible ? flyAgaric.spot(seed) : null,
     })
-  }, [seed, slopes, bumps, warp, pebbles, antHill, trunks, trunkSpacing, cover.flyAgaric, antTrail])
+  }, [seed, slopes, bumps, warp, pebbles, antHill, nests, trunks, trunkSpacing, cover.flyAgaric, antTrail])
 
   // Pheromone settings change at once (no rebuild of the ground).
   const { showPheromones, pheromoneIntensity, pheromoneWidth } = paths
@@ -1272,12 +1281,12 @@ export default function MapScene({ intro }) {
     const flowers = createFlowerField(settledCover.flowers, { habitat: tiles.habitat, seed })
     const leaves = createLeafField(settledCover.leaves, { seed, windDirection: settledHabitat.windDirection })
     // Landmarks leaves pile against.
-    const landmarks = { antHill, agaric: agaricShown ? agaricSpot(seed) : null }
+    const landmarks = { antHill, hills: antHills(seed, nests), agaric: agaricShown ? agaricSpot(seed) : null }
     coverContextRef.current = { cover: settledCover, seed, moss, flowers, leaves, exclusions, landmarks }
     farGroundRef.current?.setCover(settledCover, moss, flowers)
     tiles.setExclusions(exclusions)
     tiles.refreshCover()
-  }, [settledCover, settledHabitat, seed, slopes, bumps, warp, pebbles, antHill, agaricShown, trunks, trunkSpacing, exclusions])
+  }, [settledCover, settledHabitat, seed, slopes, bumps, warp, pebbles, antHill, nests, agaricShown, trunks, trunkSpacing, exclusions])
 
   // Show exclusion zones: back to the chosen preview after a few seconds.
   useEffect(() => {

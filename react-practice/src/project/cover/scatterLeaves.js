@@ -53,7 +53,7 @@ function branchDistance(x, z, branch) {
 
 /**
  * ctx: { data, look, ground, occupancy, result, settings (cover.leaves),
- * leafField, trunks, landmarks: { antHill, agaric }, smallKeep, fadeScale,
+ * leafField, trunks, landmarks: { antHill, hills, agaric }, smallKeep, fadeScale,
  * random (the tile's seeded sequence), tilt }
  */
 export function scatterLeaves(ctx) {
@@ -72,6 +72,13 @@ export function scatterLeaves(ctx) {
   const field = (name, x, z) => look.at(data[name], x, z)
   const nearTrunks = trunks ? trunks.trunksNear(x0 + TILE_SIZE / 2, z0 + TILE_SIZE / 2, rule.trunkReach + TILE_SIZE) : []
   const branches = result.branches
+  // The ant hills near enough to this tile to gather its leaves.
+  const hills = landmarks?.antHill
+    ? (landmarks.hills ?? [ANT_HILL]).filter(
+        (hill) =>
+          Math.hypot(hill.x - (x0 + TILE_SIZE / 2), hill.z - (z0 + TILE_SIZE / 2)) < hill.radius * (1 + 4 * rule.leeReach) + TILE_SIZE
+      )
+    : []
   const placed = []
 
   // How much obstacles gather leaves at (x, z), with the wind (wx, wz).
@@ -83,10 +90,10 @@ export function scatterLeaves(ctx) {
       beside = Math.max(beside, besideBand(d, rule.rootBand))
       lee = Math.max(lee, leeTail(x, z, trunk.x, trunk.z, trunk.radius, wx, wz, rule.leeReach))
     }
-    if (landmarks?.antHill) {
-      const d = Math.hypot(x - ANT_HILL.x, z - ANT_HILL.z) - ANT_HILL.radius
+    for (const hill of hills) {
+      const d = Math.hypot(x - hill.x, z - hill.z) - hill.radius
       beside = Math.max(beside, besideBand(d, rule.hillBand))
-      lee = Math.max(lee, leeTail(x, z, ANT_HILL.x, ANT_HILL.z, ANT_HILL.radius, wx, wz, rule.leeReach))
+      lee = Math.max(lee, leeTail(x, z, hill.x, hill.z, hill.radius, wx, wz, rule.leeReach))
     }
     if (landmarks?.agaric) {
       const { x: ax, z: az } = landmarks.agaric

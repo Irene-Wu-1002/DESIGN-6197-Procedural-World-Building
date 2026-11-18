@@ -1,12 +1,12 @@
 import { agaricSpot } from '../cover/flyAgaric'
-import { ANT_HILL } from '../terrain/heightField'
+import { antHills } from '../terrain/antHills'
 import { antHillEntrances } from './antTrail'
 
 /**
  * Exclusion zones: places ground cover keeps clear of, from the Paths
  * settings (DEFAULT_PATHS in antTrail.js).
  *
- *   ant hill       the mound, plus a clearance beyond its edge
+ *   ant hills      each nest's mound, plus a clearance beyond its edge
  *   fly agaric     around its stem
  *   camera spawn   around the start view's focus (half-way from the ant
  *                  hill to the fly agaric)
@@ -31,17 +31,20 @@ const smoothstep = (edge0, edge1, value) => {
 }
 
 /**
- * paths: Paths settings; seed; antHill: is there one; agaric: is the fly
+ * paths: Paths settings; seed; antHill: is there one; nests: how many
+ * (terrain/antHills.js); agaric: is the fly
  * agaric shown; trail: the ant trail or null.
  */
-export function createExclusions({ paths, seed, antHill, agaric, trail }) {
+export function createExclusions({ paths, seed, antHill, nests, agaric, trail }) {
   const cm = (value) => value / 100
   const soft = cm(paths.softEdge)
   const circles = []
   const spot = agaricSpot(seed)
   if (antHill) {
-    circles.push({ x: ANT_HILL.x, z: ANT_HILL.z, radius: ANT_HILL.radius + cm(paths.antHillClearance) })
-    for (const entrance of antHillEntrances(seed)) {
+    for (const hill of antHills(seed, nests)) {
+      circles.push({ x: hill.x, z: hill.z, radius: hill.radius + cm(paths.antHillClearance) })
+    }
+    for (const entrance of antHillEntrances(seed, nests)) {
       circles.push({ x: entrance.x, z: entrance.z, radius: entrance.radius + cm(paths.interactionClearance) })
     }
   }

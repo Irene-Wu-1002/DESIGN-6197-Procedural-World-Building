@@ -99,7 +99,7 @@ function tilt(normal, amount) {
  * exclusions, landmarks } (moss, flowers, leaves: the patch, colony and
  * drift fields, cover/mossField.js, flowerField.js, leafField.js;
  * exclusions: the exclusion zones, paths/exclusionZones.js, or null;
- * landmarks: { antHill, agaric } for leaves to pile against). Large things (mushrooms,
+ * landmarks: { antHill, hills, agaric } for leaves to pile against). Large things (mushrooms,
  * branches) stay wholly out of the zones; small things fade back in across
  * the soft edge and thin out on the ant trail.
  * Returns { moss, mushrooms, twigs, branches, leaves: [variant0, 1, 2], flowers }.

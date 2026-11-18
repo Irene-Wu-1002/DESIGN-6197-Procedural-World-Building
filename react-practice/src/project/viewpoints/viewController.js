@@ -475,6 +475,10 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       return true
     }
     if (action || !config.body) return false
+    if (movement.underground) {
+      showHint('No room to step back in here.')
+      return false
+    }
     if (movement.stopScent) movement.stopScent()
     const eye = state.position.clone()
     const focus = new THREE.Vector3()
@@ -547,29 +551,68 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
     return done
   }
 
-  // --- Ant tunnels: fade to dark, come out at the next entrance.
+  // --- Ant tunnels: duck into the hole (the view dims as it goes in), walk
+  // the tunnels underground (crawl.js → burrow.js), and come out wherever
+  // you reach the top of a shaft (emerge).
   const enterTunnel = (index) => {
-    const exit = antWorld.exitFrom(index)
-    if (!exit) return false
+    const exit = antWorld.exitAt(index)
+    const entrance = antWorld.tunnels?.entranceNode(index)
+    if (!exit || !entrance || !movement.enterTunnel) return false
     movement.stopScent?.()
-    action = { kind: 'tunnel', t: 0, index, exit, moved: false }
-    showLabel(config, 'Through the tunnel…')
-    setUi({ busy: true })
+    action = {
+      kind: 'tunnel',
+      t: 0,
+      index,
+      from: state.position.clone(),
+      to: new THREE.Vector3(entrance.x, entrance.y + 0.0012, entrance.z),
+      fromTilt: state.tiltPitch,
+      moved: false,
+      dark: 0,
+    }
+    showLabel(config, 'Into the tunnel…')
+    setUi({ busy: true, nearTunnel: false })
     return true
   }
 
   const stepTunnel = (a) => {
-    const [down, hold, back] = VIEW_SHARED.tunnelSeconds
-    if (!a.moved && a.t >= down) {
-      state.yaw = a.exit.yaw
-      state.pitch = clampPitch(config, config.camera.startPitch)
-      movement.place(state, a.exit, ctxFor(config))
-      a.moved = true
+    const [down, , back] = VIEW_SHARED.tunnelSeconds
+    if (!a.moved) {
+      const k = ease(clamp01(a.t / down))
+      state.position.lerpVectors(a.from, a.to, k)
+      state.tiltPitch = a.fromTilt + (-0.9 - a.fromTilt) * k
+      a.dark = 0.92 * k
+      if (a.t >= down) {
+        const hint = movement.enterTunnel(state, a.index, ctxFor(config))
+        a.moved = true
+        a.at = a.t
+        if (hint) showHint(hint)
+        else {
+          // No way down after all: back where you were.
+          state.position.copy(a.from)
+          state.tiltPitch = a.fromTilt
+        }
+      }
+      return false
     }
-    a.dark = a.t < down ? ease(a.t / down) : a.t < down + hold ? 1 : 1 - ease(clamp01((a.t - down - hold) / back))
-    const done = a.t >= down + hold + back
-    if (done) setUi({ busy: false })
-    return done
+    a.dark = 0.92 * (1 - ease(clamp01((a.t - a.at) / back)))
+    return a.t - a.at >= back
+  }
+
+  const emerge = (index) => {
+    const exit = antWorld.exitAt(index)
+    if (!exit) return
+    state.yaw = exit.yaw
+    state.pitch = clampPitch(config, config.camera.startPitch)
+    movement.place(state, exit, ctxFor(config))
+    action = { kind: 'emerge', t: 0, dark: 0.75 }
+    showLabel(config, exit.hill === 0 ? 'Out at the main nest' : `Out at nest ${exit.hill + 1}`)
+    setUi({ busy: true })
+  }
+
+  const stepEmerge = (a) => {
+    const [, , back] = VIEW_SHARED.tunnelSeconds
+    a.dark = 0.75 * (1 - ease(clamp01(a.t / back)))
+    return a.t >= back
   }
 
   // --- Species actions while idle.
@@ -579,12 +622,14 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       if (name === 'scent' && movement.toggleScent) {
         const wasFollowing = movement.following
         const on = movement.toggleScent(state, ctxFor(config))
-        if (on) showHint('Following the scent trail. Move to stop.')
+        if (movement.underground) showHint(on ? 'Walking on through the tunnel. Move to stop.' : 'Stopped.')
+        else if (on) showHint('Following the scent trail. Move to stop.')
         else if (!wasFollowing) showHint('No scent here. Trails lead out from the ant hill.')
       }
       if (name === 'tunnel') {
-        if (nearEntrance >= 0) enterTunnel(nearEntrance)
-        else showHint('Find a tunnel entrance on the ant hill.')
+        if (movement.underground) showHint('Follow the tunnel up toward the light to come out.')
+        else if (nearEntrance >= 0) enterTunnel(nearEntrance)
+        else showHint('Find a tunnel entrance on an ant hill.')
       }
     }
   }
@@ -682,6 +727,8 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       if (!action) {
         info = movement.update(dt, input, state, ctxFor(config))
         if (info.untracked) hooks.onUntrack?.()
+        if (info.hint) showHint(info.hint)
+        if (info.surfaced !== undefined) emerge(info.surfaced)
         applyIdlePose(dt, false)
       }
 
@@ -706,6 +753,10 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
           if (done) applyIdlePose()
         } else if (action.kind === 'tunnel') {
           done = stepTunnel(action)
+          dark = action.dark
+          applyIdlePose()
+        } else if (action.kind === 'emerge') {
+          done = stepEmerge(action)
           dark = action.dark
           applyIdlePose()
         } else if (action.kind === 'mode') {
@@ -800,7 +851,7 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         uiCheck = UI_CHECK_SECONDS
         nearEntrance = -1
         let scentNearby = false
-        if (!action && config.actions.tunnel) {
+        if (!action && config.actions.tunnel && !movement.underground) {
           const near = antWorld.nearestEntrance(state.position.x, state.position.z)
           if (near && near.distance < config.movement.tunnelReach) nearEntrance = near.index
         }
@@ -812,6 +863,7 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         if (ui.hint && time > hintUntil) setUi({ hint: '' })
       }
       frame.nearEntrance = nearEntrance
+      frame.underground = Boolean(movement.underground)
       // Detail rings to stream: the viewpoint you're in, or heading into, so
       // tiles start filling in during a switch.
       const lodConfig = action?.next ? VIEWPOINTS[action.next.id] : config
@@ -882,6 +934,12 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
       return false
     },
 
+    /** For checks in development: go down entrance `index` at once. */
+    burrow(index) {
+      if (action || !movement.enterTunnel) return false
+      return Boolean(movement.enterTunnel(state, index, ctxFor(config)))
+    },
+
     /** For checks in development: stand at (x, z) facing yaw. */
     teleport(x, z, yaw = state.yaw) {
       if (action) return false
@@ -906,6 +964,8 @@ export function createViewController({ camera, world, bodies, antWorld, start, h
         yaw: state.yaw,
         pitch: state.pitch,
         following: Boolean(movement.following),
+        underground: Boolean(movement.underground),
+        nest: movement.nest ?? -1,
         focus: movement.anchor ? movement.anchor().toArray() : null,
         mode,
         bodyPose: { ...bodyPose },

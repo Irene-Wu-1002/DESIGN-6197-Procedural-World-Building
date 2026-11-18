@@ -1,4 +1,6 @@
 import { getNoise } from '../../utils/noise'
+import { DEFAULT_NESTS, antHills } from './antHills'
+import { hash } from './hash'
 
 /**
  * The micro-world ground as one pure function of world position (metres).
@@ -11,7 +13,8 @@ import { getNoise } from '../../utils/noise'
  *   domain warp    pushes the inputs around so soil looks settled
  *   bumps/hollows  ~3 cm wavelength, a few mm high, sharper hollows
  *   pebbles        rounded domes, one per 1.6 cm cell at most, in patches
- *   ant hill       a mound with a crater at the world origin
+ *   ant hills      mounds with a crater: the main one at the world origin,
+ *                  and seeded satellite nests (terrain/antHills.js)
  *   ant trail      a worn strip to the fly agaric (paths/antTrail.js):
  *                  pressed down, with fine crumbs, cleared of pebbles
  * The ~2 mm grain is added in the ground shader (groundMaterial.js).
@@ -29,6 +32,8 @@ export const DEFAULT_GROUND = {
   grain: 100,
   pebbles: 50,
   antHill: true,
+  // How many nests the colony lives in (the main hill and its satellites).
+  nests: DEFAULT_NESTS,
   // Tree trunks change ground moisture and colour, so they live here.
   trunks: true,
   trunkSpacing: 3.5,
@@ -47,24 +52,8 @@ const PEBBLE = {
   height: [0.45, 0.8],
   patchWavelength: 0.15,
 }
-export const ANT_HILL = {
-  x: 0,
-  z: 0,
-  radius: 0.08,
-  height: 0.04,
-  craterRadius: 0.012,
-  craterDepth: 0.014,
-  // How uneven the mound's outline is (share of the radius).
-  wobble: 0.15,
-}
-
-// Integer hash → 0–1, independent per (x, z, seed).
-export function hash(x, z, seed) {
-  let h = Math.imul(x, 374761393) + Math.imul(z, 668265263) + Math.imul(seed, 1274126177)
-  h = Math.imul(h ^ (h >>> 13), 1103515245)
-  h ^= h >>> 16
-  return (h >>> 0) / 4294967296
-}
+export { ANT_HILL } from './antHills'
+export { hash }
 
 const smoothstep = (edge0, edge1, value) => {
   const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1)
@@ -122,18 +111,21 @@ export function createGroundSampler(settings) {
   // Crumbs on the trail: ~4 mm soil grains.
   const crumbNoise = noise(0.004, 1, 8)
 
+  const hills = settings.antHill ? antHills(seed, settings.nests ?? DEFAULT_NESTS) : []
   const hillAt = (x, z) => {
-    if (!settings.antHill) return { lift: 0, mask: 0 }
-    const d = Math.hypot(x - ANT_HILL.x, z - ANT_HILL.z)
-    if (d > ANT_HILL.radius * (1 + ANT_HILL.wobble)) return { lift: 0, mask: 0 }
-    const radius = ANT_HILL.radius * (1 + ANT_HILL.wobble * getNoise(x, z, hillNoise))
-    const t = Math.min(d / radius, 1)
-    const mound = ANT_HILL.height * (0.5 + 0.5 * Math.cos(Math.PI * t))
-    const crater =
-      d < ANT_HILL.craterRadius
-        ? ANT_HILL.craterDepth * (1 - (d / ANT_HILL.craterRadius) ** 2)
-        : 0
-    return { lift: mound - crater, mask: 1 - smoothstep(0.55, 1, t) }
+    let lift = 0
+    let mask = 0
+    for (const hill of hills) {
+      const d = Math.hypot(x - hill.x, z - hill.z)
+      if (d > hill.radius * (1 + hill.wobble)) continue
+      const radius = hill.radius * (1 + hill.wobble * getNoise(x, z, hillNoise))
+      const t = Math.min(d / radius, 1)
+      const mound = hill.height * (0.5 + 0.5 * Math.cos(Math.PI * t))
+      const crater = d < hill.craterRadius ? hill.craterDepth * (1 - (d / hill.craterRadius) ** 2) : 0
+      lift += mound - crater
+      mask = Math.max(mask, 1 - smoothstep(0.55, 1, t))
+    }
+    return { lift, mask }
   }
 
   const pebbleAt = (x, z, hillMask, out) => {

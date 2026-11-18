@@ -1,9 +1,14 @@
 import * as THREE from 'three'
+import { createTunnelNetwork } from '../ants/tunnels'
+import { createTunnelRenderer } from '../ants/tunnelRenderer'
 import { antHillEntrances, entranceFacing } from '../paths/antTrail'
+import { DEFAULT_NESTS, antHills } from '../terrain/antHills'
 import { ANT_HILL, hash } from '../terrain/heightField'
 
 /**
- * The ants' layer of the world: tunnel entrances on the ant hill and the
+ * The ants' layer of the world: tunnel entrances on every nest (the main
+ * hill and its satellites, terrain/antHills.js), the tunnels joining them
+ * underground (ants/tunnels.js, drawn by ants/tunnelRenderer.js), and the
  * pheromone trails that lead from them to food (the fly agaric, the nearest
  * trunk bases, and a few seeded foraging spots). Both are decided by the
  * seed and the ground alone, like everything else, so every viewpoint shares
@@ -11,7 +16,7 @@ import { ANT_HILL, hash } from '../terrain/heightField'
  * unless Paths > Show pheromones draws them for every view. The trail to
  * the fly agaric follows the visible ant trail (paths/antTrail.js).
  *
- * Queries for the ant: nearestTrail, nearestEntrance, exitFrom.
+ * Queries for the ant: nearestTrail, nearestEntrance, exitAt, tunnels.
  */
 
 // Trail sampling step, ribbon half-width, and lift above the ground (m).
@@ -212,6 +217,9 @@ export function createAntWorld(scene, morphUniforms) {
 
   let trails = []
   let entrances = []
+  let hills = []
+  let tunnels = null
+  const tunnelRenderer = createTunnelRenderer(scene)
   let lastSampler = null
   const pheromones = { show: false, intensity: 0.7, width: 1 }
   // Off while the ant colony's agents lay their own scent.
@@ -291,15 +299,19 @@ export function createAntWorld(scene, morphUniforms) {
   return {
     /**
      * Rebuild for the current ground: sampler, trunks (field), seed,
-     * antHill (on/off), agaric ({ x, z } or null), antTrail (the visible
-     * trail, paths/antTrail.js, or null).
+     * antHill (on/off), nests (how many), agaric ({ x, z } or null),
+     * antTrail (the visible trail, paths/antTrail.js, or null).
      */
-    place({ sampler, trunks, seed, antHill, agaric, antTrail = null }) {
+    place({ sampler, trunks, seed, antHill, nests = DEFAULT_NESTS, agaric, antTrail = null }) {
       trails = []
       entrances = []
+      hills = []
+      tunnels = null
       lastSampler = sampler
       if (sampler && antHill) {
-        entrances.push(...antHillEntrances(seed))
+        hills = antHills(seed, nests)
+        entrances.push(...antHillEntrances(seed, nests))
+        tunnels = createTunnelNetwork({ hills, entrances, sampler, trunks, seed })
 
         // Food: the fly agaric, the nearest trunk bases, and foraging spots.
         const targets = []
@@ -343,6 +355,17 @@ export function createAntWorld(scene, morphUniforms) {
       trailMesh.geometry = buildTrailGeometry(sampler)
       entranceMesh.geometry.dispose()
       entranceMesh.geometry = buildEntranceGeometry(sampler)
+      tunnelRenderer.setNetwork(tunnels)
+    },
+
+    /** The tunnels under the nests (ants/tunnels.js), or null. */
+    get tunnels() {
+      return tunnels
+    },
+
+    /** The nests (terrain/antHills.js). */
+    get hills() {
+      return hills
     },
 
     /** The scent trails ({ points, lengths, count, length, pointAt }). */
@@ -372,23 +395,33 @@ export function createAntWorld(scene, morphUniforms) {
       return found
     },
 
-    /** Where you come out after entering at `index`: the next entrance. */
-    exitFrom(index) {
-      if (entrances.length < 2) return null
-      const exit = entrances[(index + 1) % entrances.length]
-      let ox = exit.x - ANT_HILL.x
-      let oz = exit.z - ANT_HILL.z
+    /** Where you stand coming out of entrance `index`: just outside it, facing away from its nest. */
+    exitAt(index) {
+      const exit = entrances[index]
+      if (!exit) return null
+      const hill = hills[exit.hill ?? 0] ?? ANT_HILL
+      let ox = exit.x - hill.x
+      let oz = exit.z - hill.z
       const d = Math.hypot(ox, oz)
-      // The main entrance has no "outward"; leave along +x.
+      // A crater entrance has no "outward"; leave away from the main hill
+      // (or along +x from the main hill itself).
       if (d < 1e-6) {
-        ox = 1
-        oz = 0
+        ox = hill.x - ANT_HILL.x
+        oz = hill.z - ANT_HILL.z
+        const away = Math.hypot(ox, oz)
+        if (away < 1e-6) {
+          ox = 1
+          oz = 0
+        } else {
+          ox /= away
+          oz /= away
+        }
       } else {
         ox /= d
         oz /= d
       }
       const step = exit.radius + 0.006
-      return { x: exit.x + ox * step, z: exit.z + oz * step, yaw: Math.atan2(-ox, -oz) }
+      return { x: exit.x + ox * step, z: exit.z + oz * step, yaw: Math.atan2(-ox, -oz), hill: exit.hill ?? 0 }
     },
 
     /**
@@ -412,8 +445,13 @@ export function createAntWorld(scene, morphUniforms) {
       ribbons = on
     },
 
-    /** scent: 0–1 how much the viewer perceives; near: entrance index or -1. */
-    update({ scent, time, near, fadeStart, fadeEnd }) {
+    /**
+     * scent: 0–1 how much the viewer perceives; near: entrance index or -1;
+     * underground: the viewer is in the tunnels; xray: the X-ray view's
+     * amount (0–1); viewer: the eye (Vector3); daylight (0–1).
+     */
+    update({ scent, time, near, fadeStart, fadeEnd, underground = false, xray = 0, viewer = null, daylight = 1 }) {
+      if (viewer) tunnelRenderer.update({ underground, xray, viewer, daylight })
       // Shown pheromones are seen by everyone; the ant smells them anyway.
       scent = pheromones.show ? Math.max(scent, 1) : scent
       uniforms.uScent.value = scent
@@ -422,7 +460,9 @@ export function createAntWorld(scene, morphUniforms) {
       uniforms.uFade.value.set(fadeStart, fadeEnd)
       // Trails cost nothing for bodies that can't smell them.
       trailMesh.visible = ribbons && scent > 0.002 && trails.length > 0
-      entranceMesh.visible = entrances.length > 0
+      // From below, the holes would cover the daylight.
+      entranceMesh.visible = entrances.length > 0 && !underground
+      if (underground) trailMesh.visible = false
     },
 
     /** Its meshes (shown once at start-up so their shaders compile early). */
@@ -434,6 +474,7 @@ export function createAntWorld(scene, morphUniforms) {
       entranceMesh.geometry.dispose()
       trailMaterial.dispose()
       entranceMaterial.dispose()
+      tunnelRenderer.dispose()
     },
   }
 }

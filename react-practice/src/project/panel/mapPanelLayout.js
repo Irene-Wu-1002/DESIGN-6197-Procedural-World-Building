@@ -36,7 +36,7 @@ export const ELEMENT_KEYS = {
 export const TAB_KEYS = {
   terrain: { ground: ['seed', 'slopes', 'bumps', 'warp', 'grain'] },
   habitat: {
-    ground: ['trunks', 'trunkSpacing', 'antHill'],
+    ground: ['trunks', 'trunkSpacing', 'antHill', 'nests'],
     view: ['haze', 'dapple'],
     habitat: Object.keys(DEFAULT_HABITAT),
     crowns: Object.keys(DEFAULT_CROWNS),
