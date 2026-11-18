@@ -3,6 +3,7 @@ import {
   FLIGHT,
   FLOWER_TYPES,
   LEARNING,
+  MORPHOLOGY,
   REACH,
   SCENT,
   SCENT_TYPES,
@@ -97,6 +98,10 @@ export function createButterflyAgent(index, seed) {
     index,
     random,
     morph,
+    // The body it was born with (reshape() can change morph; reset uses this),
+    // and a counter the renderer watches to reshape its model.
+    bornMorph: { ...morph },
+    morphVersion: 0,
     traits,
     prefs: FLOWER_TYPES.map(() => range(TRAITS.innate)),
     seen: 0,
@@ -147,6 +152,24 @@ export function createButterflyAgent(index, seed) {
     spotFailedAt: -Infinity,
     departFrom: null,
   }
+}
+
+/**
+ * Give it a different body (each value kept inside MORPHOLOGY): its
+ * abilities are worked out again from the new body, and it keeps the same
+ * share of its (new) energy store.
+ */
+export function reshape(agent, changes) {
+  const morph = { ...agent.morph }
+  for (const [key, value] of Object.entries(changes)) {
+    if (!(key in MORPHOLOGY) || !Number.isFinite(value)) continue
+    morph[key] = clamp(value, MORPHOLOGY[key][0], MORPHOLOGY[key][1])
+  }
+  const share = agent.energy / agent.traits.energyCapacity
+  agent.morph = morph
+  Object.assign(agent.traits, deriveTraits(morph))
+  agent.energy = share * agent.traits.energyCapacity
+  agent.morphVersion += 1
 }
 
 /** Put the agent at (x, y, z), flying. */

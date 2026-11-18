@@ -88,6 +88,12 @@ const ZONE_FLASH_MS = 5000
 const SHADOW_BASE = { reach: 0.6, far: 4 }
 const BUILD_BUDGET_MS = 6
 const STATUS_REFRESH_MS = 250
+// What the follow card and the panel get about the followed butterfly: its
+// status and body, plus every number when the developer overlay is on.
+const followedView = (status, debug) =>
+  status && !debug
+    ? { index: status.index, label: status.label, state: status.state, looks: status.looks, morph: status.morph, changed: status.changed }
+    : status
 const MAX_FRAME = 0.1
 // Frame pacing, to spare the battery: up to ACTIVE_FPS while the camera
 // moves or something is being changed, AMBIENT_FPS once everything has been
@@ -951,11 +957,7 @@ export default function MapScene({ intro }) {
           : {}),
       })
       const status = followRef.current >= 0 ? ecology.status(followRef.current) : null
-      show(
-        'followed',
-        setFollowed,
-        status && !debug ? { index: status.index, label: status.label, state: status.state, looks: status.looks } : status
-      )
+      show('followed', setFollowed, followedView(status, debug))
     }, STATUS_REFRESH_MS)
 
     const onResize = () => {
@@ -1383,6 +1385,15 @@ export default function MapScene({ intro }) {
             setFollow(agents[(at + 1) % agents.length].index)
           }}
           onStop={() => setFollow(-1)}
+          onMorphChange={(changes) => {
+            // Reshape the followed butterfly and show the result at once
+            // (not on the next status refresh), so the sliders keep up.
+            const ecology = ecologyRef.current
+            if (!ecology || follow < 0) return
+            if (changes) ecology.setMorph(follow, changes)
+            else ecology.resetMorph(follow)
+            setFollowed(followedView(ecology.status(follow), ecologySettings.debug))
+          }}
         />
       </div>
       <MapPanel

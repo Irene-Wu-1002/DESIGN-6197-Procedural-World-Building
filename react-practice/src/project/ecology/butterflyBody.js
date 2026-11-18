@@ -47,21 +47,14 @@ export function createButterflyBody(material, { proboscis = 0.01, scale = 1, mor
   const body = createButterfly(material)
   const group = body.group
   group.visible = false
-  // Wings: length along the span, width along the body (the whole group is
-  // scaled by body size, so divide that out); tinted pale to dark.
-  const span = (morph?.wingLength ?? scale) / scale
-  const chord = (morph ? morph.wingLength / morph.wingAspect : scale) / scale
-  for (const { pivot } of body.wings) pivot.children[0].scale.set(span, 1, chord)
-  if (morph) wingTint(morph.darkness, body.wings[0].pivot.children[0].material.color)
-  // Compound eyes on the sides of the head, sized by the eye trait.
+  // Compound eyes on the sides of the head (sized in applyMorph).
   const eyeGeometry = new THREE.SphereGeometry(1, 10, 8)
-  const eye = 0.00085 * (morph?.eye ?? 1)
-  for (const side of [-1, 1]) {
+  const eyes = [-1, 1].map((side) => {
     const mesh = new THREE.Mesh(eyeGeometry, material)
     mesh.position.set(side * 0.0021, 0.0009, -0.0118)
-    mesh.scale.setScalar(eye)
     group.add(mesh)
-  }
+    return mesh
+  })
   const cylinder = new THREE.CylinderGeometry(1, 1, 1, 5)
   cylinder.translate(0, 0.5, 0)
   const centered = new THREE.CylinderGeometry(1, 1, 1, 5)
@@ -85,21 +78,41 @@ export function createButterflyBody(material, { proboscis = 0.01, scale = 1, mor
   const proboscisRoot = new THREE.Group()
   proboscisRoot.position.set(0, -0.0016, -0.0124)
   const joints = []
+  const pieces = []
   let parent = proboscisRoot
-  const length = proboscis / scale
-  const segment = length / PROBOSCIS_SEGMENTS
   for (let i = 0; i < PROBOSCIS_SEGMENTS; i += 1) {
     const joint = new THREE.Group()
-    if (i > 0) joint.position.set(0, 0, -segment)
     const piece = new THREE.Mesh(cylinder, material)
     piece.rotation.x = -Math.PI / 2
-    piece.scale.set(0.00014, segment * 1.02, 0.00014)
     joint.add(piece)
     parent.add(joint)
     joints.push(joint)
+    pieces.push(piece)
     parent = joint
   }
   group.add(proboscisRoot)
+
+  /**
+   * Shape it from a body (morphology.js), in place: no new geometry or
+   * materials, so it can follow a slider. Wings: length along the span,
+   * width along the body (the whole group is scaled by body size in
+   * update(), so divide that out), tinted pale to dark; eye size; proboscis
+   * length. Without a morph: the plain model at `scale`, with `proboscis`.
+   */
+  const wingMaterial = body.wings[0].pivot.children[0].material
+  const applyMorph = (next) => {
+    const size = next?.body ?? scale
+    const span = (next?.wingLength ?? size) / size
+    const chord = (next ? next.wingLength / next.wingAspect : size) / size
+    for (const { pivot } of body.wings) pivot.children[0].scale.set(span, 1, chord)
+    if (next) wingTint(next.darkness, wingMaterial.color)
+    else wingMaterial.color.setRGB(1, 1, 1)
+    for (const mesh of eyes) mesh.scale.setScalar(0.00085 * (next?.eye ?? 1))
+    const segment = (next?.proboscis ?? proboscis) / size / PROBOSCIS_SEGMENTS
+    joints.forEach((joint, i) => joint.position.set(0, 0, i > 0 ? -segment : 0))
+    for (const piece of pieces) piece.scale.set(0.00014, segment * 1.02, 0.00014)
+  }
+  applyMorph(morph)
 
   const wings = body.wings
   let wingAngle = WING_POSE.closed
@@ -117,6 +130,7 @@ export function createButterflyBody(material, { proboscis = 0.01, scale = 1, mor
 
   return {
     group,
+    applyMorph,
     update(agent, dt, detail = true) {
       const { pose, anim } = agent
       // Orientation from forward / up: local −z forward, +y up.

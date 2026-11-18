@@ -1,4 +1,4 @@
-import { createButterflyAgent, decide, move, perceive, physiology, placeAgent, statusOf } from './butterflyAgent'
+import { createButterflyAgent, decide, move, perceive, physiology, placeAgent, reshape, statusOf } from './butterflyAgent'
 import { DEFAULT_ECOLOGY, FLIGHT, FLOWER_TYPES, LOD, STATE_LABELS, TIME, TIMERS } from './ecologyConfig'
 import { bodyMeasures, describe } from './morphology'
 import { createFlowerRegistry } from './flowerRegistry'
@@ -281,6 +281,23 @@ export function createEcology(initialSeed) {
     },
 
     /** Short status of butterfly `index` for the panel, or null. */
+    /**
+     * Change one butterfly's body ({ wingLength, wingAspect, body, darkness,
+     * eye, proboscis }, any subset; kept inside MORPHOLOGY). Its abilities
+     * follow at once and its model reshapes on the next frame.
+     */
+    setMorph(index, changes) {
+      const agent = agents[index]
+      if (!agent || agent.removing) return
+      reshape(agent, changes)
+    },
+    /** Give it back the body it was born with. */
+    resetMorph(index) {
+      const agent = agents[index]
+      if (!agent || agent.removing) return
+      reshape(agent, agent.bornMorph)
+    },
+
     status(index) {
       const agent = agents[index]
       if (!agent || agent.removing) return null
@@ -303,6 +320,7 @@ export function createEcology(initialSeed) {
         // Its body in plain words, and the numbers behind it (developer view).
         looks: describe(agent.morph, agent.traits),
         morph: { ...agent.morph },
+        changed: Object.keys(agent.morph).some((key) => agent.morph[key] !== agent.bornMorph[key]),
         derived: { ...bodyMeasures(agent.morph), speed: agent.traits.speed, turnRate: agent.traits.turnRate, flightCost: agent.traits.flightCost, energyCapacity: agent.traits.energyCapacity, absorb: agent.traits.absorb, windDrift: agent.traits.windDrift },
       }
     },

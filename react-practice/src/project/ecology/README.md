@@ -60,6 +60,12 @@ They run at a fixed 30 Hz. Strength halves every 3 s, and particles are recycled
 
 The exponents are softened scaling rules (`MORPH_RULES` in `ecologyConfig.js`), and the bounds keep every body in range able to live here. A reference body (all 1, darkness 0.5) gets exactly the former average abilities.
 
+**Changing a body.** While you follow a butterfly, Advanced › "Butterfly N's body" shows one slider per body value, using the same ranges a body is drawn from.
+- Moving a slider calls `ecology.setMorph`, which calls `reshape()` in `butterflyAgent.js`. Its abilities are worked out again and it keeps the same share of its energy.
+- The renderer sees `morphVersion` change and reshapes the model in place with `applyMorph`, so no new geometry or materials are made.
+- Reset (`resetMorph`) gives back `bornMorph`.
+- A changed body is kept across view switches and page re-entry. A new world seed draws all-new butterflies.
+
 The model shows the body: wing length and width, girth, eyes, and a pale-to-dark wing tint. The follow card describes it in words, for example "Dark wings, heavy body: costly to fly, long tongue". The developer readout shows the numbers.
 
 **Butterflies.** Each frame follows world → perceive → decide → move:

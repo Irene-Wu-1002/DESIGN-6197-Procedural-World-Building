@@ -120,6 +120,12 @@ export function createEcologyRenderer(scene) {
       body = createButterflyBody(bodyMaterial, { proboscis: agent.traits.proboscis, scale: agent.traits.scale, morph: agent.morph })
       scene.add(body.group)
       bodies.set(agent, body)
+      body.morphVersion = agent.morphVersion
+    }
+    // Its body was changed (the follow panel's sliders): reshape in place.
+    if (body.morphVersion !== agent.morphVersion) {
+      body.applyMorph(agent.morph)
+      body.morphVersion = agent.morphVersion
     }
     return body
   }

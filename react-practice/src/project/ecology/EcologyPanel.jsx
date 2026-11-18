@@ -1,10 +1,23 @@
 import { useState } from 'react'
-import { AdvancedSection, ControlCard, EnableToggle, LabeledSlider } from '../panel/PanelControls'
-import { FLOWER_TYPES } from './ecologyConfig'
+import { AdvancedSection, ControlCard, EnableToggle, LabeledSlider, ResetButton } from '../panel/PanelControls'
+import { FLOWER_TYPES, MORPHOLOGY } from './ecologyConfig'
 
 const percent = (value) => `${Math.round(value)}%`
 const share = (value) => `${Math.round(value * 100)}%`
 const compass = (degrees) => `${Math.round(((degrees % 360) + 360) % 360)}°`
+const times = (value) => `×${value.toFixed(2)}`
+const between = (low, high) => (value) => `${value.toFixed(2)} ${value < 0.97 ? low : value > 1.03 ? high : ''}`.trim()
+
+// The followed butterfly's body: one slider per morphology value (same
+// ranges a body is drawn from). Proboscis is shown in mm.
+const BODY_SLIDERS = [
+  { key: 'wingLength', label: 'Wing length', step: 0.01, format: times },
+  { key: 'wingAspect', label: 'Wing shape', step: 0.01, format: between('broad', 'slender') },
+  { key: 'body', label: 'Body size', step: 0.01, format: times },
+  { key: 'darkness', label: 'Wing colour', step: 0.01, format: (v) => `${Math.round(v * 100)}% ${v < 0.34 ? 'pale' : v > 0.66 ? 'dark' : ''}`.trim() },
+  { key: 'eye', label: 'Eye size', step: 0.01, format: times },
+  { key: 'proboscis', label: 'Proboscis', step: 0.0001, format: (v) => `${(v * 1000).toFixed(1)} mm` },
+]
 
 /**
  * Flowers & butterflies: how many butterflies, the flowers they visit, the
@@ -23,6 +36,7 @@ export default function EcologyPanel({
   onFollow,
   onNext,
   onStop,
+  onMorphChange,
 }) {
   const [open, setOpen] = useState(true)
   const set = (key) => (value) => onChange(key, value)
@@ -78,6 +92,31 @@ export default function EcologyPanel({
             </p>
           </ControlCard>
           <AdvancedSection>
+            {following && followed?.morph ? (
+              <ControlCard
+                title={`Butterfly ${followed.index + 1}'s body`}
+                action={<ResetButton small label="Reset" disabled={!followed.changed} onReset={() => onMorphChange(null)} />}
+              >
+                {BODY_SLIDERS.map(({ key, label, step, format }) => (
+                  <LabeledSlider
+                    key={key}
+                    label={label}
+                    value={followed.morph[key]}
+                    min={MORPHOLOGY[key][0]}
+                    max={MORPHOLOGY[key][1]}
+                    step={step}
+                    format={format}
+                    onChange={(value) => onMorphChange({ [key]: value })}
+                  />
+                ))}
+                <p className="section-note">
+                  {followed.looks}. Its speed, turning, energy, warmth in the sun and how the wind pushes it all
+                  follow from this body; Reset gives back the body it was born with.
+                </p>
+              </ControlCard>
+            ) : (
+              <p className="section-note">Follow a butterfly to change its body and see what it can do.</p>
+            )}
             <LabeledSlider
               label="Scent particles shown"
               value={settings.scentDisplay}
