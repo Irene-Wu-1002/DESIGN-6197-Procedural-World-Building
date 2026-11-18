@@ -232,13 +232,15 @@ export function createSimulation() {
       simulated.windDirection[1] = out.windDirection[1] = z
     },
     /**
-     * How fast the animals' time runs per real second: 1 outside the
-     * simulation, 0 while paused, the clock speed up to 1× (faster clocks
-     * only speed the day, not the animals; ecology/ecologyConfig.js TIME).
+     * How fast the animals' time runs per world second: 1 outside the
+     * simulation, the clock speed up to 1× inside it (faster clocks only
+     * speed the day, not the animals; ecology/ecologyConfig.js TIME).
+     * Pausing is not a speed: the World's clock (worldClock.js) simply
+     * hands out no world time, so a Step is never scaled to nothing here.
      */
     get timeScale() {
       if (!running) return 1
-      return settings.day.playing ? Math.min(settings.day.speed, 1) : 0
+      return Math.min(settings.day.speed, 1)
     },
     start() {
       running = true
@@ -255,20 +257,21 @@ export function createSimulation() {
     },
 
     /**
-     * Advance by dt (s) and return the environment to show. staticSun: the
-     * Habitat tab's sun direction (Vector3, normalised).
+     * Advance by dt world seconds (worldClock.js: 0 while the World is
+     * paused, 1/60 per Step) and return the environment to show. staticSun:
+     * the Habitat tab's sun direction (Vector3, normalised). With dt 0
+     * nothing moves (clock, fades, weather, season), but settings changed
+     * meanwhile (time of day, manual sun, light) still show.
      */
     update(dt, staticSun) {
       blend = Math.min(Math.max(blend + (running ? 1 : -1) * (dt / START_SECONDS), 0), 1)
-      const playing = running && settings.day.playing
-      const hours = playing ? hoursPerSecond(settings.day) * dt : 0
+      const hours = running ? hoursPerSecond(settings.day) * dt : 0
       if (time + hours >= 24) days += 1
       time = (time + hours) % 24
-      // The season fades and follows its settings even while paused.
       seasonNow = season.update(running ? settings.season : { ...settings.season, apply: false }, dt)
       const k = blend * blend * (3 - 2 * blend)
-      // Paused holds everything still, the weather included.
-      if (k > 0) simulate(playing ? dt : 0, hours)
+      // Fading out after End holds the weather where it was.
+      if (k > 0) simulate(running ? dt : 0, hours)
       out.sunDirection.copy(staticSun).lerp(simulated.sunDirection, k).normalize()
       out.lightColor.copy(BASE.light).lerp(simulated.lightColor, k)
       out.lightIntensity = BASE.lightIntensity + (simulated.lightIntensity - BASE.lightIntensity) * k

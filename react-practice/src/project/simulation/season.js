@@ -75,7 +75,7 @@ export function seasonValues({ from, to, blend }) {
 }
 
 // Seconds for the season to fade in or out, and for its values to follow
-// a change (the season moves even while the clock is paused).
+// a change (world seconds: the season holds while the World is paused).
 const FADE_SECONDS = 4
 const FOLLOW_SECONDS = 1.5
 

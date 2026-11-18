@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import * as THREE from 'three'
 import MapPanel from './MapPanel'
 import { DEFAULT_COVER } from './cover/coverRules'
@@ -23,6 +23,7 @@ import { DEFAULT_WEATHER } from './simulation/weather'
 import { DEFAULT_SEASON } from './simulation/season'
 import { DEFAULT_DAY } from './simulation/dayCycle'
 import { createSimulation } from './simulation/simulation'
+import { createWorldClock } from './simulation/worldClock'
 import { createFarGround, morphRange } from './terrain/farGround'
 import { DEFAULT_GROUND } from './terrain/heightField'
 import { createGroundMaterial } from './terrain/groundMaterial'
@@ -222,6 +223,10 @@ export default function MapScene({ intro }) {
   // Simulation: settings here; the clock and its effects run in the frame
   // loop (simulationRef), and simStatus is its snapshot for the panel.
   const simulationRef = useRef(null)
+  // The World's one pause switch and world clock (Pause / Play / Step),
+  // shared by the frame loop, Map > Debug and the Simulation panel.
+  const [worldClock] = useState(createWorldClock)
+  const worldClockStatus = useSyncExternalStore(worldClock.subscribe, worldClock.getSnapshot)
   const [simSettings, setSimSettings] = useState({ day: DEFAULT_DAY, weather: DEFAULT_WEATHER, season: DEFAULT_SEASON })
   const [simStatus, setSimStatus] = useState({
     running: false,
@@ -434,6 +439,10 @@ export default function MapScene({ intro }) {
     const heldKeys = new Set()
     window.addEventListener('input', wake, true)
     window.addEventListener('change', wake, true)
+    // Pause, Play and Step draw the next frame at once.
+    const unsubscribeClock = worldClock.subscribe(wake)
+    // A new scene owes no Steps queued for an old one.
+    worldClock.clearPending()
 
     // Keys: the controller decides what they mean for the current body.
     // Whether focus last moved by Tab (keyboard) rather than a click.
@@ -605,11 +614,15 @@ export default function MapScene({ intro }) {
     let tracking = -1
     let holeRadius = 0
     let lastTime = performance.now()
-    let time = 0
-    // Last frame's wet weather and autumn share, for the trees (the
-    // simulation runs after the crowns).
+    // World seconds since the scene was built (worldClock.js): the clock of
+    // everything that sways, flickers or drifts in the world's shaders.
+    let worldTime = 0
+    // Last world pass's wet weather and autumn share, for the trees (the
+    // simulation runs after them in the pass).
     let liveWetness = 0
     let liveAutumn = 0
+    let env = null
+    let windStrength = 0
     // Where the camera and the sun were, to tell when they move.
     const lastCamera = { position: camera.position.clone(), quaternion: camera.quaternion.clone() }
     const lastShadow = { sun: new THREE.Vector3(), target: new THREE.Vector3(), version: null, time: -Infinity }
@@ -618,6 +631,114 @@ export default function MapScene({ intro }) {
     let renders = 0
     let shadowDraws = 0
     let frameId
+    // What a world pass needs from this frame's camera and terrain work.
+    const pass = { anchor: null, params: null, morphStart: 0 }
+
+    /**
+     * One world pass: everything that lives in the world, advanced by dt
+     * world seconds. Playing runs one pass a frame with the real delta;
+     * paused runs one pass of 0 (settings still apply, nothing moves) or one
+     * pass of 1/60 s per Step (worldClock.js). Each system keeps its own
+     * speed and fixed-step accumulator for the time it is given.
+     */
+    const stepWorld = (dt) => {
+      const { anchor, params, morphStart } = pass
+      worldTime += dt
+      const crownSettings = crownSettingsRef.current
+      const roots = rootSettingsRef.current
+      const trunkSampler = tiles.sampler
+      // Crown growth and leaves, from the water each tree gets.
+      treeWater.update({
+        dt,
+        field: waterRenderer.field,
+        key: `${waterRenderer.key}|${roots.reach}|${roots.rootDepth}`,
+        trunks: tiles.trunks,
+        roots,
+        anchor,
+        wetness: liveWetness,
+        autumn: liveAutumn,
+        speed: crownSettings.growthSpeed,
+      })
+      // Groundwater particles (only while seen underground).
+      waterRenderer.update({
+        active: xray.amount > 0 || crossSection.amount > 0,
+        dt,
+        sampler: tiles.sampler,
+        trunks: tiles.trunks,
+        trees: treeWater,
+        roots,
+        settings: waterSettingsRef.current,
+        anchor,
+        camera,
+        viewportHeight: mount.clientHeight,
+        version: tiles.version,
+      })
+      sapFlow.update({
+        dt,
+        on: crownSettings.sap && crownSettings.crowns,
+        trunks: tiles.trunks,
+        trees: treeWater,
+        crowns: crownRenderer,
+        roots,
+        anchor,
+        ground: (trunk) => trunkGround(trunk, trunkSampler),
+        underground: xray.amount > 0 || crossSection.amount > 0,
+        camera,
+        viewportHeight: mount.clientHeight,
+        version: [tiles.version, crownSettings.crownStart, crownSettings.crownSize, crownSettings.branchDensity].join('|'),
+      })
+
+      // The light: the Habitat tab's sun, or the simulation's day, weather
+      // and season (its clock runs on world time, at its own speed).
+      staticSun.copy(sunOffsetRef.current).normalize()
+      env = simulation.update(dt, staticSun)
+      liveWetness = env.wetness
+      liveAutumn = env.autumn.value * env.autumn.weight
+      // Wind: the Habitat wind, or the Weather's while the simulation runs.
+      // The same strength sways the flowers, carries their scent and pushes
+      // the butterflies.
+      windStrength = (habitatRef.current.windStrength / 100) * (1 - simulation.weight) + env.wind
+      ambientLife.update({
+        dt,
+        activity: { ants: env.ants },
+        sampler: tiles.sampler,
+        // The agents replace the ants that shuttle along the seeded trails.
+        trails: antColony.on ? [] : antWorld.trails,
+      })
+
+      // Flowers, scent and butterflies: world time at the simulation's
+      // animal speed (ecology.js steps them on fixed sub-steps).
+      ecology.update({
+        dt,
+        scale: simulation.timeScale,
+        center: anchor,
+        visibleRadius: morphStart + COVER_FADE[0],
+        camera: camera.position,
+        follow: followRef.current,
+        world: ecologyWorld,
+        sampler: tiles.sampler,
+        groundKey: tiles.version,
+        habitat: tiles.habitat,
+        habitatKey: tiles.habitatKey,
+        wind: { strength: windStrength, from: habitatRef.current.windDirection },
+        light: { brightness: env.brightness, daylight: env.daylight, sun: env.directSun, air: env.air, rain: env.rain },
+        level: env.levels.flowers,
+        sway: { time: worldTime, wind: windStrength },
+      })
+
+      // Outside the simulation the whole colony is out; inside it, the
+      // day and the weather decide. World time at the Paths simSpeed.
+      antColony.update({
+        dt,
+        time: worldTime,
+        activity: 1 - simulation.weight + env.ants,
+        sampler: tiles.sampler,
+        scent: params.perception.scent,
+        fadeStart: morphStart + COVER_FADE[0],
+        fadeEnd: morphStart + COVER_FADE[1],
+      })
+    }
+
     const animate = () => {
       const now = performance.now()
       // Frame pacing (ACTIVE_FPS): a tick that comes too soon is skipped,
@@ -627,9 +748,9 @@ export default function MapScene({ intro }) {
         frameId = requestAnimationFrame(animate)
         return
       }
+      // Real time: the camera, input, view switches and easing, drawing.
       const delta = Math.min((now - lastTime) / 1000, MAX_FRAME)
       lastTime = now
-      time += delta
 
       const frame = controller.update(delta)
       latestFrame = frame
@@ -646,6 +767,7 @@ export default function MapScene({ intro }) {
       // Detail rings: the Detail distance setting plus what this viewpoint
       // adds (the butterfly sees much further than the ant). Near tiles are
       // full detail, middle tiles simplified; the far ground starts after.
+      // Tiles load around the camera whether or not the world is paused.
       const detail = viewRef.current.distance
       const rings = { near: detail + frame.lod.near, outer: detail + frame.lod.middle }
       const distance = rings.outer
@@ -671,18 +793,7 @@ export default function MapScene({ intro }) {
       trunkRenderer.update(tiles.trunks, tiles.sampler, anchor.x, anchor.z, tiles.version, crownSettings.crownStart)
       const trunkSampler = tiles.sampler
       distantForest.update(tiles.trunks, trunkSampler, tiles.version, camera.position, Math.max(xray.amount, crossSection.amount))
-      const roots = rootSettingsRef.current
-      treeWater.update({
-        dt: delta,
-        field: waterRenderer.field,
-        key: `${waterRenderer.key}|${roots.reach}|${roots.rootDepth}`,
-        trunks: tiles.trunks,
-        roots,
-        anchor,
-        wetness: liveWetness,
-        autumn: liveAutumn,
-        speed: crownSettings.growthSpeed,
-      })
+      // Crowns are drawn from the trees' last growth (the world pass grows them).
       crownRenderer.update({
         trunks: tiles.trunks,
         ground: (trunk) => trunkGround(trunk, trunkSampler),
@@ -695,21 +806,20 @@ export default function MapScene({ intro }) {
         trees: treeWater,
         autumn: liveAutumn,
       })
+      // Looking underground eases in and out on real time (it's the view).
       xray.update(delta, anchor)
       coverRenderer.setHidden(xray.amount)
-      waterRenderer.update({
-        active: xray.amount > 0 || crossSection.amount > 0,
-        dt: delta,
-        sampler: tiles.sampler,
-        trunks: tiles.trunks,
-        trees: treeWater,
-        roots: rootSettingsRef.current,
-        settings: waterSettingsRef.current,
-        anchor,
-        camera,
-        viewportHeight: mount.clientHeight,
-        version: tiles.version,
-      })
+
+      // World time: as many passes as the clock hands out (one while
+      // playing; while paused one still pass, or one per Step).
+      pass.anchor = anchor
+      pass.params = params
+      pass.morphStart = morphStart
+      const tick = worldClock.advance(delta)
+      for (let i = 0; i < tick.steps; i += 1) stepWorld(tick.dt)
+      const worldDelta = tick.steps * tick.dt
+      if (worldClock.pending > 0) wake()
+
       crossSection.update(
         delta,
         anchor,
@@ -720,20 +830,6 @@ export default function MapScene({ intro }) {
       trunkRenderer.setCutBuried(crossSection.active)
       // Easing into or out of X-ray or the cross-section.
       if (easing(xray.amount) || easing(crossSection.amount)) wake()
-      sapFlow.update({
-        dt: delta,
-        on: crownSettings.sap && crownSettings.crowns,
-        trunks: tiles.trunks,
-        trees: treeWater,
-        crowns: crownRenderer,
-        roots,
-        anchor,
-        ground: (trunk) => trunkGround(trunk, trunkSampler),
-        underground: xray.amount > 0 || crossSection.amount > 0,
-        camera,
-        viewportHeight: mount.clientHeight,
-        version: [tiles.version, crownSettings.crownStart, crownSettings.crownSize, crownSettings.branchDensity].join('|'),
-      })
       const groundSampler = tiles.sampler
       rootRenderer.update({
         active: xray.amount > 0 || crossSection.amount > 0,
@@ -754,24 +850,22 @@ export default function MapScene({ intro }) {
       const haze = Math.max(hazeDensity(viewRef.current.haze) * params.hazeScale, params.hazeMin)
       antWorld.update({
         scent: params.perception.scent,
-        time,
+        time: worldTime,
         near: frame.nearEntrance ?? -1,
         fadeStart: morphStart + COVER_FADE[0],
         fadeEnd: morphStart + COVER_FADE[1],
       })
       if (flyAgaric.group.visible) agaricTop.copy(flyAgaric.group.position).setY(flyAgaric.group.position.y + 0.12)
       airLayer.update({
-        time,
+        time: worldTime,
         center: anchor,
         agaric: flyAgaric.group.visible ? agaricTop : null,
         perception: params.perception,
         pixels: canvas.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)),
       })
 
-      // The light: the Habitat tab's sun, or the simulation's sun and moon,
-      // sky and fog colours, flowers opening, and the life it brings.
-      staticSun.copy(sunOffsetRef.current).normalize()
-      const env = simulation.update(delta, staticSun)
+      // The environment from the last world pass: light, sky and fog
+      // colours, wet ground, sway, season, rain.
       sun.color.copy(env.lightColor)
       sun.intensity = env.lightIntensity
       hemisphere.color.copy(env.hemiSky)
@@ -791,14 +885,7 @@ export default function MapScene({ intro }) {
       scene.fog.set(haze * env.haze, env.mist, env.mistHeight)
       xray.applyAtmosphere(scene, sky)
       uniforms.uWet.value = env.wetness
-      liveWetness = env.wetness
-      liveAutumn = env.autumn.value * env.autumn.weight
-      // Wind: the Habitat wind, or the Weather's while the simulation runs.
-      // The same strength sways the flowers, carries their scent and pushes
-      // the butterflies.
-      const habitatNow = habitatRef.current
-      const windStrength = (habitatNow.windStrength / 100) * (1 - simulation.weight) + env.wind
-      coverRenderer.setWeather({ wind: windStrength, wet: env.wetness, time })
+      coverRenderer.setWeather({ wind: windStrength, wet: env.wetness, time: worldTime })
       // Season: how much of each kind shows, and the leaves' autumn share
       // (the Scatter setting, blended toward the season's).
       const baseAutumn = coverContextRef.current.cover.leaves.autumn / 100
@@ -809,7 +896,7 @@ export default function MapScene({ intro }) {
       world.setPresence(env.levels)
       const pixels = canvas.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))
       rain.update({
-        time,
+        time: worldTime,
         intensity: env.rain,
         camera,
         ground: tiles.heightAt(camera.position.x, camera.position.z),
@@ -817,37 +904,11 @@ export default function MapScene({ intro }) {
         light: Math.min(env.lightIntensity / 1.8 + env.hemiIntensity, 1),
         pixels,
       })
-      ambientLife.update({
-        dt: delta,
-        activity: { ants: env.ants },
-        sampler: tiles.sampler,
-        // The agents replace the ants that shuttle along the seeded trails.
-        trails: antColony.on ? [] : antWorld.trails,
-      })
 
-      // Flowers, scent and butterflies, on the simulation's clock (paused
-      // holds them; ecology.js steps them on fixed sub-steps).
-      const ecologySettings = ecologySettingsRef.current
-      ecology.update({
-        dt: delta,
-        scale: simulation.timeScale,
-        center: anchor,
-        visibleRadius: morphStart + COVER_FADE[0],
-        camera: camera.position,
-        follow: followRef.current,
-        world: ecologyWorld,
-        sampler: tiles.sampler,
-        groundKey: tiles.version,
-        habitat: tiles.habitat,
-        habitatKey: tiles.habitatKey,
-        wind: { strength: windStrength, from: habitatNow.windDirection },
-        light: { brightness: env.brightness, daylight: env.daylight, sun: env.directSun, air: env.air, rain: env.rain },
-        level: env.levels.flowers,
-        sway: { time, wind: windStrength },
-      })
       // Each flower type opens and closes with its own light (and rain).
       coverRenderer.setFlowerOpen(ecology.open)
       // Following: the free camera's focus stays on the butterfly.
+      const ecologySettings = ecologySettingsRef.current
       const followIndex = followRef.current
       const followedAgent = followIndex >= 0 ? ecology.agents[followIndex] : null
       if (followIndex >= 0 && (!followedAgent || followedAgent.removing)) setFollow(-1)
@@ -863,9 +924,11 @@ export default function MapScene({ intro }) {
         controller.track(null)
         tracking = -1
       }
+      // Butterfly bodies: wings and proboscis ease on world time (still
+      // while paused); the scent and the overlay are drawn as they stand.
       ecologyRenderer.update({
         ecology,
-        dt: delta,
+        dt: worldDelta,
         camera,
         pixels,
         showScent: ecologySettings.showScent,
@@ -873,18 +936,6 @@ export default function MapScene({ intro }) {
         debug: ecologySettings.debug,
         follow: followRef.current,
         hidden: Math.max(xray.amount, crossSection.amount),
-      })
-
-      // Outside the simulation the whole colony is out; inside it, the
-      // day and the weather decide.
-      antColony.update({
-        dt: delta,
-        time,
-        activity: 1 - simulation.weight + env.ants,
-        sampler: tiles.sampler,
-        scent: params.perception.scent,
-        fadeStart: morphStart + COVER_FADE[0],
-        fadeEnd: morphStart + COVER_FADE[1],
       })
 
       setShadowReach(params.shadowReach)
@@ -939,6 +990,7 @@ export default function MapScene({ intro }) {
         colony: antColony.stats(),
       })
       show('sim', setSimStatus, simulation.snapshot())
+      worldClock.sync()
       show('roots', setRootStats, rootRenderer.stats())
       show('water', setWaterStats, waterRenderer.stats())
       show('crowns', setCrownStats, { ...crownRenderer.stats(), tree: treeWater.nearest(viewer.x, viewer.z), sap: sapFlow.alive })
@@ -972,12 +1024,14 @@ export default function MapScene({ intro }) {
     // For checks during development: the controller and how many tiles
     // have been built (switching viewpoints must not build any).
     if (import.meta.env.DEV) {
-      window.__umwelt = { controller, tiles, builds: () => builds, renders: () => ({ frames: renders, shadows: shadowDraws }), ecology, coverRenderer, flyAgaric, antWorld, antColony, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, waterRenderer, crownRenderer }
+      window.__umwelt = { worldClock, controller, tiles, builds: () => builds, renders: () => ({ frames: renders, shadows: shadowDraws }), ecology, coverRenderer, flyAgaric, antWorld, antColony, camera, bodies, uniforms, simulation, ambientLife, sun, hemisphere, xray, crossSection, rootRenderer, waterRenderer, crownRenderer }
     }
 
     return () => {
       cancelAnimationFrame(frameId)
       clearInterval(statusTimer)
+      unsubscribeClock()
+      worldClock.clearPending()
       window.removeEventListener('resize', onResize)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
@@ -1035,7 +1089,7 @@ export default function MapScene({ intro }) {
       tilesRef.current = null
       groundUniformsRef.current = null
     }
-  }, [])
+  }, [worldClock])
 
   // Shape settings (and trunks) rebuild the tiles, which re-scatter their
   // cover as they finish; grain is only a shader uniform.
@@ -1363,6 +1417,8 @@ export default function MapScene({ intro }) {
             simulationRef.current?.setTime(hours)
             setSimStatus((current) => ({ ...current, time: hours }))
           }}
+          paused={worldClockStatus.paused}
+          onTogglePause={worldClock.toggle}
           butterflies={ecologyStats}
         />
         <EcologyPanel
@@ -1421,6 +1477,9 @@ export default function MapScene({ intro }) {
         waterStats={waterStats}
         onUndergroundChange={(key, value) => setUnderground((current) => ({ ...current, [key]: value }))}
         status={status}
+        worldClock={worldClockStatus}
+        onTogglePause={worldClock.toggle}
+        onStep={worldClock.requestStep}
         onGroundChange={(key, value) => setGround((current) => ({ ...current, [key]: value }))}
         onViewChange={(key, value) => setView((current) => ({ ...current, [key]: value }))}
         onCoverChange={(key, value) => setCover((current) => ({ ...current, [key]: value }))}

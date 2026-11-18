@@ -12,6 +12,7 @@ import {
 import { ELEMENT_KEYS, MAP_TABS, SCATTER_ELEMENTS, TAB_KEYS } from './panel/mapPanelLayout'
 import { HABITAT_FIELDS } from './habitat/habitatFields'
 import UndergroundControls from './underground/UndergroundControls'
+import { WORLD_STEP_LABEL } from './simulation/worldClock'
 
 const formatPercent = (value) => `${value}%`
 // A 0 – 1 share as a whole percent.
@@ -64,6 +65,8 @@ const FLOWER_DISTRIBUTIONS = [
  * crown back to a seedling's for the water to grow again.
  * onResetKeys({ ground, cover, view, habitat, paths, underground, crowns: [...keys] }) restores
  * just those settings to their defaults; onReset restores everything.
+ * worldClock: { paused, elapsed } from the World's clock (worldClock.js);
+ * onTogglePause / onStep: Pause / Play and one 1/60 s Step while paused.
  */
 // One line on how the colony is doing.
 function colonyNote(colony) {
@@ -93,6 +96,9 @@ export default function MapPanel({
   crownStats,
   waterStats,
   status,
+  worldClock,
+  onTogglePause,
+  onStep,
   onGroundChange,
   onViewChange,
   onCoverChange,
@@ -561,6 +567,24 @@ export default function MapPanel({
 
       {tab === 'debug' && (
         <>
+          <ControlCard title="Time control">
+            <div className="panel-actions time-actions">
+              <button type="button" className="layer-add" onClick={onTogglePause} aria-pressed={worldClock.paused}>
+                {worldClock.paused ? 'Play' : 'Pause'}
+              </button>
+              <button type="button" className="layer-add" onClick={onStep} disabled={!worldClock.paused}>
+                Step
+              </button>
+            </div>
+            <p className="section-note" aria-live="polite">
+              {worldClock.paused ? 'Paused' : 'Running'} · world time {worldClock.elapsed.toFixed(3)} s · Step:{' '}
+              {WORLD_STEP_LABEL}
+            </p>
+            <p className="section-note">
+              Paused, the camera, panels and views still work; only the world&apos;s own time stops. Each Step
+              runs it {WORLD_STEP_LABEL}, at each system&apos;s own speed.
+            </p>
+          </ControlCard>
           <ControlCard title="Rendering">
             <SelectMenu
               label="Preview"

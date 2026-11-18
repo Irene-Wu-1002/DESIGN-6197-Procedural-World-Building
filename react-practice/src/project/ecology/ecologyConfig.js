@@ -11,8 +11,8 @@
  */
 
 // --- Time -------------------------------------------------------------
-// The ecology runs on real seconds, scaled by the simulation: paused holds it
-// still, 0.25× slows it; faster clock speeds (4×, 20×) only speed the day,
+// The ecology runs on world seconds (simulation/worldClock.js: none while the
+// World is paused, 1/60 s per Step), scaled by the simulation: 0.25× slows it; faster clock speeds (4×, 20×) only speed the day,
 // not the animals (a butterfly at 20× would just be a blur).
 export const TIME = {
   // Fixed sub-steps: agents at 60 Hz, scent particles at 30 Hz.

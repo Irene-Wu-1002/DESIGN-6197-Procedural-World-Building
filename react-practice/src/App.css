@@ -769,6 +769,10 @@ input[type='checkbox'] {
   grid-template-columns: repeat(2, 1fr);
 }
 
+.panel-actions.time-actions {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .control-section {
   border: 1px solid var(--panel-border);
   border-radius: 9px;

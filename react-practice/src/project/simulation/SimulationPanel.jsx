@@ -21,8 +21,21 @@ const formatDegrees = (value) => `${Math.round(value)}°`
  * settings by tab. settings: { day, weather, season }; status: the engine's
  * snapshot (running, blend, time, sun, temperatures, activity, weather);
  * butterflies: the ecology's counts ({ butterflies, flying }) or null.
+ * paused / onTogglePause: the World's one pause switch (worldClock.js, also
+ * in Map > Debug). Start / End only turn the simulated day and weather on
+ * and off; Pause / Play holds or runs the whole world, simulation or not.
  */
-export default function SimulationPanel({ settings, status, onChange, onStart, onEnd, onTime, butterflies = null }) {
+export default function SimulationPanel({
+  settings,
+  status,
+  onChange,
+  onStart,
+  onEnd,
+  onTime,
+  paused,
+  onTogglePause,
+  butterflies = null,
+}) {
   const [open, setOpen] = useState(true)
   const [tab, setTab] = useState('day')
   const running = status.running
@@ -62,14 +75,8 @@ export default function SimulationPanel({ settings, status, onChange, onStart, o
         <button type="button" className="layer-add" onClick={onEnd} disabled={!running}>
           End
         </button>
-        <button
-          type="button"
-          className="layer-add"
-          onClick={() => setDay('playing')(!day.playing)}
-          disabled={!running}
-          aria-pressed={!day.playing}
-        >
-          {day.playing ? 'Pause' : 'Play'}
+        <button type="button" className="layer-add" onClick={onTogglePause} aria-pressed={paused}>
+          {paused ? 'Play' : 'Pause'}
         </button>
       </div>
       <p className="section-note sim-readout" aria-live="polite">
@@ -77,6 +84,7 @@ export default function SimulationPanel({ settings, status, onChange, onStart, o
           ? `${formatClock(status.time)} · air ${status.air.toFixed(0)} °C · ground ${status.surface.toFixed(0)} °C · ` +
             `${butterflies ? `butterflies ${butterflies.flying} of ${butterflies.butterflies} aloft` : 'butterflies –'} · ants ${Math.round(status.ants * 100)}%`
           : 'Not running. Set it up, then press Start; End fades back to the usual forest.'}
+        {paused ? ' · World paused.' : ''}
       </p>
       {open && (
         <>

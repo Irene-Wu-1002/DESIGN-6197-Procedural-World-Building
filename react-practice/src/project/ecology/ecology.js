@@ -10,8 +10,8 @@ import { createWindSampler } from './windSampler'
  * The flower–scent–wind–butterfly ecology, stepped by MapScene each frame.
  * It owns the true state (flower registry, scent particles, wind sampler)
  * and the butterflies, and runs them on fixed sub-steps of ecology time
- * (TIME): paused when the simulation is paused, never faster than real
- * time. It never touches the camera or the viewer's own body.
+ * (TIME): world time (none while the World is paused), never faster than
+ * it. It never touches the camera or the viewer's own body.
  *
  * Continuity: flowers follow the tiles (registered when a tile is
  * scattered, dropped when it unloads, nectar kept meanwhile; see
@@ -155,8 +155,8 @@ export function createEcology(initialSeed) {
 
     /**
      * One frame. frame: {
-     *   dt            real seconds since the last frame
-     *   scale         ecology time per real second (0 paused … 1)
+     *   dt            world seconds this pass (0 while paused)
+     *   scale         ecology time per world second (0 … 1)
      *   center        { x, z } the watched ground (the view's anchor)
      *   visibleRadius m from it where cover is still drawn
      *   camera        { x, y, z } for the level of detail

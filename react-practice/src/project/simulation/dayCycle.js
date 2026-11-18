@@ -14,7 +14,6 @@
  */
 
 export const DEFAULT_DAY = {
-  playing: true,
   // Hours (0–24).
   time: 14,
   // Multiplier on the clock; day length is real minutes per day at 1×.
