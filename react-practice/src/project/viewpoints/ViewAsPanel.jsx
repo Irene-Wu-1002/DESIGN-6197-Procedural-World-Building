@@ -46,7 +46,7 @@ function Check({ label, hint, checked, onChange }) {
  * ui: the controller's UI state.
  */
 export default function ViewAsPanel({ ui, settings, onSelect, onSettingChange, onViewBody }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const config = VIEWPOINTS[ui.id]
   // Camera modes (the butterfly: chase view by default, eye view optional).
   const hasModes = config.views?.modes?.length > 1
