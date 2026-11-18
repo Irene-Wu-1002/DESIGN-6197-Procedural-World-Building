@@ -1,6 +1,8 @@
 import { antHillEntrances } from '../paths/antTrail'
+import { DEFAULT_NESTS, antHills } from '../terrain/antHills'
 import { ANT_HILL, hash } from '../terrain/heightField'
 import { createPheromoneGrid } from './pheromoneGrid'
+import { createTunnelNetwork } from './tunnels'
 
 /**
  * The ant colony: agents that leave the ant hill, wander until they find
@@ -16,6 +18,14 @@ import { createPheromoneGrid } from './pheromoneGrid'
  * ants heading home keep a sense of where the nest is (path integration,
  * like real ants), which keeps the return trip short.
  *
+ * One colony lives in several nests (terrain/antHills.js), joined by the
+ * tunnels (tunnels.js). Every nest sends ants out, more from the bigger
+ * ones; an ant bringing food home takes it to the nearest nest, wherever
+ * it set out from. Ants go in and out by the shafts, walking them
+ * underground (TUNNEL), and now and then an ant walks a gallery to another
+ * nest, which keeps each nest's share of the colony about right however
+ * the food comes in (Paths > Tunnel traffic).
+ *
  * The food (the fly agaric, trunk bases, seeded foraging spots), the
  * entrances, and the random choices all come from the seed, and the
  * simulation runs in fixed steps, so a seed always grows the same trails.
@@ -30,7 +40,7 @@ export const STEP = 0.05
 const RELAX_EVERY = 0.25
 // The grid: 3.6 m square at 1.2 cm, centred on the ant hill.
 const GRID = { size: 3.6, cell: 0.012 }
-// Furthest ants go from the nest centre before turning back (m).
+// Furthest ants go from their nest's centre before turning back (m).
 const RANGE = 1.65
 // Walking speed range (m/s), and the steering turn rate (rad/s).
 const SPEED = [0.02, 0.035]
@@ -78,12 +88,28 @@ const SALT = 4401
 // Ground rows sampled per frame while the colony builds its grid.
 const BUILD_ROWS = 24
 export const MAX_ANTS = 400
+// Underground: walking speed (m/s), and how far above the tunnel's floor
+// an ant's feet are (m).
+const TUNNEL_SPEED = 0.03
+const FLOOR_LIFT = 0.0004
+// One ant walks to another nest every this many seconds at 100% tunnel
+// traffic (twice as often as at 50%), and a nest must have this many more
+// ants than its share before it sends them on.
+const TRANSFER_EVERY = 5
+const SURPLUS = 1
 
 // Ant states.
 export const INSIDE = 0
 export const SEARCHING = 1
 export const CARRYING = 2
 export const HOMEWARD = 3
+export const TUNNEL = 4
+
+// Trips underground: up a shaft and out, down a shaft and in, or along the
+// galleries to another nest.
+export const UP = 'up'
+export const DOWN = 'down'
+export const MOVE = 'move'
 
 // A small seeded random stream (mulberry32).
 function random(seed) {
@@ -146,11 +172,32 @@ export function createColony() {
     // Seconds since it came out (for fading in).
     age: 0,
     scout: false,
+    // The nest it belongs to (or is in): hill index.
+    nest: 0,
+    // Underground: height (m) and last step's, the route ([{ edge, dir }]),
+    // which leg, how far along it (m), and the trip (UP, DOWN, MOVE).
+    y: 0,
+    py: 0,
+    route: null,
+    leg: 0,
+    s: 0,
+    trip: null,
+    tx: 1,
+    ty: 0,
+    tz: 0,
   }))
 
   let world = null
   let food = []
   let entrances = []
+  let hills = []
+  // Each nest's target share of the colony (by mound area).
+  let shares = []
+  let tunnels = null
+  // Gallery routes between chambers: routes[a][b] = [{ edge, dir }].
+  let routes = []
+  let transferTimer = 0
+  let transfers = 0
   let rand = random(1)
   let buildRow = n
   let out = 0
@@ -181,20 +228,183 @@ export function createColony() {
     buildRow = end
   }
 
-  const release = () => {
-    const ant = ants.find((a) => a.state === INSIDE)
-    if (!ant || !entrances.length) return
-    const entrance = entrances[Math.floor(rand() * entrances.length)]
-    const angle = rand() * Math.PI * 2
-    ant.x = ant.px = entrance.x + Math.cos(angle) * entrance.radius
-    ant.z = ant.pz = entrance.z + Math.sin(angle) * entrance.radius
-    ant.heading = ant.ph = angle
+  // Ants inside each nest, and ants out from each.
+  const census = () => {
+    const inside = hills.map(() => 0)
+    const away = hills.map(() => 0)
+    for (const ant of ants) {
+      if (ant.state === INSIDE) inside[ant.nest] += 1
+      else if (ant.state !== TUNNEL || ant.trip !== MOVE) away[ant.nest] += 1
+    }
+    return { inside, away }
+  }
+
+  // Start a walk underground along `route`.
+  const goUnder = (ant, route, trip) => {
+    ant.state = TUNNEL
+    ant.trip = trip
+    ant.route = route
+    ant.leg = 0
+    ant.s = 0
+    placeUnder(ant)
+    ant.px = ant.x
+    ant.pz = ant.z
+    ant.py = ant.y
+    ant.ph = ant.heading
+  }
+
+  // Where an underground ant is: on the floor of its tunnel, facing along it.
+  const point = { x: 0, y: 0, z: 0, tx: 0, ty: 0, tz: 0 }
+  const placeUnder = (ant) => {
+    const { edge, dir } = ant.route[ant.leg]
+    tunnels.pointAt(edge, dir > 0 ? ant.s : edge.length - ant.s, point)
+    ant.x = point.x
+    ant.z = point.z
+    ant.y = point.y - edge.radius + FLOOR_LIFT
+    // Which way it walks (for drawing it tipped along the tunnel).
+    ant.tx = point.tx * dir
+    ant.ty = point.ty * dir
+    ant.tz = point.tz * dir
+    if (Math.hypot(point.tx, point.tz) > 0.1) ant.heading = Math.atan2(ant.tz, ant.tx)
+  }
+
+  // The shaft of entrance `index`, walked up (from its chamber) or down.
+  const shaft = (index, down) => {
+    const node = tunnels.entranceNode(index)
+    const edge = tunnels.edges[node.edges[0]]
+    const fromEntrance = edge.a === node.id
+    return [{ edge, dir: fromEntrance === down ? 1 : -1 }]
+  }
+
+  // One ant sets out: from the nest furthest below its share of those out,
+  // up one of its shafts.
+  const release = (quota) => {
+    if (!entrances.length) return
+    const { inside, away } = census()
+    let nest = -1
+    let best = -Infinity
+    hills.forEach((_, k) => {
+      if (!inside[k]) return
+      const behind = shares[k] * quota - away[k]
+      if (behind > best) {
+        best = behind
+        nest = k
+      }
+    })
+    if (nest < 0) return
+    const ant = ants.find((a) => a.state === INSIDE && a.nest === nest)
+    const own = entrances.filter((entrance) => entrance.hill === nest)
+    const entrance = own[Math.floor(rand() * own.length)]
     ant.speed = SPEED[0] + rand() * (SPEED[1] - SPEED[0])
-    ant.state = SEARCHING
     ant.scout = rand() < SCOUTS
     ant.timer = 0
     ant.age = 0
     out += 1
+    goUnder(ant, shaft(entrance.index, false), UP)
+  }
+
+  // Out at the top of a shaft: start searching around the entrance.
+  const surface = (ant, entrance) => {
+    const angle = rand() * Math.PI * 2
+    ant.x = ant.px = entrance.x + Math.cos(angle) * entrance.radius
+    ant.z = ant.pz = entrance.z + Math.sin(angle) * entrance.radius
+    ant.heading = ant.ph = angle
+    ant.state = SEARCHING
+    ant.timer = 0
+    ant.route = null
+  }
+
+  // Walk one step underground; at the end of the route, arrive.
+  const stepTunnel = (ant) => {
+    ant.px = ant.x
+    ant.pz = ant.z
+    ant.py = ant.y
+    ant.ph = ant.heading
+    ant.age += STEP
+    ant.s += TUNNEL_SPEED * STEP
+    while (ant.route && ant.s >= ant.route[ant.leg].edge.length) {
+      ant.s -= ant.route[ant.leg].edge.length
+      ant.leg += 1
+      if (ant.leg >= ant.route.length) {
+        const { edge, dir } = ant.route[ant.route.length - 1]
+        const end = tunnels.nodes[dir > 0 ? edge.b : edge.a]
+        if (ant.trip === UP) surface(ant, entrances[end.entrance])
+        else {
+          ant.state = INSIDE
+          ant.nest = end.hill
+          ant.route = null
+          if (ant.trip === DOWN) out -= 1
+        }
+        return
+      }
+    }
+    placeUnder(ant)
+  }
+
+  // Now and then an ant walks to another nest: from the one with the most
+  // over its share to the one with the most under; when they're even, a
+  // visit between two neighbours.
+  const transfer = () => {
+    if (hills.length < 2) return
+    const { inside } = census()
+    const total = inside.reduce((sum, n) => sum + n, 0)
+    if (!total) return
+    const surplus = inside.map((n, k) => n - shares[k] * total)
+    let from = surplus.indexOf(Math.max(...surplus))
+    let to = surplus.indexOf(Math.min(...surplus))
+    if (surplus[from] < SURPLUS) {
+      const able = hills.map((_, k) => k).filter((k) => inside[k] > 1)
+      if (!able.length) return
+      from = able[Math.floor(rand() * able.length)]
+      const near = routes[from].map((route, k) => (route && k !== from ? k : -1)).filter((k) => k >= 0)
+      to = near[Math.floor(rand() * near.length)]
+    }
+    const route = routes[from][to]
+    if (to === undefined || from === to || !route) return
+    const ant = ants.find((a) => a.state === INSIDE && a.nest === from)
+    if (!ant) return
+    ant.age = 0
+    transfers += 1
+    goUnder(ant, route, MOVE)
+  }
+
+  // Shortest routes along the galleries between every pair of chambers.
+  const buildRoutes = () => {
+    routes = hills.map(() => hills.map(() => null))
+    if (!tunnels) return
+    const chamberNode = tunnels.chambers.map((c) => c.id)
+    hills.forEach((_, from) => {
+      const dist = new Map([[chamberNode[from], 0]])
+      const via = new Map()
+      const open = [chamberNode[from]]
+      while (open.length) {
+        open.sort((p, q) => dist.get(p) - dist.get(q))
+        const id = open.shift()
+        for (const edgeId of tunnels.nodes[id].edges) {
+          const edge = tunnels.edges[edgeId]
+          if (edge.kind !== 'gallery') continue
+          const next = edge.a === id ? edge.b : edge.a
+          const d = dist.get(id) + edge.length
+          if (!dist.has(next) || d < dist.get(next)) {
+            dist.set(next, d)
+            via.set(next, { edge, dir: edge.a === id ? 1 : -1, from: id })
+            if (!open.includes(next)) open.push(next)
+          }
+        }
+      }
+      hills.forEach((__, to) => {
+        if (to === from || !via.has(chamberNode[to])) return
+        const route = []
+        for (let id = chamberNode[to]; id !== chamberNode[from]; id = via.get(id).from) route.unshift(via.get(id))
+        routes[from][to] = route.map(({ edge, dir }) => ({ edge, dir }))
+      })
+    })
+  }
+
+  // The nest whose mound (x, z) is on, or null.
+  const moundAt = (x, z) => {
+    for (const hill of hills) if (Math.hypot(x - hill.x, z - hill.z) < hill.radius * MOUND) return hill
+    return null
   }
 
   // Score of smelling `field` at (x, z), seen from height h0 a distance d away.
@@ -229,7 +439,8 @@ export function createColony() {
     ant.age += STEP
     const searching = ant.state === SEARCHING
     const homeward = ant.state !== SEARCHING
-    if (searching && (ant.timer > GIVE_UP || Math.hypot(ant.x - ANT_HILL.x, ant.z - ANT_HILL.z) > RANGE)) {
+    const home = hills[ant.nest] ?? ANT_HILL
+    if (searching && (ant.timer > GIVE_UP || Math.hypot(ant.x - home.x, ant.z - home.z) > RANGE)) {
       ant.state = HOMEWARD
     }
 
@@ -262,9 +473,10 @@ export function createColony() {
 
     // Food close enough to smell pulls a searcher straight in; a homeward
     // ant keeps a bearing on the nearest entrance.
-    const onMound = Math.hypot(ant.x - ANT_HILL.x, ant.z - ANT_HILL.z) < ANT_HILL.radius * MOUND
+    const mound = moundAt(ant.x, ant.z)
+    const onMound = Boolean(mound)
     if (searching && onMound) {
-      turnToward(ant, Math.atan2(ant.z - ANT_HILL.z, ant.x - ANT_HILL.x), 4)
+      turnToward(ant, Math.atan2(ant.z - mound.z, ant.x - mound.x), 4)
     } else if (searching) {
       for (const source of food) {
         if (source.stock < 1) continue
@@ -312,6 +524,8 @@ export function createColony() {
     } else {
       const { entrance, distance } = nearestEntrance(ant.x, ant.z)
       if (entrance && distance < 0.004) {
+        // Whichever nest it reached is its nest now.
+        ant.nest = entrance.hill
         if (ant.state === CARRYING) delivered += 1
         if (ant.state === CARRYING && out <= quota) {
           // Drop the food and head straight back out.
@@ -319,8 +533,7 @@ export function createColony() {
           ant.timer = 0
           ant.heading += Math.PI
         } else {
-          ant.state = INSIDE
-          out -= 1
+          goUnder(ant, shaft(entrance.index, true), DOWN)
         }
       }
     }
@@ -341,9 +554,20 @@ export function createColony() {
     releaseTimer += STEP
     if (out < quota && releaseTimer >= RELEASE) {
       releaseTimer = 0
-      release()
+      release(quota)
     }
-    for (const ant of ants) if (ant.state !== INSIDE) stepAnt(ant, settings, quota)
+    const traffic = settings.traffic ?? 0.5
+    if (traffic > 0) {
+      transferTimer += STEP
+      if (transferTimer >= TRANSFER_EVERY / traffic) {
+        transferTimer = 0
+        transfer()
+      }
+    }
+    for (const ant of ants) {
+      if (ant.state === TUNNEL) stepTunnel(ant)
+      else if (ant.state !== INSIDE) stepAnt(ant, settings, quota)
+    }
     relaxTimer += STEP
     if (relaxTimer >= RELAX_EVERY) {
       grid.relax(relaxTimer, settings)
@@ -364,12 +588,20 @@ export function createColony() {
 
     /**
      * Start over on this ground: sampler, trunks (field), seed, antHill
-     * (on/off), agaric ({ x, z } or null). Clears every scent.
+     * (on/off), nests (how many), agaric ({ x, z } or null), tunnels (the
+     * network under the nests, tunnels.js; built here if not given).
+     * Clears every scent.
      */
-    place({ sampler, trunks, seed, antHill, agaric }) {
+    place({ sampler, trunks, seed, antHill, nests = DEFAULT_NESTS, agaric, tunnels: network = null }) {
       world = sampler && antHill ? { sampler, trunks, agaric } : null
       food = world ? foodSources({ seed, trunks, agaric }) : []
-      entrances = world ? antHillEntrances(seed) : []
+      hills = world ? antHills(seed, nests) : []
+      entrances = world ? antHillEntrances(seed, nests).map((entrance, index) => ({ ...entrance, index })) : []
+      tunnels = world ? (network ?? createTunnelNetwork({ hills, entrances, sampler, trunks, seed })) : null
+      const area = hills.map((hill) => hill.radius ** 2)
+      const sum = area.reduce((a, b) => a + b, 0) || 1
+      shares = area.map((a) => a / sum)
+      buildRoutes()
       buildRow = 0
       this.reset(seed)
     },
@@ -377,7 +609,16 @@ export function createColony() {
     /** Every ant back inside and the scent gone (same seed, same story). */
     reset(seed = 1) {
       rand = random(Math.imul(seed, 2654435761) ^ SALT)
-      for (const ant of ants) ant.state = INSIDE
+      // Every ant home, spread over the nests by their shares.
+      let start = 0
+      const bounds = shares.map((share) => (start += share * ants.length))
+      ants.forEach((ant, k) => {
+        ant.state = INSIDE
+        ant.route = null
+        ant.nest = Math.max(bounds.findIndex((bound) => k < bound), 0)
+      })
+      transferTimer = 0
+      transfers = 0
       for (const source of food) source.stock = STOCK[source.kind]
       out = 0
       releaseTimer = 0
@@ -402,10 +643,20 @@ export function createColony() {
       return food
     },
 
+    /** The tunnels the ants walk (tunnels.js), or null. */
+    get tunnels() {
+      return tunnels
+    },
+
     stats() {
       let carrying = 0
-      for (const ant of ants) if (ant.state === CARRYING) carrying += 1
-      return { out, carrying, delivered, time, ready: this.ready }
+      let underground = 0
+      for (const ant of ants) {
+        if (ant.state === CARRYING) carrying += 1
+        if (ant.state === TUNNEL) underground += 1
+      }
+      const { inside } = census()
+      return { out, carrying, underground, delivered, transfers, nests: hills.length, inside, time, ready: this.ready }
     },
   }
 }

@@ -16,6 +16,11 @@ import { CHAMBER_POWER } from './tunnels'
  *            the whole network shows under the see-through ground.
  *
  * Only one of the two is shown at a time, and neither on the surface.
+ *
+ * Underground, a faint warm light also travels with the viewer, so the
+ * colony's ants in the tunnels (antColony.js) are lit the way the walls
+ * around the ant are. It stays in the scene at zero on the surface (adding
+ * and removing a light would recompile every material).
  */
 
 // Ring segments around a tube, and the walls' unevenness (share of radius).
@@ -29,6 +34,8 @@ const MAX_MOUTHS = 10
 const MOUTH_POINTS = 8
 const MOUTH_STRIDE = 2
 const MAX_CHAMBERS = 4
+// The viewer's light underground: intensity (cd) and reach (m).
+const LAMP = { intensity: 0.00035, distance: 0.08 }
 
 const LOG_DEPTH_VERTEX = /* glsl */ `
 #include <common>
@@ -152,7 +159,7 @@ void main() {
   #include <logdepthbuf_fragment>
   vec3 view = normalize(cameraPosition - vWorld);
   float rim = 1.0 - abs(dot(normalize(vNormal), view));
-  float glow = (0.12 + 0.9 * rim * rim) * uAmount;
+  float glow = (0.2 + 1.1 * rim * rim) * uAmount;
   vec3 color = mix(vec3(1.0, 0.62, 0.28), vec3(1.0, 0.9, 0.65), exp(-vLight / 0.05));
   gl_FragColor = vec4(color * glow, glow);
 }
@@ -337,6 +344,9 @@ export function createTunnelRenderer(scene) {
   const xrayGroup = new THREE.Group()
   xrayGroup.visible = false
   scene.add(group, xrayGroup)
+  const lamp = new THREE.PointLight('#ffd9b0', 0, LAMP.distance, 2)
+  lamp.castShadow = false
+  scene.add(lamp)
 
   const shared = {
     uViewer: { value: new THREE.Vector3() },
@@ -430,11 +440,14 @@ export function createTunnelRenderer(scene) {
       xrayGroup.visible = !underground && xray > 0.001 && meshes.length > 0
       shared.uViewer.value.copy(viewer)
       shared.uDaylight.value = daylight
+      lamp.position.copy(viewer)
+      lamp.intensity = group.visible ? LAMP.intensity : 0
     },
 
     dispose() {
       clear()
-      scene.remove(group, xrayGroup)
+      scene.remove(group, xrayGroup, lamp)
+      lamp.dispose()
       xrayMaterial.dispose()
     },
   }

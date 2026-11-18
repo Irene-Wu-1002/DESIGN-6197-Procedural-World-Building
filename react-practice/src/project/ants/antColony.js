@@ -1,12 +1,14 @@
 import * as THREE from 'three'
 import { antGeometry } from '../simulation/ambientLife'
-import { MAX_ANTS, INSIDE, STEP, createColony } from './colony'
+import { MAX_ANTS, INSIDE, STEP, TUNNEL, createColony } from './colony'
 
 /**
  * The ant colony in the scene: runs the agents (colony.js) in fixed steps
  * at the chosen speed, draws every ant as one instanced mesh, and paints
  * the pheromone grid onto the ground through the ground shader
- * (groundMaterial.js: uPheromoneMap and friends).
+ * (groundMaterial.js: uPheromoneMap and friends). Ants underground walk the
+ * tunnels' floors, tipped along them: seen in X-ray, or by the ant down
+ * there with them.
  *
  * A new world is pre-warmed: a couple of simulated minutes run over the
  * first frames (a few milliseconds each), so the trails are already there.
@@ -81,16 +83,25 @@ export function createAntColony(scene, groundUniforms) {
         const x = ant.px + (ant.x - ant.px) * alpha
         const z = ant.pz + (ant.z - ant.pz) * alpha
         const heading = ant.ph + Math.atan2(Math.sin(ant.heading - ant.ph), Math.cos(ant.heading - ant.ph)) * alpha
-        position.set(x, sampler.height(x, z), z)
-        // Face along the heading (the body looks down -z), tipped with the slope.
+        // Face along the heading (the body looks down -z).
         yaw.setFromAxisAngle(up, Math.atan2(-Math.cos(heading), -Math.sin(heading)))
-        normal
-          .set(
-            colony.heightAt(x - e, z) - colony.heightAt(x + e, z),
-            2 * e,
-            colony.heightAt(x, z - e) - colony.heightAt(x, z + e)
-          )
-          .normalize()
+        if (ant.state === TUNNEL) {
+          // On the tunnel's floor, tipped with its slope.
+          position.set(x, ant.py + (ant.y - ant.py) * alpha, z)
+          normal.set(-ant.tx * ant.ty, 1 - ant.ty * ant.ty, -ant.tz * ant.ty)
+          if (normal.lengthSq() < 1e-4) normal.set(-Math.cos(heading), 0.05, -Math.sin(heading))
+          normal.normalize()
+        } else {
+          // On the ground, tipped with the slope.
+          position.set(x, sampler.height(x, z), z)
+          normal
+            .set(
+              colony.heightAt(x - e, z) - colony.heightAt(x + e, z),
+              2 * e,
+              colony.heightAt(x, z - e) - colony.heightAt(x, z + e)
+            )
+            .normalize()
+        }
         tilt.setFromUnitVectors(up, normal).multiply(yaw)
         scale.setScalar(Math.min(ant.age / FADE_IN, 1))
         matrix.compose(position, tilt, scale)
@@ -130,7 +141,7 @@ export function createAntColony(scene, groundUniforms) {
     /**
      * Paths settings: antAgents (on/off), colonySize, simSpeed (×),
      * scentHalfLife (s), diffusion, sensorAngle (°), sensorDistance (cm),
-     * wander, slopeAvoidance (%).
+     * wander, slopeAvoidance (%), tunnelTraffic (%).
      */
     setSettings(paths) {
       on = paths.antAgents
@@ -143,6 +154,7 @@ export function createAntColony(scene, groundUniforms) {
         sensorDistance: paths.sensorDistance / 100,
         wander: paths.wander / 100,
         slopeAvoidance: paths.slopeAvoidance / 100,
+        traffic: paths.tunnelTraffic / 100,
       }
     },
 

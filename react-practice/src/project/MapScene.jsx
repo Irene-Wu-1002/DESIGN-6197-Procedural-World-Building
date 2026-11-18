@@ -1149,12 +1149,15 @@ export default function MapScene({ intro }) {
       agaric: flyAgaric?.group.visible ? flyAgaric.spot(seed) : null,
       antTrail,
     })
+    // The colony walks the same tunnels the ant can (antWorld built them).
     antColonyRef.current?.place({
       sampler: tiles?.sampler,
       trunks: tiles?.trunks,
       seed,
       antHill,
+      nests,
       agaric: flyAgaric?.group.visible ? flyAgaric.spot(seed) : null,
+      tunnels: antWorldRef.current?.tunnels ?? null,
     })
   }, [seed, slopes, bumps, warp, pebbles, antHill, nests, trunks, trunkSpacing, cover.flyAgaric, antTrail])
 
@@ -1170,8 +1173,18 @@ export default function MapScene({ intro }) {
   }, [showPheromones, pheromoneIntensity, pheromoneWidth])
 
   // Ant colony settings change at once; the agents hide the seeded ribbons.
-  const { antAgents, colonySize, simSpeed, scentHalfLife, diffusion, sensorAngle, sensorDistance, wander, slopeAvoidance } =
-    paths
+  const {
+    antAgents,
+    colonySize,
+    simSpeed,
+    scentHalfLife,
+    diffusion,
+    sensorAngle,
+    sensorDistance,
+    wander,
+    slopeAvoidance,
+    tunnelTraffic,
+  } = paths
   useEffect(() => {
     antColonyRef.current?.setSettings({
       antAgents,
@@ -1183,9 +1196,10 @@ export default function MapScene({ intro }) {
       sensorDistance,
       wander,
       slopeAvoidance,
+      tunnelTraffic,
     })
     antWorldRef.current?.setRibbons(!antAgents)
-  }, [antAgents, colonySize, simSpeed, scentHalfLife, diffusion, sensorAngle, sensorDistance, wander, slopeAvoidance])
+  }, [antAgents, colonySize, simSpeed, scentHalfLife, diffusion, sensorAngle, sensorDistance, wander, slopeAvoidance, tunnelTraffic])
 
   useEffect(() => {
     if (groundUniformsRef.current) groundUniformsRef.current.uGrain.value = grain / 100

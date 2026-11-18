@@ -75,7 +75,8 @@ function colonyNote(colony) {
   if (!colony.ready) return 'Mapping the ground…'
   if (colony.warming) return 'Growing the first trails…'
   const minutes = Math.floor(colony.time / 60)
-  return `${colony.out} out · ${colony.carrying} carrying · ${colony.delivered} loads home · ${minutes} min simulated`
+  const nests = colony.nests > 1 ? ` · ${colony.nests} nests` : ''
+  return `${colony.out} out · ${colony.carrying} carrying · ${colony.underground} underground · ${colony.delivered} loads home${nests} · ${minutes} min simulated`
 }
 
 export default function MapPanel({
@@ -536,6 +537,7 @@ export default function MapPanel({
                 {pathSlider('Sensor distance', 'sensorDistance', 0.5, 6, 0.5, formatTenthCm)}
                 {pathSlider('Wander', 'wander', 0, 100, 5)}
                 {pathSlider('Slope avoidance', 'slopeAvoidance', 0, 100, 5)}
+                {pathSlider('Tunnel traffic', 'tunnelTraffic', 0, 100, 5)}
                 <button type="button" className="layer-add" onClick={onResetColony}>
                   Restart colony
                 </button>
